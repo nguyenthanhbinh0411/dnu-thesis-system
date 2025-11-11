@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
@@ -6,6 +6,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { fetchData } from "../../api/fetchData";
+import { useAuth } from "../../hooks/useAuth";
+import type { LecturerCommitteesResponse } from "../../types/committee-assignment-responses";
 
 interface DefenseSchedule {
   id: number;
@@ -23,82 +26,81 @@ interface DefenseSchedule {
 }
 
 const LecturerSchedule: React.FC = () => {
+  const auth = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedSchedule, setSelectedSchedule] =
     useState<DefenseSchedule | null>(null);
+  const [schedules, setSchedules] = useState<DefenseSchedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [schedules] = useState<DefenseSchedule[]>([
-    {
-      id: 1,
-      topicCode: "DT2024001",
-      topicTitle: "Ứng dụng trí tuệ nhân tạo trong phân tích dữ liệu lớn",
-      studentCode: "SV2024001",
-      studentName: "Nguyễn Văn A",
-      committeeCode: "HD2025001",
-      committeeName: "Hội đồng bảo vệ CNTT 2025",
-      room: "A101",
-      scheduledAt: "2025-10-15T14:00:00",
-      duration: 90,
-      status: "scheduled",
-      lecturerRole: "Chủ tịch",
-    },
-    {
-      id: 2,
-      topicCode: "DT2024002",
-      topicTitle: "Phát triển ứng dụng di động cho giáo dục",
-      studentCode: "SV2024002",
-      studentName: "Trần Thị B",
-      committeeCode: "HD2025002",
-      committeeName: "Hội đồng bảo vệ CNTT 2025",
-      room: "A102",
-      scheduledAt: "2025-10-16T09:00:00",
-      duration: 90,
-      status: "scheduled",
-      lecturerRole: "Thư ký",
-    },
-    {
-      id: 3,
-      topicCode: "DT2024003",
-      topicTitle: "Hệ thống quản lý thư viện thông minh",
-      studentCode: "SV2024003",
-      studentName: "Lê Văn C",
-      committeeCode: "HD2025001",
-      committeeName: "Hội đồng bảo vệ CNTT 2025",
-      room: "A101",
-      scheduledAt: "2025-10-17T10:30:00",
-      duration: 90,
-      status: "scheduled",
-      lecturerRole: "Phản biện",
-    },
-    {
-      id: 4,
-      topicCode: "DT2024004",
-      topicTitle: "Ứng dụng blockchain trong quản lý chuỗi cung ứng",
-      studentCode: "SV2024004",
-      studentName: "Phạm Thị D",
-      committeeCode: "HD2025003",
-      committeeName: "Hội đồng bảo vệ Kinh tế 2025",
-      room: "B201",
-      scheduledAt: "2025-10-18T14:00:00",
-      duration: 90,
-      status: "completed",
-      lecturerRole: "Ủy viên",
-    },
-    {
-      id: 5,
-      topicCode: "DT2024005",
-      topicTitle: "Phân tích cảm xúc trong mạng xã hội",
-      studentCode: "SV2024005",
-      studentName: "Hoàng Văn E",
-      committeeCode: "HD2025002",
-      committeeName: "Hội đồng bảo vệ CNTT 2025",
-      room: "A102",
-      scheduledAt: "2025-10-19T15:30:00",
-      duration: 90,
-      status: "cancelled",
-      lecturerRole: "Ủy viên",
-    },
-  ]);
+  useEffect(() => {
+    const fetchSchedules = async () => {
+      if (!auth.user?.userCode) {
+        setError("Không tìm thấy mã người dùng");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetchData<LecturerCommitteesResponse>(
+          `/CommitteeAssignment/lecturer-committees/${auth.user.userCode}`
+        );
+        if (response.success && response.data) {
+          // Transform committee data to schedule data
+          
+          // Build a map to ensure one schedule per committee per date
+          const scheduleMap = new Map<string, DefenseSchedule>();
+
+          response.data.committees.forEach((committee, committeeIndex) => {
+            if (!committee.defenseDate) return;
+
+            const dateKey = new Date(committee.defenseDate).toISOString().slice(0, 10); // yyyy-mm-dd
+            const mapKey = `${committee.committeeCode}_${dateKey}`;
+
+            if (!scheduleMap.has(mapKey)) {
+              scheduleMap.set(mapKey, {
+                id: parseInt(`${committee.committeeCode.replace(/\D/g, '')}${committeeIndex}`),
+                topicCode: committee.assignments?.map(a => a.topicCode).join(', ') || '',
+                topicTitle: committee.assignments?.map(a => a.title).join('; ') || '',
+                studentCode: committee.assignments?.map(a => a.studentCode).join(', ') || '',
+                studentName: committee.assignments?.map(a => a.studentName).join(', ') || '',
+                committeeCode: committee.committeeCode,
+                committeeName: committee.name || '',
+                room: committee.room || '',
+                scheduledAt: committee.defenseDate,
+                duration: 90, // Default duration for committee defense
+                status: getStatusFromDate(committee.defenseDate),
+                lecturerRole: committee.members?.find(m => m.lecturerCode === auth.user?.userCode)?.role || "Thành viên"
+              });
+            }
+          });
+
+          setSchedules(Array.from(scheduleMap.values()));
+        } else {
+          setError("Không thể tải danh sách lịch bảo vệ");
+        }
+      } catch (err) {
+        setError("Lỗi khi tải dữ liệu");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSchedules();
+  }, [auth.user?.userCode]);
+
+  // Helper function to determine status based on date
+  const getStatusFromDate = (scheduledAt: string): "scheduled" | "completed" | "cancelled" => {
+    const scheduleDate = new Date(scheduledAt);
+    const now = new Date();
+    
+    if (scheduleDate < now) {
+      return "completed";
+    }
+    return "scheduled";
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -158,6 +160,26 @@ const LecturerSchedule: React.FC = () => {
   };
 
   const monthSchedules = getSchedulesForMonth();
+
+  if (loading) {
+    return (
+      <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "80px 20px" }}>
+          <div style={{ fontSize: "18px", color: "#666" }}>Đang tải lịch bảo vệ...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "80px 20px" }}>
+          <div style={{ fontSize: "18px", color: "#ef4444" }}>{error}</div>
+        </div>
+      </div>
+    );
+  }
 
   // Generate calendar days
   const getDaysInMonth = (date: Date) => {
@@ -443,15 +465,9 @@ const LecturerSchedule: React.FC = () => {
                         whiteSpace: "nowrap",
                       }}
                       onClick={() => setSelectedSchedule(schedule)}
-                      title={`${schedule.studentName} - ${schedule.topicTitle}`}
+                      title={`${schedule.committeeName} - ${schedule.topicTitle}`}
                     >
-                      {new Date(schedule.scheduledAt).toLocaleTimeString(
-                        "vi-VN",
-                        {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }
-                      )}
+                      {schedule.committeeCode}
                     </div>
                   ))}
 
@@ -531,18 +547,21 @@ const LecturerSchedule: React.FC = () => {
                     textTransform: "uppercase",
                   }}
                 >
-                  Đề tài
+                  Đề tài bảo vệ
                 </label>
-                <p
-                  style={{
-                    fontSize: "16px",
-                    color: "#1a1a1a",
-                    margin: "4px 0",
-                    fontWeight: "500",
-                  }}
-                >
-                  {selectedSchedule.topicTitle}
-                </p>
+                {selectedSchedule.topicTitle.split('; ').map((title, index) => (
+                  <p
+                    key={index}
+                    style={{
+                      fontSize: "14px",
+                      color: "#1a1a1a",
+                      margin: "4px 0",
+                      fontWeight: "500",
+                    }}
+                  >
+                    • {title}
+                  </p>
+                ))}
                 <p style={{ fontSize: "12px", color: "#666", margin: "2px 0" }}>
                   Mã đề tài: {selectedSchedule.topicCode}
                 </p>
@@ -559,16 +578,18 @@ const LecturerSchedule: React.FC = () => {
                 >
                   Sinh viên
                 </label>
-                <p
-                  style={{
-                    fontSize: "14px",
-                    color: "#1a1a1a",
-                    margin: "4px 0",
-                  }}
-                >
-                  {selectedSchedule.studentName} ({selectedSchedule.studentCode}
-                  )
-                </p>
+                {selectedSchedule.studentName.split(', ').map((name, index) => (
+                  <p
+                    key={index}
+                    style={{
+                      fontSize: "14px",
+                      color: "#1a1a1a",
+                      margin: "4px 0",
+                    }}
+                  >
+                    • {name} ({selectedSchedule.studentCode.split(', ')[index]})
+                  </p>
+                ))}
               </div>
 
               <div
@@ -596,15 +617,13 @@ const LecturerSchedule: React.FC = () => {
                       margin: "4px 0",
                     }}
                   >
-                    {new Date(selectedSchedule.scheduledAt).toLocaleString(
+                    {new Date(selectedSchedule.scheduledAt).toLocaleDateString(
                       "vi-VN",
                       {
                         weekday: "long",
                         year: "numeric",
                         month: "long",
                         day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
                       }
                     )}
                   </p>

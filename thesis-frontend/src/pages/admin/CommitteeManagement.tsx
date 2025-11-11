@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -25,6 +24,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useToast } from "../../context/useToast";
+import { fetchData } from "../../api/fetchData";
 import { committeeAssignmentApi, getCommitteeCreateInit, saveCommitteeMembers } from "../../api/committeeAssignmentApi";
 import { FetchDataError } from "../../api/fetchData";
 import { committeeService, type EligibleTopicSummary } from "../../services/committee-management.service";
@@ -77,6 +77,84 @@ const CARD_SHADOW = "0 18px 40px rgba(31, 60, 136, 0.08)";
   }
 
 type SessionId = 1 | 2;
+
+// API Response types for proper type safety
+interface ApiListResponse<T> {
+  data?: T[];
+  items?: T[];
+}
+
+interface RawMemberData {
+  lecturerProfileId?: number;
+  lecturerProfileID?: number;
+  memberLecturerProfileID?: number;
+  memberLecturerProfileId?: number;
+  lecturerCode?: string;
+  fullName?: string;
+  role?: string;
+  degree?: string | null;
+  departmentCode?: string | null;
+  isChair?: boolean;
+  tagCodes?: string[];
+  tagNames?: string[];
+  lecturerProfile?: { id?: number } | number;
+}
+
+interface RawTopicData {
+  topicCode?: string;
+  topic_code?: string;
+  code?: string;
+  topicId?: string;
+  title?: string;
+  topicName?: string;
+  name?: string;
+  proposerStudentCode?: string;
+  proposer?: string;
+  studentCode?: string;
+  studentName?: string;
+  supervisorCode?: string;
+  supervisorName?: string;
+  supervisorLecturerProfileID?: number;
+  supervisorLecturerCode?: string;
+  supervisorUserCode?: string;
+  tagCodes?: string[];
+  specialty?: string;
+  status?: string;
+}
+
+interface RawLecturerData {
+  lecturerProfileId?: number;
+  lecturerProfileID?: number;
+  LecturerProfileID?: number;
+  lecturerCode?: string;
+  LecturerCode?: string;
+  fullName?: string;
+  full_name?: string;
+  FullName?: string;
+  name?: string;
+  degree?: string;
+  Degree?: string;
+  departmentCode?: string;
+  DepartmentCode?: string;
+}
+
+interface RawStudentData {
+  studentCode?: string;
+  StudentCode?: string;
+  student_code?: string;
+  fullName?: string;
+  full_name?: string;
+  FullName?: string;
+  name?: string;
+}
+
+interface RawTagData {
+  topicCode?: string;
+  TopicCode?: string;
+  tag?: string;
+  tagCode?: string;
+  name?: string;
+}
 
 interface TopicTableItem {
   topicCode: string;
@@ -131,12 +209,6 @@ const SESSION_LABEL: Record<SessionId, string> = {
   2: "Phiên chiều",
 };
 
-const API_BASE_URL = ((import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:5180").trim().replace(/\/+$/, "");
-const apiClient = axios.create({
-  baseURL: `${API_BASE_URL}/api`,
-  timeout: 20000,
-});
-
 const ROLE_CONFIG: RoleConfig[] = [
   { id: "chair", label: "Chủ tịch", apiRole: "Chủ tịch", requiresPhd: true },
   { id: "reviewer1", label: "Phản biện (Ủy viên) 1", apiRole: "Phản biện (Ủy viên)" },
@@ -155,14 +227,13 @@ const EMPTY_ROLE_ASSIGNMENTS: Record<RoleId, number | null> = {
 
 const ROLE_ORDER: RoleId[] = ["chair", "secretary", "reviewer1", "reviewer2", "reviewer3"];
 
-function extractLecturerProfileId(member: any): number | null {
+function extractLecturerProfileId(member: RawMemberData): number | null {
   const candidates = [
     member?.lecturerProfileId,
     member?.lecturerProfileID,
     member?.memberLecturerProfileID,
     member?.memberLecturerProfileId,
-    member?.lecturerProfile?.id,
-    member?.lecturerProfile,
+    typeof member?.lecturerProfile === 'object' ? member.lecturerProfile?.id : member?.lecturerProfile,
   ];
   for (const value of candidates) {
     if (value == null) continue;
@@ -218,7 +289,7 @@ function normalizeRoleIdFromString(
 }
 
 function deriveRoleIdFromMemberEntry(
-  member: any,
+  member: RawMemberData | null | undefined,
   usedRoles: Set<RoleId>,
   remainingReviewSlots: RoleId[]
 ): RoleId | null {
@@ -228,7 +299,7 @@ function deriveRoleIdFromMemberEntry(
     return "chair";
   }
 
-  const candidates = [member?.role, member?.roleName, member?.roleLabel, member?.roleDisplay, member?.roleId];
+  const candidates = [member?.role];
   for (const candidate of candidates) {
     if (!candidate) continue;
     const normalized = normalizeRoleIdFromString(String(candidate), usedRoles, remainingReviewSlots);
@@ -240,7 +311,7 @@ function deriveRoleIdFromMemberEntry(
   return null;
 }
 
-function buildMemberAssignmentState(rawMembers?: any[] | null): {
+function buildMemberAssignmentState(rawMembers?: RawMemberData[] | null): {
   membersMap: Record<RoleId, number | null>;
   syntheticOptions: LecturerOption[];
 } {
@@ -249,7 +320,7 @@ function buildMemberAssignmentState(rawMembers?: any[] | null): {
   const usedRoles = new Set<RoleId>();
   const remainingReviewSlots: RoleId[] = ["reviewer1", "reviewer2", "reviewer3"];
 
-  (rawMembers ?? []).forEach((member: any) => {
+  (rawMembers ?? []).forEach((member: RawMemberData) => {
     const lecturerId = extractLecturerProfileId(member);
     if (lecturerId == null) return;
 
@@ -277,7 +348,7 @@ function buildMemberAssignmentState(rawMembers?: any[] | null): {
     if (!syntheticOptions.some((opt) => opt.lecturerProfileId === lecturerId)) {
       syntheticOptions.push({
         lecturerProfileId: lecturerId,
-        lecturerCode: member?.lecturerCode ?? member?.memberLecturerCode ?? "",
+        lecturerCode: member?.lecturerCode ?? "",
         fullName: member?.fullName ?? member?.lecturerCode ?? "(Không có tên)",
         degree: member?.degree ?? null,
       });
@@ -291,22 +362,7 @@ function sessionSlotTimes(session: SessionId): readonly string[] {
   return session === 1 ? MORNING_SLOTS : AFTERNOON_SLOTS;
 }
 
-function buildDefaultHeaders(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = window.localStorage.getItem("app_user");
-    if (!stored) return {};
-    const parsed = JSON.parse(stored) as { userCode?: string; role?: string } | null;
-    const headers: Record<string, string> = {};
-    if (parsed?.role) headers["X-User-Role"] = parsed.role;
-    if (parsed?.userCode) headers["X-User-Code"] = parsed.userCode;
-    return headers;
-  } catch {
-    return {};
-  }
-}
-
-function normalizeTopicItem(item: any): TopicTableItem | null {
+function normalizeTopicItem(item: RawTopicData | null | undefined): TopicTableItem | null {
     if (!item) return null;
     const topicCode = item.topicCode ?? item.topic_code ?? item.code ?? item.topicId;
     const title = item.title ?? item.topicName ?? item.name;
@@ -318,27 +374,21 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
       title: String(title),
       // preserve proposer/student code so we can batch-fetch student profiles where available
     proposerStudentCode:
-      (item.proposerStudentCode ?? item.proposerStudentCode ?? item.proposerUserCode ?? item.proposerUserID ?? item.proposerStudentProfileID ?? item.proposerStudentProfileId ?? null) &&
-      String(item.proposerStudentCode ?? item.proposerUserCode ?? item.proposerUserID ?? item.proposerStudentProfileID ?? item.proposerStudentProfileId ?? null),
-      studentName: item.studentName ?? item.studentFullName ?? item.student ?? null,
-      supervisorName: item.supervisorName ?? item.lecturerName ?? item.supervisor ?? null,
-      supervisorCode: item.supervisorCode ?? item.lecturerCode ?? null,
-      supervisorLecturerProfileID: item.supervisorLecturerProfileID ?? item.supervisorLecturerProfileId ?? item.supervisorLecturerProfileID ?? null,
-      supervisorLecturerCode: item.supervisorLecturerCode ?? item.supervisorLecturerCode ?? item.supervisorLecturerCode ?? (item.supervisorCode ?? item.supervisorLecturerCode) ?? null,
+      (item.proposerStudentCode ?? item.proposer ?? item.studentCode ?? null) &&
+      String(item.proposerStudentCode ?? item.proposer ?? item.studentCode ?? null),
+      studentName: item.studentName ?? null,
+      supervisorName: item.supervisorName ?? null,
+      supervisorCode: item.supervisorCode ?? null,
+      supervisorLecturerProfileID: item.supervisorLecturerProfileID ?? null,
+      supervisorLecturerCode: item.supervisorLecturerCode ?? item.supervisorCode ?? null,
       // include supervisor user code if backend provides it
       ...(item.supervisorUserCode ? { supervisorUserCode: String(item.supervisorUserCode) } : {}),
-      specialty: item.specialty ?? item.specialtyName ?? item.specialtyCode ?? null,
-      // tagDescriptions should be an array of human-friendly strings (tagName or tagCode)
-      tagDescriptions: Array.isArray(item.tagDescriptions)
-        ? item.tagDescriptions
-        : Array.isArray(item.tags)
-          ? item.tags
-          : undefined,
+      specialty: item.specialty ?? null,
       // also keep raw tagCodes if backend returns them
       tagCodes: Array.isArray(item.tagCodes)
         ? item.tagCodes
         : undefined,
-      status: item.status ?? item.topicStatus ?? null,
+      status: item.status ?? null,
     };
   }
 
@@ -407,11 +457,11 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
     return `${datePart}T${timeNormalized}`;
   }
 
-  function normalizeLecturerItem(item: any): LecturerOption | null {
+  function normalizeLecturerItem(item: RawLecturerData | null | undefined): LecturerOption | null {
     if (!item) return null;
-    const lecturerProfileId = item.lecturerProfileId ?? item.lecturerProfileID ?? item.id;
-    const lecturerCode = item.lecturerCode ?? item.code;
-    const fullName = item.fullName ?? item.name;
+    const lecturerProfileId = item.lecturerProfileId ?? item.lecturerProfileID ?? item.LecturerProfileID;
+    const lecturerCode = item.lecturerCode ?? item.LecturerCode;
+    const fullName = item.fullName ?? item.full_name ?? item.FullName ?? item.name;
     if (!lecturerProfileId || !lecturerCode || !fullName) {
       return null;
     }
@@ -419,8 +469,8 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
       lecturerProfileId: Number(lecturerProfileId),
       lecturerCode: String(lecturerCode),
       fullName: String(fullName),
-      degree: item.degree ?? item.academicDegree ?? null,
-      departmentCode: item.departmentCode ?? null,
+      degree: item.degree ?? item.Degree ?? null,
+      departmentCode: item.departmentCode ?? item.DepartmentCode ?? null,
     };
   }
 
@@ -512,9 +562,9 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
     small?: boolean;
   }
 
-  function ModalShell({ children, onClose, title, subtitle, wide }: ModalShellProps) {
+  function ModalShell({ children, onClose, title, subtitle, wide, small }: ModalShellProps & { small?: boolean }) {
     // small: compact modal (~half width), wide: large modal, default: medium
-    const widthClass = (arguments[0] as any)?.small
+    const widthClass = small
       ? "max-w-[520px]"
       : wide
       ? "max-w-[980px]"
@@ -1117,22 +1167,18 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
     const supervisorCodesInCommittee = useMemo(() => {
       const codes = new Set<string>();
       try {
-        (committee?.assignments ?? []).forEach((a: any) => {
+        (committee?.assignments ?? []).forEach((a: CommitteeAssignmentDefenseItem) => {
           if (a?.supervisorCode) codes.add(String(a.supervisorCode));
-          if (a?.supervisorLecturerCode) codes.add(String(a.supervisorLecturerCode));
-          // some payloads may use different property names
-          if (a?.supervisor) codes.add(String(a.supervisor));
         });
       } catch (e) {
         // ignore
       }
       // also include topicsForm (in case user already added topics locally)
       try {
-        Object.values(topicsForm || {}).forEach((arr: any) => {
-          (arr ?? []).forEach((slot: any) => {
+        Object.values(topicsForm || {}).forEach((arr: AssignedTopicSlot[]) => {
+          (arr ?? []).forEach((slot: AssignedTopicSlot) => {
             if (slot?.topic?.supervisorCode) codes.add(String(slot.topic.supervisorCode));
             if (slot?.topic?.supervisorLecturerCode) codes.add(String(slot.topic.supervisorLecturerCode));
-            if (slot?.topic?.supervisor) codes.add(String(slot.topic.supervisor));
           });
         });
       } catch (e) {
@@ -1148,9 +1194,9 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           map.set(opt.lecturerProfileId, opt.lecturerCode);
         }
       });
-      (committee?.members ?? []).forEach((member: any) => {
+      (committee?.members ?? []).forEach((member: RawMemberData) => {
         const id = extractLecturerProfileId(member);
-        const code = member?.lecturerCode ?? member?.memberLecturerCode ?? null;
+        const code = member?.lecturerCode ?? null;
         if (id != null && Number.isFinite(id) && code) {
           map.set(id, code);
         }
@@ -1208,16 +1254,15 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
     const fetchLecturersForMembers = useCallback(async () => {
       setLecturersLoading(true);
       try {
-        const response = await apiClient.get("/LecturerProfiles/get-list", {
-          headers: buildDefaultHeaders(),
+        const response = await fetchData<ApiListResponse<RawLecturerData>>("/LecturerProfiles/get-list", {
+          method: "GET",
         });
-        const payload = response.data as { data?: unknown } | unknown;
-        const rawList = Array.isArray((payload as any)?.data)
-          ? ((payload as any).data as unknown[])
-          : Array.isArray(payload)
-            ? (payload as unknown[])
-            : Array.isArray((payload as any)?.items)
-              ? ((payload as any).items as unknown[])
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response)
+              ? (response as RawLecturerData[])
               : [];
         const mapped = rawList
           .map(normalizeLecturerItem)
@@ -1244,17 +1289,15 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
       try {
         const params = new URLSearchParams();
         committee.tags.forEach((tag) => params.append("TagCodes", tag.tagCode));
-        const response = await apiClient.get("/topics/get-list", {
-          params,
-          headers: buildDefaultHeaders(),
+        const response = await fetchData<ApiListResponse<RawTopicData>>(`/topics/get-list?${params.toString()}`, {
+          method: "GET",
         });
-        const payload = response.data as { data?: unknown } | unknown;
-        const rawList = Array.isArray((payload as any)?.data)
-          ? ((payload as any).data as unknown[])
-          : Array.isArray(payload)
-            ? (payload as unknown[])
-            : Array.isArray((payload as any)?.items)
-              ? ((payload as any).items as unknown[])
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response)
+              ? (response as RawTopicData[])
               : [];
         let mapped = rawList
           .map(normalizeTopicItem)
@@ -1274,20 +1317,21 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           if (topicCodes.length > 0) {
             const tagParams = new URLSearchParams();
             tagParams.set("topicCodes", topicCodes.join(","));
-            const tagsResp = await apiClient.get("/TopicTags/list", {
-              params: tagParams,
-              headers: buildDefaultHeaders(),
+            const tagsResp = await fetchData<ApiListResponse<RawTagData>>(`/TopicTags/list?${tagParams.toString()}`, {
+              method: "GET",
             });
-            const tagPayload = tagsResp.data as { data?: unknown } | unknown;
-            const tagList = Array.isArray((tagPayload as any)?.data)
-              ? ((tagPayload as any).data as Array<{ topicCode?: string; tag?: string }>)
-              : Array.isArray(tagPayload)
-                ? (tagPayload as unknown as Array<{ topicCode?: string; tag?: string }>)
-                : [];
+            const tagPayload = tagsResp;
+            const tagList = Array.isArray(tagPayload?.data)
+              ? tagPayload.data
+              : Array.isArray(tagPayload?.items)
+                ? tagPayload.items
+                : Array.isArray(tagPayload)
+                  ? (tagPayload as RawTagData[])
+                  : [];
             const tagMap = new Map<string, string[]>();
             tagList.forEach((entry) => {
-              const code = (entry as any).topicCode ?? (entry as any).TopicCode;
-              const tag = (entry as any).tag ?? (entry as any).tagCode ?? (entry as any).name;
+              const code = entry.topicCode ?? entry.TopicCode;
+              const tag = entry.tag ?? entry.tagCode ?? entry.name;
               if (!code) return;
               const arr = tagMap.get(code) ?? [];
               if (tag) arr.push(String(tag));
@@ -1316,19 +1360,19 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           if (supervisorCodes.length > 0) {
             const lecParams = new URLSearchParams();
             supervisorCodes.forEach((c) => lecParams.append("LecturerCodes", String(c)));
-            const lecResp = await apiClient.get("/LecturerProfiles/get-list", {
-              params: lecParams,
-              headers: buildDefaultHeaders(),
+            const lecResp = await fetchData<ApiListResponse<RawLecturerData>>(`/LecturerProfiles/get-list?${lecParams.toString()}`, {
+              method: "GET",
             });
-            const lecPayload = lecResp.data as { data?: unknown } | unknown;
-            const lecRaw = Array.isArray((lecPayload as any)?.data)
-              ? ((lecPayload as any).data as any[])
-              : Array.isArray(lecPayload)
-                ? (lecPayload as unknown as any[])
-                : [];
+            const lecRaw = Array.isArray(lecResp?.data)
+              ? lecResp.data
+              : Array.isArray(lecResp?.items)
+                ? lecResp.items
+                : Array.isArray(lecResp)
+                  ? (lecResp as RawLecturerData[])
+                  : [];
             const lecMap = new Map<string, string>();
             lecRaw.forEach((entry) => {
-              const code = entry?.lecturerCode ?? entry?.lecturer_code ?? entry?.LecturerCode;
+              const code = entry?.lecturerCode ?? entry?.LecturerCode;
               const name = entry?.fullName ?? entry?.full_name ?? entry?.FullName ?? entry?.name;
               if (code && name) lecMap.set(String(code), String(name));
             });
@@ -1346,28 +1390,28 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
 
         // Fetch proposer/student names in batch
         try {
-          const proposerCodes = Array.from(new Set(mapped.map((t) => (t as any).proposerStudentCode ?? (t as any).proposer ?? (t as any).studentCode).filter(Boolean) as string[]));
+          const proposerCodes = Array.from(new Set(mapped.map((t) => t.proposerStudentCode).filter(Boolean) as string[]));
           if (proposerCodes.length > 0) {
             const studentParams = new URLSearchParams();
             proposerCodes.forEach((c) => studentParams.append("StudentCodes", String(c)));
-            const studentResp = await apiClient.get("/StudentProfiles/get-list", {
-              params: studentParams,
-              headers: buildDefaultHeaders(),
+            const studentResp = await fetchData<ApiListResponse<RawStudentData>>(`/StudentProfiles/get-list?${studentParams.toString()}`, {
+              method: "GET",
             });
-            const studentPayload = studentResp.data as { data?: unknown } | unknown;
-            const studentRaw = Array.isArray((studentPayload as any)?.data)
-              ? ((studentPayload as any).data as any[])
-              : Array.isArray(studentPayload)
-                ? (studentPayload as unknown as any[])
-                : [];
+            const studentRaw = Array.isArray(studentResp?.data)
+              ? studentResp.data
+              : Array.isArray(studentResp?.items)
+                ? studentResp.items
+                : Array.isArray(studentResp)
+                  ? (studentResp as RawStudentData[])
+                  : [];
             const studentMap = new Map<string, string>();
             studentRaw.forEach((entry) => {
-              const code = entry?.studentCode ?? entry?.StudentCode ?? entry?.student_profile_code ?? entry?.studentProfileCode;
-              const name = entry?.fullName ?? entry?.full_name ?? entry?.studentName ?? entry?.name;
+              const code = entry?.studentCode ?? entry?.StudentCode ?? entry?.student_code;
+              const name = entry?.fullName ?? entry?.full_name ?? entry?.FullName ?? entry?.name;
               if (code && name) studentMap.set(String(code), String(name));
             });
             mapped.forEach((t) => {
-              const code = (t as any).proposerStudentCode ?? (t as any).proposer ?? (t as any).studentCode;
+              const code = t.proposerStudentCode;
               if (code && (!t.studentName || t.studentName === "—")) {
                 const n = studentMap.get(String(code));
                 if (n) t.studentName = n;
@@ -1473,7 +1517,7 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           // Resolve lecturer codes for selected IDs
           const selectedLecturers = combinedAssignments.map(({ lecturerProfileId }) => {
             const lecturerCode = lecturerCodeLookup.get(lecturerProfileId)
-              ?? committee.members?.find((m: any) => extractLecturerProfileId(m) === lecturerProfileId)?.lecturerCode
+              ?? committee.members?.find((m: RawMemberData) => extractLecturerProfileId(m) === lecturerProfileId)?.lecturerCode
               ?? "";
             const lecturerName = lecturerCodeLookup.get(lecturerProfileId) ? undefined : undefined;
             return { lecturerProfileId, lecturerCode, lecturerName };
@@ -1484,7 +1528,7 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
             try {
               const resp = await committeeAssignmentApi.getLecturerCommittees(lec.lecturerCode || "");
               if (resp?.success && resp.data && Array.isArray(resp.data.committees)) {
-                const conflicting = resp.data.committees.find((c: any) => {
+                const conflicting = resp.data.committees.find((c) => {
                   if (!c?.defenseDate) return false;
                   // same date and different committee code
                   const a = new Date(c.defenseDate).toDateString();
@@ -1550,7 +1594,7 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         const membersPayload = combinedAssignments.map(({ roleId, lecturerProfileId }) => {
           const cfg = ROLE_CONFIG.find((item) => item.id === roleId);
           const lecturerCode = lecturerCodeLookup.get(lecturerProfileId)
-            ?? committee.members?.find((m: any) => extractLecturerProfileId(m) === lecturerProfileId)?.lecturerCode
+            ?? committee.members?.find((m: RawMemberData) => extractLecturerProfileId(m) === lecturerProfileId)?.lecturerCode
             ?? '';
           return cfg
             ? {
@@ -1571,11 +1615,10 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           members: membersPayload,
         };
 
-        await apiClient.put(
-          `/CommitteeAssignment/update-members/${encodeURIComponent(committee.committeeCode)}`,
-          updatePayload,
-          { headers: buildDefaultHeaders() }
-        );
+        await fetchData(`/CommitteeAssignment/update-members/${encodeURIComponent(committee.committeeCode)}`, {
+          method: "PUT",
+          body: updatePayload,
+        });
 
         addToast('Đã cập nhật thành viên hội đồng', 'success');
         setEditSection(null);
@@ -1690,8 +1733,8 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         // Perform deletions (await each so we know the server state is updated)
         for (const topicCode of toRemove) {
           try {
-            await apiClient.delete(`/CommitteeAssignment/remove-assignment/${encodeURIComponent(topicCode)}`, {
-              headers: buildDefaultHeaders(),
+            await fetchData(`/CommitteeAssignment/remove-assignment/${encodeURIComponent(topicCode)}`, {
+              method: "DELETE",
             });
           } catch (error) {
             console.error('Không thể gỡ đề tài khỏi hội đồng', topicCode, error);
@@ -1702,7 +1745,7 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         }
 
         // Re-fetch committee detail after deletes to ensure server-side assignments were cleared
-        let refreshedDetail: any = null;
+        let refreshedDetail: CommitteeAssignmentDetail | null = null;
         try {
           const resp = await committeeAssignmentApi.getCommitteeDetail(committee.committeeCode);
           refreshedDetail = resp?.data ?? null;
@@ -1714,7 +1757,7 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         if (toCreate.length > 0) {
           // If the server still contains assignments that conflict with our toCreate items, abort and show details
           if (refreshedDetail && Array.isArray(refreshedDetail.assignments)) {
-            const remaining = refreshedDetail.assignments as any[];
+            const remaining = refreshedDetail.assignments;
             const conflicts: Array<{ requestedTopic: string; existingTopic: string } > = [];
             for (const item of toCreate) {
               for (const a of remaining) {
@@ -1744,8 +1787,9 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
             items: toCreate,
           };
 
-          await apiClient.post('/CommitteeAssignment/assign', payload, {
-            headers: buildDefaultHeaders(),
+          await fetchData('/CommitteeAssignment/assign', {
+            method: "POST",
+            body: payload,
           });
         }
 
@@ -2964,17 +3008,15 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
       try {
         const params = new URLSearchParams();
         phaseOneForm.tagCodes.forEach((tag) => params.append("TagCodes", tag));
-        const response = await apiClient.get("/topics/get-list", {
-          params,
-          headers: buildDefaultHeaders(),
+        const response = await fetchData<ApiListResponse<RawTopicData>>(`/topics/get-list?${params.toString()}`, {
+          method: "GET",
         });
-        const payload = response.data as { data?: unknown } | unknown;
-        const rawList = Array.isArray((payload as any)?.data)
-          ? ((payload as any).data as unknown[])
-          : Array.isArray(payload)
-            ? (payload as unknown[])
-            : Array.isArray((payload as any)?.items)
-              ? ((payload as any).items as unknown[])
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response)
+              ? (response as RawTopicData[])
               : [];
         const mappedAll = rawList
           .map(normalizeTopicItem)
@@ -2989,21 +3031,21 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           try {
             const tagParams = new URLSearchParams();
             tagParams.set("topicCodes", topicCodes.join(","));
-            const tagsResp = await apiClient.get("/TopicTags/list", {
-              params: tagParams,
-              headers: buildDefaultHeaders(),
+            const tagsResp = await fetchData<ApiListResponse<RawTagData>>(`/TopicTags/list?${tagParams.toString()}`, {
+              method: "GET",
             });
-            const tagPayload = tagsResp.data as { data?: unknown } | unknown;
-            const tagList = Array.isArray((tagPayload as any)?.data)
-              ? ((tagPayload as any).data as Array<{ topicCode?: string; tag?: string }>)
-              : Array.isArray(tagPayload)
-                ? (tagPayload as unknown as Array<{ topicCode?: string; tag?: string }>)
-                : [];
+            const tagList = Array.isArray(tagsResp?.data)
+              ? tagsResp.data
+              : Array.isArray(tagsResp?.items)
+                ? tagsResp.items
+                : Array.isArray(tagsResp)
+                  ? (tagsResp as RawTagData[])
+                  : [];
 
             const tagMap = new Map<string, string[]>();
             tagList.forEach((entry) => {
-              const code = (entry as any).topicCode ?? (entry as any).TopicCode;
-              const tag = (entry as any).tag ?? (entry as any).tagCode ?? (entry as any).name;
+              const code = entry.topicCode ?? entry.TopicCode;
+              const tag = entry.tag ?? entry.tagCode ?? entry.name;
               if (!code) return;
               const arr = tagMap.get(code) ?? [];
               if (tag) arr.push(String(tag));
@@ -3043,19 +3085,19 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           try {
             const lecParams = new URLSearchParams();
             supervisorCodes.forEach((c) => lecParams.append("LecturerCodes", String(c)));
-            const lecResp = await apiClient.get("/LecturerProfiles/get-list", {
-              params: lecParams,
-              headers: buildDefaultHeaders(),
+            const lecResp = await fetchData<ApiListResponse<RawLecturerData>>(`/LecturerProfiles/get-list?${lecParams.toString()}`, {
+              method: "GET",
             });
-            const lecPayload = lecResp.data as { data?: unknown } | unknown;
-            const lecRaw = Array.isArray((lecPayload as any)?.data)
-              ? ((lecPayload as any).data as any[])
-              : Array.isArray(lecPayload)
-                ? (lecPayload as unknown as any[])
-                : [];
+            const lecRaw = Array.isArray(lecResp?.data)
+              ? lecResp.data
+              : Array.isArray(lecResp?.items)
+                ? lecResp.items
+                : Array.isArray(lecResp)
+                  ? (lecResp as RawLecturerData[])
+                  : [];
             const lecMap = new Map<string, string>();
             lecRaw.forEach((entry) => {
-              const code = entry?.lecturerCode ?? entry?.lecturer_code ?? entry?.LecturerCode;
+              const code = entry?.lecturerCode ?? entry?.LecturerCode;
               const name = entry?.fullName ?? entry?.full_name ?? entry?.FullName ?? entry?.name;
               if (code && name) lecMap.set(String(code), String(name));
             });
@@ -3071,32 +3113,32 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         }
 
         // Fetch proposer/student names by proposerStudentCode to show student names in the list.
-        const proposerCodes = Array.from(new Set(eligible.map((t) => (t as any).proposerStudentCode).filter(Boolean) as string[]));
+        const proposerCodes = Array.from(new Set(eligible.map((t) => t.proposerStudentCode).filter(Boolean) as string[]));
         if (proposerCodes.length > 0) {
           try {
             const studentParams = new URLSearchParams();
             // API supports array query params: StudentCodes repeated
             proposerCodes.forEach((c) => studentParams.append("StudentCodes", String(c)));
             console.debug("fetchTopicsForSession: requesting StudentProfiles for:", proposerCodes);
-            const studentResp = await apiClient.get("/StudentProfiles/get-list", {
-              params: studentParams,
-              headers: buildDefaultHeaders(),
+            const studentResp = await fetchData<ApiListResponse<RawStudentData>>(`/StudentProfiles/get-list?${studentParams.toString()}`, {
+              method: "GET",
             });
-            const studentPayload = studentResp.data as { data?: unknown } | unknown;
-            const studentRaw = Array.isArray((studentPayload as any)?.data)
-              ? ((studentPayload as any).data as any[])
-              : Array.isArray(studentPayload)
-                ? (studentPayload as unknown as any[])
-                : [];
+            const studentRaw = Array.isArray(studentResp?.data)
+              ? studentResp.data
+              : Array.isArray(studentResp?.items)
+                ? studentResp.items
+                : Array.isArray(studentResp)
+                  ? (studentResp as RawStudentData[])
+                  : [];
             const studentMap = new Map<string, string>();
             studentRaw.forEach((entry) => {
-              const code = entry?.studentCode ?? entry?.StudentCode ?? entry?.student_profile_code ?? entry?.studentProfileCode;
-              const name = entry?.fullName ?? entry?.full_name ?? entry?.studentName ?? entry?.name;
+              const code = entry?.studentCode ?? entry?.StudentCode ?? entry?.student_code;
+              const name = entry?.fullName ?? entry?.full_name ?? entry?.FullName ?? entry?.name;
               if (code && name) studentMap.set(String(code), String(name));
             });
             console.debug("fetchTopicsForSession: studentMap keys:", Array.from(studentMap.keys()));
             eligible.forEach((t) => {
-              const code = (t as any).proposerStudentCode;
+              const code = t.proposerStudentCode;
               if (code && (!t.studentName || t.studentName === "—")) {
                 const n = studentMap.get(code);
                 if (n) t.studentName = n;
@@ -3126,17 +3168,15 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
       try {
         const params = new URLSearchParams();
         phaseOneForm.tagCodes.forEach((tag) => params.append("TagCodes", tag));
-        const response = await apiClient.get("/LecturerProfiles/get-list", {
-          params,
-          headers: buildDefaultHeaders(),
+        const response = await fetchData<ApiListResponse<RawLecturerData>>(`/LecturerProfiles/get-list?${params.toString()}`, {
+          method: "GET",
         });
-        const payload = response.data as { data?: unknown } | unknown;
-        const rawList = Array.isArray((payload as any)?.data)
-          ? ((payload as any).data as unknown[])
-          : Array.isArray(payload)
-            ? (payload as unknown[])
-            : Array.isArray((payload as any)?.items)
-              ? ((payload as any).items as unknown[])
+        const rawList = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response)
+              ? (response as RawLecturerData[])
               : [];
         const mapped = rawList
           .map(normalizeLecturerItem)
@@ -3181,11 +3221,21 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
 
     const supervisorCodesInAssignments = useMemo(() => {
       const codes = new Set<string>();
+      const addIf = (val: unknown) => {
+        if (val == null) return;
+        const s = String(val).trim();
+        if (s) codes.add(s);
+      };
+
       assignedTopics[1].forEach((slot) => {
-        if (slot.topic.supervisorCode) codes.add(slot.topic.supervisorCode);
+        addIf(slot.topic.supervisorCode);
+        addIf(slot.topic.supervisorLecturerCode);
+        addIf(slot.topic.supervisorLecturerProfileID);
       });
       assignedTopics[2].forEach((slot) => {
-        if (slot.topic.supervisorCode) codes.add(slot.topic.supervisorCode);
+        addIf(slot.topic.supervisorCode);
+        addIf(slot.topic.supervisorLecturerCode);
+        addIf(slot.topic.supervisorLecturerProfileID);
       });
       return codes;
     }, [assignedTopics]);
@@ -3370,10 +3420,10 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
     const returnedAssignments = createResponse.data?.assignments ?? [];
     if (Array.isArray(returnedAssignments) && returnedAssignments.length > 0) {
       const sessionMap: Record<SessionId, AssignedTopicSlot[]> = { 1: [], 2: [] };
-      returnedAssignments.forEach((a: any) => {
+      returnedAssignments.forEach((a: CommitteeAssignmentDefenseItem) => {
         const sess = (a.session ?? 1) as SessionId;
         // Normalize time label to HH:mm (strip seconds if present)
-        let timeLabel = a.startTime ?? a.start_time ?? "";
+        let timeLabel = a.startTime ?? "";
         if (typeof timeLabel === "string") {
           if (timeLabel.length >= 5 && timeLabel.indexOf(":") >= 0) {
             timeLabel = timeLabel.slice(0,5);
@@ -3381,16 +3431,16 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
         }
         const slot: AssignedTopicSlot = {
           topic: {
-            topicCode: a.topicCode ?? a.topic_code ?? a.topicId,
-            title: a.title ?? a.topicName ?? a.name,
-            studentName: a.studentName ?? a.student_name ?? a.student ?? null,
-            supervisorName: a.supervisorName ?? a.supervisor_name ?? a.supervisor ?? null,
-            supervisorLecturerCode: a.supervisorCode ?? a.supervisorLecturerCode ?? null,
+            topicCode: a.topicCode ?? "",
+            title: a.title ?? "",
+            studentName: a.studentName ?? null,
+            supervisorName: a.supervisorName ?? null,
+            supervisorLecturerCode: a.supervisorCode ?? null,
             status: a.status ?? "Đủ điều kiện bảo vệ",
           },
           session: sess,
           timeLabel: timeLabel || "",
-          scheduledAt: a.scheduledAt ?? a.scheduled_at ?? null,
+          scheduledAt: a.scheduledAt ?? null,
         };
         sessionMap[sess] = sessionMap[sess] || [];
         sessionMap[sess].push(slot);
@@ -3456,8 +3506,9 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           assignedBy: getCurrentUserCode() ?? "admin",
           items,
         };
-        await apiClient.post("/CommitteeAssignment/assign", payload, {
-          headers: buildDefaultHeaders(),
+        await fetchData("/CommitteeAssignment/assign", {
+          method: "POST",
+          body: payload,
         });
         addToast("Đã lưu đề tài cho hội đồng.", "success");
         setWizardStep(3);
@@ -3476,7 +3527,13 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
           // Build a payload matching committeeAssignmentApi.listCommittees expected filter shape.
           // The API expects `tagCodes` as an array (sent as repeated `tags` query params),
           // and a single `date` (defenseDate) when filtering by exact date. Keep search/page/pageSize.
-          const filterPayload: any = {
+          const filterPayload: {
+            page: number;
+            pageSize: number;
+            search?: string;
+            defenseDate?: string;
+            tagCodes?: string[];
+          } = {
             page,
             pageSize,
             search: filters.search || undefined,
@@ -3604,16 +3661,13 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
 
       setWizardSubmitting(true);
       try {
-        await apiClient.post(
-          "/CommitteeAssignment/members",
-          {
+        await fetchData("/CommitteeAssignment/members", {
+          method: "POST",
+          body: {
             committeeCode: persistedCommitteeCode,
             members: membersPayload,
           },
-          {
-            headers: buildDefaultHeaders(),
-          }
-        );
+        });
         addToast("Hội đồng đã được phân công thành công.", "success");
         await refreshStats();
         handleWizardClose();
@@ -3665,9 +3719,16 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
 
     // Use tag description as the label when available
     const resolveWizardTagLabel = useCallback((tagCode: string) => {
-      const entry = wizardTagNameLookup[tagCode] ?? tagDictionary[tagCode];
-      // Prefer human-friendly tagName, then description, then code
-      return (entry && ((entry as any).name || (entry as any).tagName)) || (entry && (entry as any).description) || tagCode;
+      // First check wizardTagNameLookup (which has string values)
+      if (wizardTagNameLookup[tagCode]) {
+        return wizardTagNameLookup[tagCode];
+      }
+      // Then check tagDictionary (which has objects with name/description)
+      const entry = tagDictionary[tagCode];
+      if (entry && typeof entry === 'object') {
+        return (entry.name || entry.description) || tagCode;
+      }
+      return tagCode;
     }, [tagDictionary, wizardTagNameLookup]);
 
     const handleRandomAssignLecturers = useCallback(() => {
@@ -3901,19 +3962,20 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
               try {
                 const lecParams = new URLSearchParams();
                 missingSupervisorCodes.forEach((c) => lecParams.append("LecturerCodes", String(c)));
-                const lecResp = await apiClient.get("/LecturerProfiles/get-list", {
-                  params: lecParams,
-                  headers: buildDefaultHeaders(),
-                });
-                const lecPayload = lecResp.data as { data?: unknown } | unknown;
-                const lecRaw = Array.isArray((lecPayload as any)?.data)
-                  ? ((lecPayload as any).data as any[])
-                  : Array.isArray(lecPayload)
-                    ? (lecPayload as unknown as any[])
-                    : [];
+                const lecResp = await fetchData<ApiListResponse<RawLecturerData>>(
+                  `/LecturerProfiles/get-list?${lecParams.toString()}`,
+                  { method: "GET" }
+                );
+                const lecRaw = Array.isArray(lecResp?.data)
+                  ? lecResp.data
+                  : Array.isArray(lecResp?.items)
+                    ? lecResp.items
+                    : Array.isArray(lecResp)
+                      ? (lecResp as RawLecturerData[])
+                      : [];
                 const lecMap = new Map<string, string>();
                 lecRaw.forEach((entry) => {
-                  const code = entry?.lecturerCode ?? entry?.lecturer_code ?? entry?.LecturerCode;
+                  const code = entry?.lecturerCode ?? entry?.LecturerCode;
                   const name = entry?.fullName ?? entry?.full_name ?? entry?.FullName ?? entry?.name;
                   if (code && name) lecMap.set(String(code), String(name));
                 });
@@ -4740,3 +4802,4 @@ function normalizeTopicItem(item: any): TopicTableItem | null {
   };
 
 export default CommitteeManagement;
+

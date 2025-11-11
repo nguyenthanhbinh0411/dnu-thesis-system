@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -7,6 +7,10 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { fetchData } from "../../api/fetchData";
+import { useAuth } from "../../hooks/useAuth";
+import type { StudentDefenseInfoDto } from "../../types/committee-assignment-responses";
+import type { ApiResponse } from "../../types/api";
 
 interface ScheduleEvent {
   id: number;
@@ -20,13 +24,13 @@ interface ScheduleEvent {
 }
 
 const Schedule: React.FC = () => {
+  const auth = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showEventPopup, setShowEventPopup] = useState(false);
   const [selectedEventsForPopup, setSelectedEventsForPopup] = useState<
     ScheduleEvent[]
   >([]);
-
-  const [events] = useState<ScheduleEvent[]>([
+  const [events, setEvents] = useState<ScheduleEvent[]>([
     {
       id: 1,
       title: "Đăng ký đề tài",
@@ -96,6 +100,57 @@ const Schedule: React.FC = () => {
       description: "Thuyết trình tiến độ đồ án trước khoa",
     },
   ]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDefenseInfo = async () => {
+      if (!auth.user?.userCode) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response: ApiResponse<StudentDefenseInfoDto> = await fetchData(
+          `/CommitteeAssignment/student-defense/${auth.user.userCode}`
+        );
+
+        if (response.success && response.data?.committee?.defenseDate) {
+          // Format time from TimeSpan strings (e.g., "09:00:00" -> "09:00")
+          const formatTime = (timeStr?: string) => {
+            if (!timeStr) return "";
+            return timeStr.split(':').slice(0, 2).join(':');
+          };
+
+          const startTime = formatTime(response.data.committee.startTime);
+          const endTime = formatTime(response.data.committee.endTime);
+          const timeRange = startTime && endTime ? `${startTime} - ${endTime}` : "09:00 - 11:00";
+
+          // Update the defense event with real data
+          setEvents(prevEvents =>
+            prevEvents.map(event =>
+              event.id === 5 // "Bảo vệ khóa luận" event
+                ? {
+                    ...event,
+                    date: response.data!.committee!.defenseDate!,
+                    time: timeRange,
+                    location: response.data!.committee!.room || "Phòng A201",
+                    description: `Sinh viên chuẩn bị slide, thuyết trình và tham gia buổi bảo vệ khóa luận "${response.data!.title}" trước hội đồng ${response.data!.committee!.name}.`,
+                    participants: response.data!.committee!.members?.map((m: { name: string; role: string }) => m.name) || []
+                  }
+                : event
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch defense info:", err);
+        // Keep default events if API fails
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDefenseInfo();
+  }, [auth.user?.userCode]);
 
   const getEventTypeColor = (type: string) => {
     switch (type) {
@@ -203,6 +258,16 @@ const Schedule: React.FC = () => {
   const upcomingEvents = events
     .filter((event) => new Date(event.date) >= new Date())
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  if (loading) {
+    return (
+      <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "80px 20px" }}>
+          <div style={{ fontSize: "18px", color: "#666" }}>Đang tải lịch bảo vệ...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>

@@ -18,21 +18,39 @@ const StudentDefenseInfo: React.FC = () => {
   useEffect(() => {
     const fetchDefenseInfo = async () => {
       try {
-        // Assuming studentCode is available, e.g., from context or props. For now, hardcode or get from auth.
-        const studentCode = "STU01"; // Replace with actual student code from auth/context
-        const response = await committeeAssignmentApi.getStudentDefense(studentCode);
-        if (response.success && response.data) {
-          setData(response.data);
-        } else {
-          setError("Không thể tải thông tin bảo vệ");
+        // Try to read current user/student code from localStorage (app_user.userCode) to match other pages
+        let studentCode: string | undefined;
+        try {
+          const raw = typeof window !== 'undefined' ? window.localStorage.getItem('app_user') : null;
+          if (raw) {
+            const parsed = JSON.parse(raw) as { userCode?: string } | null;
+            studentCode = parsed?.userCode;
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        setError("Lỗi khi tải dữ liệu");
+
+        if (!studentCode) {
+          setError('Không tìm thấy mã sinh viên (vui lòng đăng nhập)');
+          setLoading(false);
+          return;
+        }
+
+        const response = await committeeAssignmentApi.getStudentDefense(studentCode);
+        // response is ApiResponse<StudentDefenseInfoDto>
+        if (response && (response as any).success && (response as any).data) {
+          setData((response as any).data as StudentDefenseInfoDto);
+        } else {
+          setError(((response as any)?.message as string) || 'Không thể tải thông tin bảo vệ');
+        }
+      } catch (err) {
+        console.error('fetchDefenseInfo error', err);
+        setError('Lỗi khi tải dữ liệu');
       } finally {
         setLoading(false);
       }
     };
-    fetchDefenseInfo();
+    void fetchDefenseInfo();
   }, []);
 
   if (loading) {
@@ -61,7 +79,7 @@ const StudentDefenseInfo: React.FC = () => {
           }}
         >
           <GraduationCap size={32} color="#F37021" />
-          Thông tin Bảo vệ Luận văn
+          Thông tin Bảo vệ đò án tốt nghiệp
         </h1>
         <p style={{ fontSize: "14px", color: "#666" }}>
           Xem lịch bảo vệ và thông tin hội đồng của bạn
@@ -492,7 +510,7 @@ const StudentDefenseInfo: React.FC = () => {
               }}
             >
               <li>Vui lòng có mặt trước giờ bảo vệ ít nhất 15 phút</li>
-              <li>Chuẩn bị đầy đủ tài liệu: Luận văn in, file thuyết trình</li>
+              <li>Chuẩn bị file thuyết trình</li>
               <li>Ăn mặc lịch sự, trang trọng</li>
               <li>Kiểm tra thiết bị trình chiếu trước khi bắt đầu</li>
             </ul>

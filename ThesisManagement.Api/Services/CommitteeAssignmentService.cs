@@ -383,9 +383,38 @@ namespace ThesisManagement.Api.Services
                         }
 
                         replacements.Add((profile, input.Role, input.IsChair));
-                    }
+                        }
 
-                    await ReplaceCommitteeMembersInternalAsync(committee, replacements, cancellationToken);
+                        // Server-side validation: prevent a lecturer from being member of more than one committee on the same day
+                        if (!committee.DefenseDate.HasValue)
+                        {
+                            return ApiResponse<CommitteeDetailDto>.Fail("Vui lòng đặt ngày bảo vệ trước khi lưu thành viên", StatusCodes.Status400BadRequest);
+                        }
+
+                        var targetDate = committee.DefenseDate.Value.Date;
+                        var lecturerCodes = replacements.Select(r => r.Profile.LecturerCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        if (lecturerCodes.Count > 0)
+                        {
+                            var conflicts = await (from cm in _db.CommitteeMembers.AsNoTracking()
+                                                   join c in _db.Committees.AsNoTracking() on cm.CommitteeCode equals c.CommitteeCode
+                                                   where cm.MemberLecturerCode != null
+                                                         && lecturerCodes.Contains(cm.MemberLecturerCode)
+                                                         && cm.CommitteeCode != committee.CommitteeCode
+                                                         && c.DefenseDate.HasValue && c.DefenseDate.Value.Date == targetDate
+                                                   select new { cm.MemberLecturerCode, c.CommitteeCode }).ToListAsync(cancellationToken);
+
+                            if (conflicts.Count > 0)
+                            {
+                                var grouped = conflicts.GroupBy(x => x.MemberLecturerCode, StringComparer.OrdinalIgnoreCase)
+                                    .Select(g => new { Lecturer = g.Key, Committees = g.Select(v => v.CommitteeCode).Distinct().ToList() })
+                                    .ToList();
+
+                                var msgParts = grouped.Select(g => $"Giảng viên {g.Lecturer} đã được phân vào hội đồng: {string.Join(',', g.Committees)} trong cùng ngày {targetDate:dd/MM/yyyy}");
+                                return ApiResponse<CommitteeDetailDto>.Fail(string.Join("; ", msgParts), StatusCodes.Status409Conflict);
+                            }
+                        }
+
+                        await ReplaceCommitteeMembersInternalAsync(committee, replacements, cancellationToken);
                 }
 
                 var topicsTouched = false;
@@ -554,6 +583,36 @@ namespace ThesisManagement.Api.Services
                     replacements.Add((profile, role, isChairLocal));
                 }
 
+                // Server-side validation: prevent a lecturer from being member of more than one committee on the same day
+                if (!committee.DefenseDate.HasValue)
+                {
+                    return ApiResponse<CommitteeDetailDto>.Fail("Vui lòng đặt ngày bảo vệ trước khi lưu thành viên", StatusCodes.Status400BadRequest);
+                }
+
+                var targetDate = committee.DefenseDate.Value.Date;
+                var lecturerCodes = replacements.Select(r => r.Profile.LecturerCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+                if (lecturerCodes.Count > 0)
+                {
+                    var conflicts = await (from cm in _db.CommitteeMembers.AsNoTracking()
+                                           join c in _db.Committees.AsNoTracking() on cm.CommitteeCode equals c.CommitteeCode
+                                           where cm.MemberLecturerCode != null
+                                                 && lecturerCodes.Contains(cm.MemberLecturerCode)
+                                                 && cm.CommitteeCode != committee.CommitteeCode
+                                                 && c.DefenseDate.HasValue && c.DefenseDate.Value.Date == targetDate
+                                           select new { cm.MemberLecturerCode, c.CommitteeCode }).ToListAsync(cancellationToken);
+
+                    if (conflicts.Count > 0)
+                    {
+                        var grouped = conflicts.GroupBy(x => x.MemberLecturerCode, StringComparer.OrdinalIgnoreCase)
+                            .Select(g => new { Lecturer = g.Key, Committees = g.Select(v => v.CommitteeCode).Distinct().ToList() })
+                            .ToList();
+
+                        var msgParts = grouped.Select(g => $"Giảng viên {g.Lecturer} đã được phân vào hội đồng: {string.Join(',', g.Committees)} trong cùng ngày {targetDate:dd/MM/yyyy}");
+                        return ApiResponse<CommitteeDetailDto>.Fail(string.Join("; ", msgParts), StatusCodes.Status409Conflict);
+                    }
+                }
+
                 await ReplaceCommitteeMembersInternalAsync(committee, replacements, cancellationToken);
                 committee.LastUpdated = DateTime.UtcNow;
 
@@ -631,6 +690,35 @@ namespace ThesisManagement.Api.Services
                     }
 
                     replacements.Add((profile, role, isChair));
+                }
+
+                // Server-side validation: prevent a lecturer from being member of more than one committee on the same day
+                if (!committee.DefenseDate.HasValue)
+                {
+                    return ApiResponse<CommitteeDetailDto>.Fail("Vui lòng đặt ngày bảo vệ trước khi lưu thành viên", StatusCodes.Status400BadRequest);
+                }
+
+                var targetDate = committee.DefenseDate.Value.Date;
+                var lecturerCodesList = replacements.Select(r => r.Profile.LecturerCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (lecturerCodesList.Count > 0)
+                {
+                    var conflicts = await (from cm in _db.CommitteeMembers.AsNoTracking()
+                                           join c in _db.Committees.AsNoTracking() on cm.CommitteeCode equals c.CommitteeCode
+                                           where cm.MemberLecturerCode != null
+                                                 && lecturerCodesList.Contains(cm.MemberLecturerCode)
+                                                 && cm.CommitteeCode != committee.CommitteeCode
+                                                 && c.DefenseDate.HasValue && c.DefenseDate.Value.Date == targetDate
+                                           select new { cm.MemberLecturerCode, c.CommitteeCode }).ToListAsync(cancellationToken);
+
+                    if (conflicts.Count > 0)
+                    {
+                        var grouped = conflicts.GroupBy(x => x.MemberLecturerCode, StringComparer.OrdinalIgnoreCase)
+                            .Select(g => new { Lecturer = g.Key, Committees = g.Select(v => v.CommitteeCode).Distinct().ToList() })
+                            .ToList();
+
+                        var msgParts = grouped.Select(g => $"Giảng viên {g.Lecturer} đã được phân vào hội đồng: {string.Join(',', g.Committees)} trong cùng ngày {targetDate:dd/MM/yyyy}");
+                        return ApiResponse<CommitteeDetailDto>.Fail(string.Join("; ", msgParts), StatusCodes.Status409Conflict);
+                    }
                 }
 
                 await ReplaceCommitteeMembersInternalAsync(committee, replacements, cancellationToken);
