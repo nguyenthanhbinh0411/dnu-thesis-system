@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import StudentNav from "../SideNavs/StudentNav";
 import { Outlet } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
-import { LogOut, ChevronDown, User } from "lucide-react";
+import { LogOut, ChevronDown, User, Menu, X } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
 import type { StudentProfile } from "../../types/studentProfile";
@@ -12,6 +12,7 @@ const StudentLayout: React.FC = () => {
   const [studentImage, setStudentImage] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -61,7 +62,100 @@ const StudentLayout: React.FC = () => {
         fontFamily: "'Inter', 'Poppins', 'Roboto', sans-serif",
       }}
     >
+      <style>
+        {`
+          /* Responsive Styles */
+          @media (max-width: 768px) {
+            .student-sidebar {
+              transform: translateX(-100%);
+              transition: transform 0.3s ease;
+            }
+            
+            .student-sidebar.open {
+              transform: translateX(0);
+            }
+            
+            .student-main {
+              margin-left: 0 !important;
+            }
+            
+            .student-header {
+              left: 0 !important;
+              padding: 10px 12px !important;
+              height: 60px !important;
+            }
+            
+            /* Hide desktop title and icon on mobile */
+            .student-header > div:first-child > div:last-child {
+              display: none !important;
+            }
+            
+            /* Show mobile logo */
+            .student-mobile-logo {
+              display: flex !important;
+            }
+            
+            /* Hide status badge on mobile */
+            .student-status-badge {
+              display: none !important;
+            }
+            
+            .mobile-menu-btn {
+              display: flex !important;
+            }
+            
+            .mobile-close-btn {
+              display: flex !important;
+            }
+            
+            .student-content {
+              padding: 12px !important;
+              margin-bottom: 60px;
+            }
+            
+            /* Avatar section responsive */
+            .student-avatar-section {
+              padding: 6px 12px !important;
+              border-radius: 12px !important;
+              gap: 8px !important;
+            }
+            
+            .student-avatar-section img,
+            .student-avatar-section > div:first-child {
+              width: 32px !important;
+              height: 32px !important;
+            }
+            
+            .student-avatar-section .user-name {
+              font-size: 13px !important;
+              max-width: 100px !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              white-space: nowrap !important;
+            }
+            
+            .student-avatar-section .user-code {
+              display: none !important;
+            }
+          }
+          
+          @media (min-width: 769px) and (max-width: 1024px) {
+            .student-sidebar {
+              width: 220px !important;
+            }
+            
+            .student-main {
+              margin-left: 220px !important;
+            }
+            
+            .student-header {
+              left: 220px !important;
+            }
+          }
+        `}
+      </style>
       <aside
+        className={`student-sidebar ${isMobileMenuOpen ? "open" : ""}`}
         style={{
           width: 260,
           backgroundColor: "#FFFFFF",
@@ -84,8 +178,30 @@ const StudentLayout: React.FC = () => {
             background:
               "linear-gradient(180deg, rgba(243, 112, 33, 0.05) 0%, #FFFFFF 100%)",
             borderBottom: "1px solid #E5E7EB",
+            position: "relative",
           }}
         >
+          {/* Close Button for Mobile */}
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="mobile-close-btn"
+            style={{
+              position: "absolute",
+              top: "16px",
+              right: "16px",
+              display: "none",
+              background: "rgba(243, 112, 33, 0.1)",
+              border: "1px solid rgba(243, 112, 33, 0.2)",
+              borderRadius: "8px",
+              padding: "8px",
+              cursor: "pointer",
+              color: "#F37021",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <X size={20} />
+          </button>
+
           <img
             src="/dnu_logo.png"
             alt="Đại học Đại Nam"
@@ -113,7 +229,7 @@ const StudentLayout: React.FC = () => {
         </div>
 
         <div style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}>
-          <StudentNav />
+          <StudentNav onNavigate={() => setIsMobileMenuOpen(false)} />
         </div>
 
         <footer
@@ -130,6 +246,7 @@ const StudentLayout: React.FC = () => {
       </aside>
 
       <main
+        className="student-main"
         style={{
           flex: 1,
           display: "flex",
@@ -138,6 +255,7 @@ const StudentLayout: React.FC = () => {
         }}
       >
         <header
+          className="student-header"
           style={{
             backgroundColor: "#FFFFFF",
             padding: "18px 36px",
@@ -157,6 +275,35 @@ const StudentLayout: React.FC = () => {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              style={{
+                display: "none",
+                background: "rgba(243, 112, 33, 0.1)",
+                border: "1px solid rgba(243, 112, 33, 0.2)",
+                borderRadius: "8px",
+                padding: "8px",
+                cursor: "pointer",
+                color: "#F37021",
+              }}
+              className="mobile-menu-btn"
+            >
+              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            {/* Mobile Logo - Only visible on mobile */}
+            <img
+              src="/logo-ios.png"
+              alt="Đại học Đại Nam"
+              className="student-mobile-logo"
+              style={{
+                display: "none",
+                height: "36px",
+                width: "auto",
+              }}
+            />
+
             <div
               style={{
                 width: "40px",
@@ -199,7 +346,9 @@ const StudentLayout: React.FC = () => {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {/* Status Badge - Hidden on mobile */}
             <div
+              className="student-status-badge"
               style={{
                 padding: "8px 16px",
                 borderRadius: "20px",
@@ -234,6 +383,7 @@ const StudentLayout: React.FC = () => {
             <div style={{ position: "relative" }} data-dropdown>
               <button
                 onClick={() => setShowDropdown(!showDropdown)}
+                className="student-avatar-section"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -370,6 +520,7 @@ const StudentLayout: React.FC = () => {
                     {/* User Info */}
                     <div style={{ flex: 1 }}>
                       <div
+                        className="user-name"
                         style={{
                           fontSize: "16px",
                           fontWeight: 700,
@@ -381,6 +532,7 @@ const StudentLayout: React.FC = () => {
                         {profile?.fullName || "Sinh viên"}
                       </div>
                       <div
+                        className="user-code"
                         style={{
                           fontSize: "13px",
                           color: "#64748b",
@@ -483,6 +635,7 @@ const StudentLayout: React.FC = () => {
         </header>
 
         <div
+          className="student-content"
           style={{
             flex: 1,
             padding: 20,

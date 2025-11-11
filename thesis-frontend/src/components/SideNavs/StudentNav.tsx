@@ -11,7 +11,11 @@ import {
 import "./SideNav.css";
 import "./StudentNav.css";
 
-const StudentNav: React.FC = () => {
+interface StudentNavProps {
+  onNavigate?: () => void;
+}
+
+const StudentNav: React.FC<StudentNavProps> = ({ onNavigate }) => {
   const navItems = [
     { path: "/student", label: "Trang chủ", icon: <Home size={18} /> },
     {
@@ -56,6 +60,7 @@ const StudentNav: React.FC = () => {
               to={item.path}
               end
               className={({ isActive }) => (isActive ? "active" : undefined)}
+              onClick={onNavigate}
             >
               <span className="icon">{item.icon}</span>
               <span className="label">{item.label}</span>

@@ -37,7 +37,9 @@ const TopicRegistration: React.FC = () => {
   const [filteredLecturers, setFilteredLecturers] = useState<LecturerProfile[]>(
     []
   );
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [defaultDepartment, setDefaultDepartment] = useState<Department | null>(
+    null
+  );
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagInfo, setSelectedTagInfo] = useState<Tag | null>(null);
   const [selectedTagIDs, setSelectedTagIDs] = useState<number[]>([]);
@@ -85,14 +87,27 @@ const TopicRegistration: React.FC = () => {
         await Promise.all([
           fetchData("/CatalogTopics/get-list?AssignedStatus=Ch%C6%B0a%20giao"),
           fetchData("/LecturerProfiles/get-list"),
-          fetchData("/Departments/get-list"),
+          fetchData("/Departments/get-detail/DPT_CNTT"),
           fetchData("/Tags/list"),
         ]);
 
       setCatalogTopics((catalogRes as ApiResponse<CatalogTopic[]>)?.data || []);
       setLecturers((lecturerRes as ApiResponse<LecturerProfile[]>)?.data || []);
 
-      setDepartments((departmentRes as ApiResponse<Department[]>)?.data || []);
+      const cnttDept = (departmentRes as ApiResponse<Department>)?.data;
+      if (cnttDept) {
+        setDefaultDepartment(cnttDept);
+        // Set department in form data
+        setFormData((prev) => ({
+          ...prev,
+          departmentID: cnttDept.departmentID,
+        }));
+        setEditFormData((prev) => ({
+          ...prev,
+          departmentID: cnttDept.departmentID,
+        }));
+      }
+
       setTags((tagRes as ApiResponse<Tag[]>)?.data || []);
 
       // Fetch topic code template
@@ -355,7 +370,7 @@ const TopicRegistration: React.FC = () => {
       setFilteredLecturers([]);
       setSelectedTagIDs([]);
     }
-  };  
+  };
 
   // Filter lecturers based on selected tags for self-proposed topics and edit mode
   useEffect(() => {
@@ -531,7 +546,7 @@ const TopicRegistration: React.FC = () => {
     try {
       // Validate required fields
       if (registrationType === "self" && selectedTagIDs.length === 0) {
-        setError("Vui lòng chọn ít nhất một chuyên ngành");
+        setError("Vui lòng chọn ít nhất một Tag");
         return;
       }
 
@@ -548,9 +563,7 @@ const TopicRegistration: React.FC = () => {
       const selectedLecturer = lecturers.find(
         (l) => l.lecturerProfileID === formData.supervisorLecturerProfileID
       );
-      const selectedDepartment = departments.find(
-        (d) => d.departmentID === formData.departmentID
-      );
+      const selectedDepartment = defaultDepartment;
       const selectedTag = tags.find((t) => t.tagID === formData.tagID);
       const selectedCatalogTopic = catalogTopics.find(
         (c) => c.catalogTopicID === formData.catalogTopicID
@@ -697,7 +710,7 @@ const TopicRegistration: React.FC = () => {
 
       // Validate required fields
       if (selectedTagIDs.length === 0) {
-        setError("Vui lòng chọn ít nhất một chuyên ngành");
+        setError("Vui lòng chọn ít nhất một Tag");
         return;
       }
 
@@ -705,9 +718,7 @@ const TopicRegistration: React.FC = () => {
       const selectedLecturer = lecturers.find(
         (l) => l.lecturerProfileID === editFormData.supervisorLecturerProfileID
       );
-      const selectedDepartment = departments.find(
-        (d) => d.departmentID === editFormData.departmentID
-      );
+      const selectedDepartment = defaultDepartment;
       const selectedTag = tags.find((t) => selectedTagIDs.includes(t.tagID));
       const selectedCatalogTopic = catalogTopics.find(
         (c) => c.catalogTopicID === editFormData.catalogTopicID
@@ -1072,34 +1083,21 @@ const TopicRegistration: React.FC = () => {
               />
               Khoa
             </label>
-            <select
-              value={editFormData.departmentID || ""}
-              onChange={(e) =>
-                setEditFormData({
-                  ...editFormData,
-                  departmentID: Number(e.target.value),
-                })
-              }
-              required
+            <input
+              type="text"
+              value={defaultDepartment?.name || "Công nghệ thông tin"}
+              readOnly
               style={{
                 width: "100%",
                 padding: "12px 16px",
                 border: "2px solid #ddd",
                 borderRadius: "8px",
                 fontSize: "16px",
-                backgroundColor: "#fff",
-                transition: "border-color 0.3s ease",
+                backgroundColor: "#f5f5f5",
+                color: "#666",
+                cursor: "not-allowed",
               }}
-              onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-              onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-            >
-              <option value="">-- Chọn khoa --</option>
-              {departments.map((dept) => (
-                <option key={dept.departmentID} value={dept.departmentID}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Tags */}
@@ -1117,7 +1115,7 @@ const TopicRegistration: React.FC = () => {
                 size={16}
                 style={{ marginRight: "8px", verticalAlign: "middle" }}
               />
-              Chuyên ngành *
+              Tags *
             </label>
             <div
               style={{
@@ -1134,7 +1132,7 @@ const TopicRegistration: React.FC = () => {
                   color: "#666",
                 }}
               >
-                Chọn một hoặc nhiều chuyên ngành:
+                Chọn một hoặc nhiều Tags:
               </div>
               <div
                 style={{
@@ -1192,7 +1190,7 @@ const TopicRegistration: React.FC = () => {
                     color: "#f44336",
                   }}
                 >
-                  Vui lòng chọn ít nhất một chuyên ngành
+                  Vui lòng chọn ít nhất một Tag
                 </div>
               )}
             </div>
@@ -1660,15 +1658,15 @@ const TopicRegistration: React.FC = () => {
                   }}
                 >
                   {(() => {
-                    // Prefer department name by ID, then try to match by departmentCode, then fallback to raw code
-                    const byId = departments.find(
-                      (d) => d.departmentID === existingTopic.departmentID
-                    )?.name;
-                    if (byId) return byId;
-                    const byCode = departments.find(
-                      (d) => d.departmentCode === existingTopic.departmentCode
-                    )?.name;
-                    return byCode || existingTopic.departmentCode || "Chưa có";
+                    // Use default department name if it matches, otherwise show existing topic's department
+                    if (
+                      defaultDepartment &&
+                      defaultDepartment.departmentID ===
+                        existingTopic.departmentID
+                    ) {
+                      return defaultDepartment.name;
+                    }
+                    return existingTopic.departmentCode || "Chưa có";
                   })()}
                 </div>
               </div>
@@ -1683,7 +1681,7 @@ const TopicRegistration: React.FC = () => {
                     marginBottom: "4px",
                   }}
                 >
-                  Chuyên ngành
+                  Tags
                 </label>
                 <div
                   style={{
@@ -2201,7 +2199,7 @@ const TopicRegistration: React.FC = () => {
               size={16}
               style={{ marginRight: "8px", verticalAlign: "middle" }}
             />
-            Chuyên ngành *
+            Tags *
           </label>
           {registrationType === "catalog" && selectedTagInfo ? (
             <div
@@ -2243,7 +2241,7 @@ const TopicRegistration: React.FC = () => {
                   color: "#666",
                 }}
               >
-                Chọn một hoặc nhiều chuyên ngành:
+                Chọn một hoặc nhiều Tags:
               </div>
               <div
                 style={{
@@ -2308,7 +2306,7 @@ const TopicRegistration: React.FC = () => {
                     color: "#f44336",
                   }}
                 >
-                  Vui lòng chọn ít nhất một chuyên ngành
+                  Vui lòng chọn ít nhất một Tag
                 </div>
               )}
             </div>
@@ -2447,44 +2445,21 @@ const TopicRegistration: React.FC = () => {
             />
             Khoa *
           </label>
-          <select
-            value={
-              isEditing
-                ? editFormData.departmentID || ""
-                : formData.departmentID || ""
-            }
-            onChange={(e) =>
-              isEditing
-                ? setEditFormData({
-                    ...editFormData,
-                    departmentID: Number(e.target.value),
-                  })
-                : setFormData({
-                    ...formData,
-                    departmentID: Number(e.target.value),
-                  })
-            }
-            required
-            disabled={false}
+          <input
+            type="text"
+            value={defaultDepartment?.name || "Công nghệ thông tin"}
+            readOnly
             style={{
               width: "100%",
               padding: "12px 16px",
               border: "2px solid #ddd",
               borderRadius: "8px",
               fontSize: "16px",
-              backgroundColor: "#fff",
-              transition: "border-color 0.3s ease",
+              backgroundColor: "#f5f5f5",
+              color: "#666",
+              cursor: "not-allowed",
             }}
-            onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-            onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-          >
-            <option value="">-- Chọn khoa --</option>
-            {departments.map((dept) => (
-              <option key={dept.departmentID} value={dept.departmentID}>
-                {dept.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         {/* Submit Button */}

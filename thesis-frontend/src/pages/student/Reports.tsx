@@ -10,13 +10,14 @@ import {
   Mail,
   Award,
   Users,
-  Target,
   Hash,
   Tag as TagIcon,
   CheckCircle2,
   AlertCircle,
   X,
-  TrendingUp,
+  Building,
+  Eye,
+  MessageSquare,
 } from "lucide-react";
 import { useToast } from "../../context/useToast";
 import { fetchData } from "../../api/fetchData";
@@ -26,8 +27,11 @@ import type { ApiResponse } from "../../types/api";
 import type { SubmissionFile } from "../../types/submissionFile";
 import type { Report } from "../../types/report";
 import type { Topic } from "../../types/topic";
-import type { LecturerProfile, Milestone } from "../../types/lecturer";
-import type { Tag } from "../../types/tag";
+import type { LecturerProfile } from "../../types/lecturer";
+
+import type { Tag, LecturerTag } from "../../types/tag";
+import type { Department } from "../../types/department";
+import type { ProgressMilestone } from "../../types/progressMilestone";
 
 const Reports: React.FC = () => {
   const auth = useAuth();
@@ -45,11 +49,20 @@ const Reports: React.FC = () => {
   const [lecturerProfile, setLecturerProfile] =
     useState<LecturerProfile | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [topicTags, setTopicTags] = useState<Tag[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [lecturerTagNames, setLecturerTagNames] = useState<string[]>([]);
+  const [progressMilestones, setProgressMilestones] = useState<
+    ProgressMilestone[]
+  >([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showLecturerTagTooltip, setShowLecturerTagTooltip] = useState(false);
+  const [showTopicTagTooltip, setShowTopicTagTooltip] = useState(false);
+  const [showReportDetailModal, setShowReportDetailModal] = useState(false);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [validationErrors, setValidationErrors] = useState<{
     [key: string]: string;
   }>({});
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const navigate = useNavigate();
 
   // Fetch topic and lecturer info
@@ -67,21 +80,95 @@ const Reports: React.FC = () => {
           const userTopic = topicsRes.data[0]; // Get the first topic
           setTopic(userTopic);
 
+          // Fetch topic tags
+          try {
+            let topicTags: Tag[] = [];
+
+            if (userTopic.type === "CATALOG") {
+              // For catalog topics, get tags from CatalogTopicTags
+              const catalogTopicTagsRes = await fetchData(
+                `/CatalogTopicTags/list?CatalogTopicCode=${userTopic.topicCode}`
+              );
+              const catalogTopicTags =
+                (catalogTopicTagsRes as ApiResponse<Record<string, unknown>[]>)
+                  ?.data || [];
+
+              if (catalogTopicTags.length > 0) {
+                // Get tag details for each tag
+                const tagPromises = catalogTopicTags.map(
+                  async (record: Record<string, unknown>) => {
+                    try {
+                      const tagRes = await fetchData(
+                        `/Tags/get-by-code/${record.tagCode}`
+                      );
+                      return (tagRes as ApiResponse<Tag>)?.data;
+                    } catch {
+                      return null;
+                    }
+                  }
+                );
+
+                const tagResults = await Promise.all(tagPromises);
+                topicTags = tagResults.filter(
+                  (tag): tag is Tag => tag !== null
+                );
+              }
+            } else {
+              // For self-proposed topics, get tags from TopicTags
+              const topicTagsRes = await fetchData(
+                `/TopicTags/by-topic/${userTopic.topicCode}`
+              );
+              const topicTagRecords =
+                (topicTagsRes as ApiResponse<Record<string, unknown>[]>)
+                  ?.data || [];
+
+              if (topicTagRecords.length > 0) {
+                // Get tag details for each tag
+                const tagPromises = topicTagRecords.map(
+                  async (record: Record<string, unknown>) => {
+                    try {
+                      const tagRes = await fetchData(
+                        `/Tags/get-by-code/${record.tagCode}`
+                      );
+                      return (tagRes as ApiResponse<Tag>)?.data;
+                    } catch {
+                      return null;
+                    }
+                  }
+                );
+
+                const tagResults = await Promise.all(tagPromises);
+                topicTags = tagResults.filter(
+                  (tag): tag is Tag => tag !== null
+                );
+              }
+            }
+
+            setTopicTags(topicTags);
+          } catch (tagError) {
+            console.error("Error fetching topic tags:", tagError);
+            setTopicTags([]);
+          }
+
+          // Fetch progress milestones
+          try {
+            const progressRes = await fetchData(
+              `/ProgressMilestones/get-list?TopicCode=${userTopic.topicCode}`
+            );
+            const progressData =
+              (progressRes as ApiResponse<ProgressMilestone[]>)?.data || [];
+            setProgressMilestones(progressData);
+          } catch (progressError) {
+            console.error("Error fetching progress milestones:", progressError);
+            setProgressMilestones([]);
+          }
+
           // Check if topic is pending approval
           if (userTopic.status === "Đang chờ") {
             setCanSubmit(false);
             setSubmitMessage(
               "Đề tài của bạn chưa được xét duyệt. Vui lòng chờ giảng viên duyệt đề tài trước khi nộp báo cáo."
             );
-          }
-
-          // Fetch milestones for the topic
-          const milestonesRes = (await fetchData(
-            `/ProgressMilestones/get-list?TopicCode=${userTopic.topicCode}`
-          )) as ApiResponse<Milestone[]>;
-
-          if (milestonesRes.data) {
-            setMilestones(milestonesRes.data);
           }
 
           // Fetch lecturer profile if supervisor exists
@@ -119,6 +206,89 @@ const Reports: React.FC = () => {
 
     fetchTopicAndLecturerInfo();
   }, [auth.user?.userCode]);
+
+  // Fetch departments
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const deptRes = await fetchData("/Departments/get-list");
+        setDepartments((deptRes as ApiResponse<Department[]>)?.data || []);
+      } catch (error) {
+        console.error("Error fetching departments:", error);
+      }
+    };
+
+    fetchDepartments();
+  }, []);
+
+  // Fetch lecturer tags when lecturer profile is available
+  useEffect(() => {
+    const fetchLecturerTags = async () => {
+      if (!lecturerProfile?.lecturerCode) {
+        setLecturerTagNames([]);
+        return;
+      }
+
+      try {
+        // Get lecturer tags
+        const lecturerTagRes = await fetchData(
+          `/LecturerTags/list?LecturerCode=${lecturerProfile.lecturerCode}`
+        );
+        const lecturerTagsData =
+          (lecturerTagRes as ApiResponse<LecturerTag[]>)?.data || [];
+
+        if (lecturerTagsData.length === 0) {
+          setLecturerTagNames([]);
+          return;
+        }
+
+        // Get tag names for each tag code
+        const tagNamesPromises = lecturerTagsData.map(async (lt) => {
+          try {
+            const tagRes = await fetchData(`/Tags/list?TagCode=${lt.tagCode}`);
+            const tagData = (tagRes as ApiResponse<Tag[]>)?.data || [];
+            return tagData.length > 0 ? tagData[0].tagName : lt.tagCode;
+          } catch (err) {
+            console.error(`Error loading tag ${lt.tagCode}:`, err);
+            return lt.tagCode;
+          }
+        });
+
+        const names = await Promise.all(tagNamesPromises);
+        setLecturerTagNames(names);
+      } catch (err) {
+        console.error("Error loading lecturer tag names:", err);
+        setLecturerTagNames([]);
+      }
+    };
+
+    if (lecturerProfile?.lecturerCode) {
+      fetchLecturerTags();
+    }
+  }, [lecturerProfile?.lecturerCode]);
+
+  // Close tooltips when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // Prevent unused variable warning
+      void event;
+      if (showLecturerTagTooltip || showTopicTagTooltip) {
+        setShowLecturerTagTooltip(false);
+        setShowTopicTagTooltip(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showLecturerTagTooltip, showTopicTagTooltip]);
+
+  // Helper function to get department name
+  const getDepartmentName = (departmentCode: string) => {
+    const dept = departments.find((d) => d.departmentCode === departmentCode);
+    return dept?.name || departmentCode;
+  };
 
   // Fetch submission history and check submission permissions
   useEffect(() => {
@@ -392,6 +562,11 @@ const Reports: React.FC = () => {
         ((submissionData as Record<string, unknown>)
           ?.submissionCode as string) || "";
 
+      // Find the current active milestone (state: "Đang thực hiện")
+      const currentMilestone = progressMilestones.find(
+        (milestone) => milestone.state === "Đang thực hiện"
+      );
+
       // Create submission payload
       const submissionPayload = {
         ...submissionData,
@@ -402,8 +577,8 @@ const Reports: React.FC = () => {
         lecturerProfileID: lecturerProfile?.lecturerProfileID || null,
         lecturerCode: lecturerProfile?.lecturerCode || null,
         submittedAt: new Date().toISOString(),
-        milestoneCode: milestones.length > 0 ? milestones[0].milestoneCode : "",
-        milestoneID: milestones.length > 0 ? milestones[0].milestoneID : null,
+        milestoneCode: currentMilestone?.milestoneCode || "",
+        milestoneID: currentMilestone?.milestoneID || null,
       };
 
       // Create submission
@@ -598,6 +773,8 @@ const Reports: React.FC = () => {
           >
             <div
               style={{
+                minWidth: "48px",
+                minHeight: "48px",
                 width: "48px",
                 height: "48px",
                 borderRadius: "16px",
@@ -605,6 +782,7 @@ const Reports: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               <FileText size={24} color="#fff" />
@@ -612,6 +790,8 @@ const Reports: React.FC = () => {
             Thông tin đề tài và giảng viên hướng dẫn
             <div
               style={{
+                minWidth: "48px",
+                minHeight: "48px",
                 width: "48px",
                 height: "48px",
                 borderRadius: "16px",
@@ -619,6 +799,7 @@ const Reports: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               <UserIcon size={24} color="#fff" />
@@ -665,6 +846,8 @@ const Reports: React.FC = () => {
                 >
                   <div
                     style={{
+                      minWidth: "40px",
+                      minHeight: "40px",
                       width: "40px",
                       height: "40px",
                       borderRadius: "12px",
@@ -672,6 +855,7 @@ const Reports: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      flexShrink: 0,
                     }}
                   >
                     <BookOpen size={20} color="#fff" />
@@ -788,7 +972,7 @@ const Reports: React.FC = () => {
                         border: "1px solid #e2e8f0",
                       }}
                     >
-                      <Target size={14} color="#64748b" />
+                      <BookOpen size={14} color="#64748b" />
                       <div>
                         <div
                           style={{
@@ -812,49 +996,190 @@ const Reports: React.FC = () => {
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      padding: "12px",
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    {topic.status === "Đã duyệt" ? (
-                      <CheckCircle2 size={16} color="#22c55e" />
-                    ) : (
-                      <AlertCircle size={16} color="#f59e0b" />
-                    )}
-                    <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "10px",
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      {topic.status === "Đã duyệt" ? (
+                        <CheckCircle2 size={14} color="#22c55e" />
+                      ) : (
+                        <AlertCircle size={14} color="#f59e0b" />
+                      )}
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#64748b",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Trạng thái
+                        </div>
+                        <span
+                          style={{
+                            padding: "3px 8px",
+                            backgroundColor:
+                              topic.status === "Đã duyệt"
+                                ? "#dcfce7"
+                                : "#fef3c7",
+                            color:
+                              topic.status === "Đã duyệt"
+                                ? "#166534"
+                                : "#92400e",
+                            borderRadius: "16px",
+                            fontSize: "11px",
+                            fontWeight: "600",
+                            display: "inline-block",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {topic.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {topicTags.length > 0 && (
                       <div
                         style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "600",
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "10px",
+                          background: "#fff",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
                         }}
                       >
-                        Trạng thái
+                        <TagIcon size={14} color="#8b5cf6" />
+                        <div>
+                          <div
+                            style={{
+                              fontSize: "11px",
+                              color: "#64748b",
+                              fontWeight: "600",
+                              marginBottom: "4px",
+                            }}
+                          >
+                            Tags đề tài
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "4px",
+                            }}
+                          >
+                            {topicTags.length > 0 ? (
+                              topicTags.slice(0, 2).map((tag) => (
+                                <span
+                                  key={tag.tagID}
+                                  style={{
+                                    padding: "2px 6px",
+                                    backgroundColor: "#f3e8ff",
+                                    color: "#7c3aed",
+                                    borderRadius: "8px",
+                                    fontSize: "10px",
+                                    fontWeight: "600",
+                                    border: "1px solid #d8b4fe",
+                                  }}
+                                >
+                                  {tag.tagName}
+                                </span>
+                              ))
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#64748b",
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                Chưa có tags
+                              </span>
+                            )}
+                            {topicTags.length > 2 && (
+                              <span
+                                onClick={() =>
+                                  setShowTopicTagTooltip(!showTopicTagTooltip)
+                                }
+                                style={{
+                                  fontSize: "10px",
+                                  color: "#64748b",
+                                  fontStyle: "italic",
+                                  cursor: "pointer",
+                                  position: "relative",
+                                  padding: "2px 4px",
+                                  borderRadius: "4px",
+                                  transition: "all 0.2s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor =
+                                    "#f1f5f9";
+                                  e.currentTarget.style.color = "#475569";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor =
+                                    "transparent";
+                                  e.currentTarget.style.color = "#64748b";
+                                }}
+                              >
+                                +{topicTags.length - 2} khác
+                                {showTopicTagTooltip && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      bottom: "100%",
+                                      left: "0",
+                                      backgroundColor: "#1f2937",
+                                      color: "#ffffff",
+                                      padding: "8px 12px",
+                                      borderRadius: "6px",
+                                      fontSize: "12px",
+                                      fontWeight: "500",
+                                      whiteSpace: "nowrap",
+                                      zIndex: 1000,
+                                      boxShadow:
+                                        "0 4px 12px rgba(0, 0, 0, 0.15)",
+                                      border: "1px solid #374151",
+                                      marginBottom: "4px",
+                                      maxWidth: "200px",
+                                      wordWrap: "break-word",
+                                    }}
+                                  >
+                                    {topicTags
+                                      .slice(2)
+                                      .map((tag) => tag.tagName)
+                                      .join(", ")}
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        top: "100%",
+                                        left: "10px",
+                                        width: "0",
+                                        height: "0",
+                                        borderLeft: "6px solid transparent",
+                                        borderRight: "6px solid transparent",
+                                        borderTop: "6px solid #1f2937",
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <span
-                        style={{
-                          padding: "4px 12px",
-                          backgroundColor:
-                            topic.status === "Đã duyệt" ? "#dcfce7" : "#fef3c7",
-                          color:
-                            topic.status === "Đã duyệt" ? "#166534" : "#92400e",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          display: "inline-block",
-                          marginTop: "4px",
-                        }}
-                      >
-                        {topic.status}
-                      </span>
-                    </div>
+                    )}
                   </div>
 
                   <div
@@ -927,6 +1252,8 @@ const Reports: React.FC = () => {
                 >
                   <div
                     style={{
+                      minWidth: "40px",
+                      minHeight: "40px",
                       width: "40px",
                       height: "40px",
                       borderRadius: "12px",
@@ -934,6 +1261,7 @@ const Reports: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      flexShrink: 0,
                     }}
                   >
                     <UserIcon size={20} color="#fff" />
@@ -1114,6 +1442,176 @@ const Reports: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Department and Lecturer Tags */}
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "12px",
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <Building size={16} color="#64748b" />
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#64748b",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Khoa
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#1a1a1a",
+                            fontWeight: "500",
+                          }}
+                        >
+                          {getDepartmentName(lecturerProfile.departmentCode)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "12px",
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <TagIcon size={16} color="#64748b" />
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#64748b",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Chuyên môn
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "4px",
+                            marginTop: "4px",
+                          }}
+                        >
+                          {lecturerTagNames.length > 0 ? (
+                            lecturerTagNames
+                              .slice(0, 2)
+                              .map((tagName, index) => (
+                                <span
+                                  key={index}
+                                  style={{
+                                    padding: "2px 6px",
+                                    backgroundColor: "#f3e8ff",
+                                    color: "#7c3aed",
+                                    borderRadius: "8px",
+                                    fontSize: "10px",
+                                    fontWeight: "600",
+                                    border: "1px solid #d8b4fe",
+                                  }}
+                                >
+                                  {tagName}
+                                </span>
+                              ))
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748b",
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Chưa cập nhật
+                            </span>
+                          )}
+                          {lecturerTagNames.length > 2 && (
+                            <span
+                              onClick={() =>
+                                setShowLecturerTagTooltip(
+                                  !showLecturerTagTooltip
+                                )
+                              }
+                              style={{
+                                fontSize: "10px",
+                                color: "#64748b",
+                                fontStyle: "italic",
+                                cursor: "pointer",
+                                position: "relative",
+                                padding: "2px 4px",
+                                borderRadius: "4px",
+                                transition: "all 0.2s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor =
+                                  "#f1f5f9";
+                                e.currentTarget.style.color = "#475569";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor =
+                                  "transparent";
+                                e.currentTarget.style.color = "#64748b";
+                              }}
+                            >
+                              +{lecturerTagNames.length - 2} khác
+                              {showLecturerTagTooltip && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: "100%",
+                                    left: "0",
+                                    backgroundColor: "#1f2937",
+                                    color: "#ffffff",
+                                    padding: "8px 12px",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                    fontWeight: "500",
+                                    whiteSpace: "nowrap",
+                                    zIndex: 1000,
+                                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                                    border: "1px solid #374151",
+                                    marginBottom: "4px",
+                                    maxWidth: "200px",
+                                    wordWrap: "break-word",
+                                  }}
+                                >
+                                  {lecturerTagNames.slice(2).join(", ")}
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "100%",
+                                      left: "10px",
+                                      width: "0",
+                                      height: "0",
+                                      borderLeft: "6px solid transparent",
+                                      borderRight: "6px solid transparent",
+                                      borderTop: "6px solid #1f2937",
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Guide Quota Progress */}
                   <div
                     style={{
@@ -1226,7 +1724,7 @@ const Reports: React.FC = () => {
                           gap: "6px",
                         }}
                       >
-                        <Target size={14} color="#64748b" />
+                        <Users size={14} color="#64748b" />
                         Chuyên môn
                       </div>
                       <div
@@ -1308,6 +1806,8 @@ const Reports: React.FC = () => {
           >
             <div
               style={{
+                minWidth: "56px",
+                minHeight: "56px",
                 width: "56px",
                 height: "56px",
                 borderRadius: "16px",
@@ -1315,6 +1815,7 @@ const Reports: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               <Upload size={28} color="#fff" />
@@ -1518,6 +2019,8 @@ const Reports: React.FC = () => {
                 >
                   <div
                     style={{
+                      minWidth: "64px",
+                      minHeight: "64px",
                       width: "64px",
                       height: "64px",
                       borderRadius: "50%",
@@ -1529,6 +2032,7 @@ const Reports: React.FC = () => {
                       justifyContent: "center",
                       margin: "0 auto 20px",
                       transition: "all 0.3s ease",
+                      flexShrink: 0,
                     }}
                   >
                     <Upload size={32} color={isDragOver ? "#fff" : "#6b7280"} />
@@ -1580,6 +2084,8 @@ const Reports: React.FC = () => {
                 >
                   <div
                     style={{
+                      minWidth: "48px",
+                      minHeight: "48px",
                       width: "48px",
                       height: "48px",
                       borderRadius: "12px",
@@ -1587,6 +2093,7 @@ const Reports: React.FC = () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
+                      flexShrink: 0,
                     }}
                   >
                     <FileText size={24} color="#fff" />
@@ -1617,6 +2124,8 @@ const Reports: React.FC = () => {
                     type="button"
                     onClick={removeFile}
                     style={{
+                      minWidth: "32px",
+                      minHeight: "32px",
                       width: "32px",
                       height: "32px",
                       borderRadius: "8px",
@@ -1628,6 +2137,7 @@ const Reports: React.FC = () => {
                       alignItems: "center",
                       justifyContent: "center",
                       transition: "all 0.2s ease",
+                      flexShrink: 0,
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.backgroundColor = "#b91c1c";
@@ -1686,12 +2196,17 @@ const Reports: React.FC = () => {
 
             <button
               type="submit"
-              disabled={submitting || !canSubmit || !selectedFile}
+              disabled={
+                submitting || !canSubmit || !selectedFile || !reportTitle.trim()
+              }
               style={{
                 width: "100%",
                 padding: "16px",
-                backgroundColor:
-                  submitting || !canSubmit || !selectedFile
+                background:
+                  submitting ||
+                  !canSubmit ||
+                  !selectedFile ||
+                  !reportTitle.trim()
                     ? "#9ca3af"
                     : "linear-gradient(135deg, #f37021, #ff8c42)",
                 color: "#fff",
@@ -1700,7 +2215,10 @@ const Reports: React.FC = () => {
                 fontSize: "16px",
                 fontWeight: "700",
                 cursor:
-                  submitting || !canSubmit || !selectedFile
+                  submitting ||
+                  !canSubmit ||
+                  !selectedFile ||
+                  !reportTitle.trim()
                     ? "not-allowed"
                     : "pointer",
                 transition: "all 0.3s ease",
@@ -1709,37 +2227,45 @@ const Reports: React.FC = () => {
                 justifyContent: "center",
                 gap: "12px",
                 boxShadow:
-                  submitting || !canSubmit || !selectedFile
+                  submitting ||
+                  !canSubmit ||
+                  !selectedFile ||
+                  !reportTitle.trim()
                     ? "none"
                     : "0 4px 12px rgba(243, 112, 33, 0.3)",
                 transform: "translateY(0)",
               }}
               onMouseEnter={(e) => {
-                if (!(submitting || !canSubmit || !selectedFile)) {
+                if (
+                  !(
+                    submitting ||
+                    !canSubmit ||
+                    !selectedFile ||
+                    !reportTitle.trim()
+                  )
+                ) {
                   e.currentTarget.style.transform = "translateY(-2px)";
                   e.currentTarget.style.boxShadow =
                     "0 6px 16px rgba(243, 112, 33, 0.4)";
                 }
               }}
               onMouseLeave={(e) => {
-                if (!(submitting || !canSubmit || !selectedFile)) {
+                if (
+                  !(
+                    submitting ||
+                    !canSubmit ||
+                    !selectedFile ||
+                    !reportTitle.trim()
+                  )
+                ) {
                   e.currentTarget.style.transform = "translateY(0)";
                   e.currentTarget.style.boxShadow =
                     "0 4px 12px rgba(243, 112, 33, 0.3)";
                 }
               }}
+              title={submitting ? "Đang nộp báo cáo..." : "Nộp báo cáo"}
             >
-              {submitting ? (
-                <>
-                  <Clock size={20} />
-                  Đang nộp báo cáo...
-                </>
-              ) : (
-                <>
-                  <Upload size={20} />
-                  Nộp báo cáo
-                </>
-              )}
+              {submitting ? <Clock size={24} /> : <Upload size={24} />}
             </button>
           </form>
         </div>
@@ -1754,6 +2280,9 @@ const Reports: React.FC = () => {
             border: "1px solid #f1f5f9",
             position: "relative",
             overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "1000px",
           }}
         >
           <div
@@ -1779,6 +2308,8 @@ const Reports: React.FC = () => {
           >
             <div
               style={{
+                minWidth: "56px",
+                minHeight: "56px",
                 width: "56px",
                 height: "56px",
                 borderRadius: "16px",
@@ -1786,6 +2317,7 @@ const Reports: React.FC = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               <Calendar size={28} color="#fff" />
@@ -1813,418 +2345,754 @@ const Reports: React.FC = () => {
             </div>
           </div>
 
-          {loading ? (
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-            >
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  style={{
-                    height: "140px",
-                    borderRadius: "16px",
-                    background:
-                      "linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)",
-                    backgroundSize: "200px 100%",
-                    animation: "shimmer 1.5s infinite",
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-                maxHeight: "800px",
-                overflowY: "auto",
-                paddingRight: "8px",
-              }}
-            >
-              {reports.length === 0 ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: "60px 20px",
-                    color: "#64748b",
-                  }}
-                >
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              paddingRight: "8px",
+            }}
+          >
+            {loading ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                }}
+              >
+                {[1, 2, 3].map((i) => (
                   <div
+                    key={i}
                     style={{
-                      width: "80px",
-                      height: "80px",
-                      borderRadius: "50%",
-                      background: "linear-gradient(135deg, #f1f5f9, #e2e8f0)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      margin: "0 auto 20px",
-                    }}
-                  >
-                    <FileText size={32} color="#94a3b8" />
-                  </div>
-                  <h3
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: "600",
-                      color: "#374151",
-                      margin: "0 0 8px 0",
-                    }}
-                  >
-                    Chưa có báo cáo nào
-                  </h3>
-                  <p style={{ fontSize: "14px", margin: 0 }}>
-                    Bạn chưa nộp báo cáo nào. Hãy nộp báo cáo đầu tiên của bạn!
-                  </p>
-                </div>
-              ) : (
-                reports.map((report) => (
-                  <div
-                    key={report.submissionID}
-                    style={{
-                      padding: "24px",
-                      border: `2px solid ${getStatusColor(
-                        report.lecturerState
-                      )}`,
+                      height: "140px",
                       borderRadius: "16px",
-                      backgroundColor:
-                        report.lecturerState?.toLowerCase() === "đã duyệt" ||
-                        report.lecturerState?.toLowerCase() === "approved" ||
-                        report.lecturerState?.toLowerCase() === "accepted"
-                          ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
-                          : report.lecturerState?.toLowerCase() ===
-                              "chờ duyệt" ||
-                            report.lecturerState?.toLowerCase() === "pending"
-                          ? "linear-gradient(135deg, #fff5f0, #fed7aa)"
-                          : report.lecturerState?.toLowerCase() === "revision"
-                          ? "linear-gradient(135deg, #fefce8, #fde68a)"
-                          : "linear-gradient(135deg, #fef2f2, #fecaca)",
-                      transition: "all 0.3s ease",
-                      position: "relative",
-                      overflow: "hidden",
+                      background:
+                        "linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)",
+                      backgroundSize: "200px 100%",
+                      animation: "shimmer 1.5s infinite",
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                }}
+              >
+                {reports.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "60px 20px",
+                      color: "#64748b",
                     }}
                   >
                     <div
                       style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: "4px",
-                        background: `linear-gradient(90deg, ${getStatusColor(
-                          report.lecturerState
-                        )}, ${getStatusColor(report.lecturerState)}dd)`,
-                      }}
-                    />
-
-                    <div
-                      style={{
+                        width: "80px",
+                        height: "80px",
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, #f1f5f9, #e2e8f0)",
                         display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                        marginBottom: "16px",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "0 auto 20px",
                       }}
                     >
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "12px",
-                            marginBottom: "8px",
-                          }}
-                        >
+                      <FileText size={32} color="#94a3b8" />
+                    </div>
+                    <h3
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: "600",
+                        color: "#374151",
+                        margin: "0 0 8px 0",
+                      }}
+                    >
+                      Chưa có báo cáo nào
+                    </h3>
+                    <p style={{ fontSize: "14px", margin: 0 }}>
+                      Bạn chưa nộp báo cáo nào. Hãy nộp báo cáo đầu tiên của
+                      bạn!
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
+                    {reports.map((report) => (
+                      <div
+                        key={report.submissionID}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "16px 20px",
+                          background: "#fff",
+                          borderRadius: "12px",
+                          border: `1px solid ${getStatusColor(
+                            report.lecturerState
+                          )}`,
+                          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
+                          transition: "all 0.2s ease",
+                          position: "relative",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow =
+                            "0 4px 16px rgba(0, 0, 0, 0.08)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow =
+                            "0 2px 8px rgba(0, 0, 0, 0.04)";
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
                           <div
                             style={{
-                              width: "40px",
-                              height: "40px",
-                              borderRadius: "12px",
-                              background: `linear-gradient(135deg, ${getStatusColor(
-                                report.lecturerState
-                              )}, ${getStatusColor(report.lecturerState)}dd)`,
                               display: "flex",
                               alignItems: "center",
-                              justifyContent: "center",
-                              flexShrink: 0,
+                              gap: "12px",
+                              marginBottom: "4px",
                             }}
                           >
-                            <FileText size={20} color="#fff" />
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <h3
-                              style={{
-                                fontSize: "18px",
-                                fontWeight: "700",
-                                color: "#1a1a1a",
-                                margin: "0 0 4px 0",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {report.reportTitle}
-                            </h3>
                             <div
                               style={{
+                                minWidth: "32px",
+                                minHeight: "32px",
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "8px",
+                                background: `linear-gradient(135deg, ${getStatusColor(
+                                  report.lecturerState
+                                )}, ${getStatusColor(report.lecturerState)}dd)`,
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "12px",
-                                fontSize: "12px",
-                                color: "#64748b",
-                                flexWrap: "wrap",
+                                justifyContent: "center",
+                                flexShrink: 0,
                               }}
                             >
-                              <span
+                              <FileText size={16} color="#fff" />
+                            </div>
+                            <div>
+                              <h4
+                                style={{
+                                  fontSize: "16px",
+                                  fontWeight: "600",
+                                  color: "#1a1a1a",
+                                  margin: 0,
+                                  marginBottom: "2px",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  maxWidth: "200px",
+                                }}
+                                title={report.reportTitle}
+                              >
+                                {report.reportTitle}
+                              </h4>
+                              <div
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: "4px",
-                                  whiteSpace: "nowrap",
+                                  gap: "12px",
+                                  fontSize: "12px",
+                                  color: "#64748b",
                                 }}
                               >
-                                <Calendar size={14} />
-                                {new Date(
-                                  report.submittedAt
-                                ).toLocaleDateString("vi-VN", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              {report.feedbackLevel && (
                                 <span
                                   style={{
                                     display: "flex",
                                     alignItems: "center",
                                     gap: "4px",
-                                    color: "#f37021",
-                                    fontWeight: "600",
-                                    whiteSpace: "nowrap",
                                   }}
                                 >
-                                  <TrendingUp size={14} />
-                                  Đánh giá:{" "}
-                                  {getFeedbackLevelText(report.feedbackLevel)}
+                                  <Calendar size={12} />
+                                  {new Date(
+                                    report.submittedAt
+                                  ).toLocaleDateString("vi-VN", {
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                  })}
                                 </span>
-                              )}
+                                {report.attemptNumber && (
+                                  <span>Lần {report.attemptNumber}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "flex-end",
-                          gap: "8px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            padding: "6px 16px",
-                            backgroundColor: getStatusColor(
-                              report.lecturerState
-                            ),
-                            color: "#fff",
-                            borderRadius: "20px",
-                            fontSize: "12px",
-                            fontWeight: "700",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                          }}
-                        >
-                          {getStatusText(report.lecturerState)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {report.reportDescription && (
-                      <div
-                        style={{
-                          padding: "16px",
-                          backgroundColor: "rgba(255,255,255,0.8)",
-                          borderRadius: "12px",
-                          marginBottom: "16px",
-                          border: "1px solid rgba(0,0,0,0.05)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            marginBottom: "8px",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                          }}
-                        >
-                          Mô tả báo cáo
-                        </div>
-                        <p
-                          style={{
-                            fontSize: "14px",
-                            color: "#374151",
-                            lineHeight: "1.6",
-                            margin: 0,
-                          }}
-                        >
-                          {report.reportDescription}
-                        </p>
-                      </div>
-                    )}
-
-                    {report.lecturerComment && (
-                      <div
-                        style={{
-                          padding: "16px",
-                          backgroundColor: "rgba(255,255,255,0.8)",
-                          borderRadius: "12px",
-                          marginBottom: "16px",
-                          border: "1px solid rgba(0,0,0,0.05)",
-                        }}
-                      >
                         <div
                           style={{
                             display: "flex",
-                            alignItems: "flex-start",
-                            gap: "8px",
+                            alignItems: "center",
+                            gap: "12px",
                           }}
                         >
-                          <div
+                          <span
                             style={{
-                              width: "24px",
-                              height: "24px",
-                              borderRadius: "50%",
-                              background:
-                                "linear-gradient(135deg, #f37021, #ff8c42)",
+                              padding: "4px 12px",
+                              backgroundColor: getStatusColor(
+                                report.lecturerState
+                              ),
+                              color: "#fff",
+                              borderRadius: "16px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.3px",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {getStatusText(report.lecturerState)}
+                          </span>
+
+                          {report.files && report.files.length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (report.files && report.files[0]) {
+                                  handleDownloadFile(report.files[0]);
+                                }
+                              }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minWidth: "36px",
+                                minHeight: "36px",
+                                width: "36px",
+                                height: "36px",
+                                background:
+                                  "linear-gradient(135deg, #f37021, #ff8c42)",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                flexShrink: 0,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background =
+                                  "linear-gradient(135deg, #d95f1a, #f37021)";
+                                e.currentTarget.style.transform =
+                                  "translateY(-1px)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background =
+                                  "linear-gradient(135deg, #f37021, #ff8c42)";
+                                e.currentTarget.style.transform =
+                                  "translateY(0)";
+                              }}
+                              title="Tải xuống"
+                            >
+                              <Download size={16} />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedReport(report);
+                              setShowReportDetailModal(true);
+                            }}
+                            style={{
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
+                              minWidth: "36px",
+                              minHeight: "36px",
+                              width: "36px",
+                              height: "36px",
+                              background:
+                                "linear-gradient(135deg, #3b82f6, #6366f1)",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: "8px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
                               flexShrink: 0,
-                              marginTop: "2px",
                             }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background =
+                                "linear-gradient(135deg, #2563eb, #3b82f6)";
+                              e.currentTarget.style.transform =
+                                "translateY(-1px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background =
+                                "linear-gradient(135deg, #3b82f6, #6366f1)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}
+                            title="Xem chi tiết"
                           >
-                            <UserIcon size={12} color="#fff" />
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                color: "#64748b",
-                                marginBottom: "6px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                              }}
-                            >
-                              Nhận xét từ giảng viên
-                            </div>
-                            <p
-                              style={{
-                                fontSize: "14px",
-                                color: "#374151",
-                                lineHeight: "1.6",
-                                margin: 0,
-                              }}
-                            >
-                              {report.lecturerComment}
-                            </p>
-                          </div>
+                            <Eye size={16} />
+                          </button>
                         </div>
-                      </div>
-                    )}
 
-                    {report.files && report.files.length > 0 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "12px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                          }}
-                        >
-                          File đính kèm ({report.files.length})
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "8px",
-                          }}
-                        >
-                          {report.files.map((file) => (
-                            <a
-                              key={file.fileID}
-                              href={file.fileURL}
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "8px",
-                                padding: "10px 16px",
-                                backgroundColor: "#f37021",
-                                color: "#fff",
-                                borderRadius: "12px",
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                textDecoration: "none",
-                                transition: "all 0.3s ease",
-                                boxShadow: "0 2px 8px rgba(243, 112, 33, 0.2)",
-                              }}
-                              onClick={(e) => handleDownloadFile(file, e)}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor =
-                                  "#d95f1a";
-                                e.currentTarget.style.transform =
-                                  "translateY(-2px)";
-                                e.currentTarget.style.boxShadow =
-                                  "0 4px 12px rgba(243, 112, 33, 0.3)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor =
-                                  "#f37021";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                                e.currentTarget.style.boxShadow =
-                                  "0 2px 8px rgba(243, 112, 33, 0.2)";
-                              }}
-                            >
-                              <Download size={16} />
-                              <span
-                                style={{
-                                  maxWidth: "150px",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {file.fileName}
-                              </span>
-                              <span style={{ fontSize: "11px", opacity: 0.8 }}>
-                                ({(file.fileSizeBytes / 1024).toFixed(1)} KB)
-                              </span>
-                            </a>
-                          ))}
-                        </div>
+                        {/* Feedback Badge */}
+                        {report.lecturerComment && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "-8px",
+                              right: "-8px",
+                              background:
+                                "linear-gradient(135deg, #f37021, #ff8c42)",
+                              borderRadius: "50%",
+                              width: "24px",
+                              height: "24px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              boxShadow: "0 2px 8px rgba(243, 112, 33, 0.3)",
+                              border: "2px solid #fff",
+                              zIndex: 10,
+                            }}
+                            title="Có nhận xét từ giảng viên"
+                          >
+                            <MessageSquare size={12} color="#fff" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
-                ))
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Report Detail Modal */}
+      {showReportDetailModal && selectedReport && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              maxWidth: "800px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              position: "relative",
+              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+            }}
+            className="report-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <style>
+              {`
+                /* Custom scrollbar for modal */
+                .report-modal-content::-webkit-scrollbar {
+                  width: 6px;
+                }
+                .report-modal-content::-webkit-scrollbar-track {
+                  background: rgba(243, 112, 33, 0.1);
+                  border-radius: 20px;
+                  margin: 20px 0;
+                }
+                .report-modal-content::-webkit-scrollbar-thumb {
+                  background: linear-gradient(135deg, rgba(243, 112, 33, 0.6), rgba(255, 140, 66, 0.6));
+                  border-radius: 20px;
+                  border: 1px solid rgba(243, 112, 33, 0.2);
+                }
+                .report-modal-content::-webkit-scrollbar-thumb:hover {
+                  background: linear-gradient(135deg, rgba(243, 112, 33, 0.8), rgba(255, 140, 66, 0.8));
+                }
+              `}
+            </style>
+            {/* Modal Header */}
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                background: `linear-gradient(135deg, ${getStatusColor(
+                  selectedReport.lecturerState
+                )}, ${getStatusColor(selectedReport.lecturerState)}dd)`,
+                padding: "24px",
+                borderRadius: "20px 20px 0 0",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <h2
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: "700",
+                    margin: 0,
+                    marginBottom: "8px",
+                  }}
+                >
+                  {selectedReport.reportTitle}
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                    fontSize: "14px",
+                    opacity: 0.9,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <Calendar size={16} />
+                    {new Date(selectedReport.submittedAt).toLocaleDateString(
+                      "vi-VN",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }
+                    )}
+                  </span>
+                  {selectedReport.attemptNumber && (
+                    <span>Lần {selectedReport.attemptNumber}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Badge in Header */}
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "16px" }}
+              >
+                <span
+                  style={{
+                    padding: "6px 16px",
+                    backgroundColor: "rgba(255, 255, 255, 0.2)",
+                    color: "#fff",
+                    borderRadius: "20px",
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    border: "1px solid rgba(255, 255, 255, 0.3)",
+                    backdropFilter: "blur(10px)",
+                  }}
+                >
+                  {getStatusText(selectedReport.lecturerState)}
+                </span>
+
+                <button
+                  onClick={() => setShowReportDetailModal(false)}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.2)",
+                    border: "none",
+                    borderRadius: "8px",
+                    minWidth: "40px",
+                    minHeight: "40px",
+                    width: "40px",
+                    height: "40px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background =
+                      "rgba(255, 255, 255, 0.3)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background =
+                      "rgba(255, 255, 255, 0.2)";
+                  }}
+                >
+                  <X size={20} color="#fff" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: "24px" }}>
+              {/* Description */}
+              {selectedReport.reportDescription && (
+                <div style={{ marginBottom: "24px" }}>
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: "600",
+                      color: "#1a1a1a",
+                      marginBottom: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <FileText size={18} color="#64748b" />
+                    Mô tả báo cáo
+                  </h3>
+                  <div
+                    style={{
+                      padding: "16px",
+                      background: "#f8fafc",
+                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: "14px",
+                        color: "#374151",
+                        lineHeight: "1.6",
+                        margin: 0,
+                      }}
+                    >
+                      {selectedReport.reportDescription}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Files */}
+              {selectedReport.files && selectedReport.files.length > 0 && (
+                <div>
+                  <h3
+                    style={{
+                      fontSize: "16px",
+                      fontWeight: "600",
+                      color: "#1a1a1a",
+                      marginBottom: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <Download size={18} color="#64748b" />
+                    File đính kèm ({selectedReport.files.length})
+                  </h3>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    {selectedReport.files.map((file) => (
+                      <div
+                        key={file.fileID}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "12px 16px",
+                          background: "#f8fafc",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              color: "#1a1a1a",
+                              marginBottom: "2px",
+                            }}
+                          >
+                            {file.fileName}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#64748b",
+                            }}
+                          >
+                            {(file.fileSizeBytes / 1024).toFixed(1)} KB
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadFile(file);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: "36px",
+                            minHeight: "36px",
+                            width: "36px",
+                            height: "36px",
+                            background:
+                              "linear-gradient(135deg, #f37021, #ff8c42)",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            flexShrink: 0,
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background =
+                              "linear-gradient(135deg, #d95f1a, #f37021)";
+                            e.currentTarget.style.transform =
+                              "translateY(-1px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background =
+                              "linear-gradient(135deg, #f37021, #ff8c42)";
+                            e.currentTarget.style.transform = "translateY(0)";
+                          }}
+                          title="Tải xuống"
+                        >
+                          <Download size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Status and Lecturer Feedback Combined */}
+              <div style={{ marginBottom: "24px" }}>
+                <h3
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: "600",
+                    color: "#1a1a1a",
+                    marginTop: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <UserIcon size={18} color="#f37021" />
+                  Phản hồi từ giảng viên
+                  {selectedReport.feedbackLevel && (
+                    <div
+                      className="feedback-level-badge"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 8px",
+                        backgroundColor: "#fef3c7",
+                        border: "1px solid #fde68a",
+                        borderRadius: "12px",
+                      }}
+                    >
+                      <Award size={14} color="#eab308" />
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          color: "#92400e",
+                        }}
+                      >
+                        {getFeedbackLevelText(selectedReport.feedbackLevel)}
+                      </span>
+                    </div>
+                  )}
+                </h3>
+
+                <div
+                  style={{
+                    padding: "20px",
+                    background:
+                      "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                    borderRadius: "12px",
+                    border: "1px solid #e2e8f0",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                    marginTop: "16px",
+                  }}
+                >
+                  {/* Lecturer Feedback */}
+                  {selectedReport.lecturerComment && (
+                    <div
+                      style={{
+                        padding: "16px",
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #fed7aa",
+                        borderLeft: "4px solid #f37021",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "#374151",
+                          lineHeight: "1.6",
+                          margin: 0,
+                        }}
+                      >
+                        {selectedReport.lecturerComment}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* No feedback message */}
+                  {!selectedReport.lecturerComment && (
+                    <div
+                      style={{
+                        padding: "16px",
+                        background: "#fff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: "#64748b",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Chưa có phản hồi từ giảng viên
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

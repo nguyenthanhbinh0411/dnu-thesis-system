@@ -10,6 +10,11 @@ import {
   Clock,
   AlertCircle,
   Edit,
+  LayoutGrid,
+  List,
+  Search,
+  Filter,
+  ArrowUpDown,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { Topic } from "../../types/topic";
@@ -42,6 +47,11 @@ const LecturerStudents: React.FC = () => {
     isOpen: boolean;
     student?: Student;
   }>({ isOpen: false });
+  const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"name" | "progress" | "date">("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const openDetailModal = (student: Student) => {
     setDetailModal({ isOpen: true, student });
@@ -248,6 +258,48 @@ const LecturerStudents: React.FC = () => {
     }
   };
 
+  // Filter and sort students
+  const filteredAndSortedStudents = students
+    .filter((student) => {
+      const matchesSearch =
+        student.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.studentCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.topicTitle.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "all" || student.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case "name":
+          comparison = a.studentName.localeCompare(b.studentName);
+          break;
+        case "progress":
+          comparison = a.progress - b.progress;
+          break;
+        case "date":
+          comparison =
+            new Date(a.registrationDate).getTime() -
+            new Date(b.registrationDate).getTime();
+          break;
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+  const toggleSort = (field: "name" | "progress" | "date") => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+  };
+
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
       {/* Header */}
@@ -318,6 +370,157 @@ const LecturerStudents: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Toolbar */}
+          <div
+            style={{
+              background: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              marginBottom: "24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+              border: "1px solid #E5E7EB",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "16px",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              {/* Search Box */}
+              <div style={{ flex: "1 1 300px", position: "relative" }}>
+                <Search
+                  size={18}
+                  color="#9CA3AF"
+                  style={{
+                    position: "absolute",
+                    left: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm sinh viên, mã SV, đề tài..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px 10px 40px",
+                    border: "1px solid #D1D5DB",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    outline: "none",
+                    transition: "all 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "#F37021";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 0 3px rgba(243, 112, 33, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "#D1D5DB";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                />
+              </div>
+
+              {/* Filter and View Toggle */}
+              <div
+                style={{ display: "flex", gap: "12px", alignItems: "center" }}
+              >
+                {/* Status Filter */}
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <Filter size={16} color="#6B7280" />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    style={{
+                      padding: "8px 12px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      outline: "none",
+                      background: "white",
+                    }}
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="approved">Đã duyệt</option>
+                    <option value="pending">Chờ duyệt</option>
+                    <option value="revision">Cần sửa đổi</option>
+                    <option value="rejected">Từ chối</option>
+                  </select>
+                </div>
+
+                {/* View Toggle */}
+                <div
+                  style={{
+                    display: "flex",
+                    background: "#F3F4F6",
+                    borderRadius: "8px",
+                    padding: "4px",
+                  }}
+                >
+                  <button
+                    onClick={() => setViewMode("card")}
+                    style={{
+                      padding: "6px 12px",
+                      background: viewMode === "card" ? "white" : "transparent",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "13px",
+                      fontWeight: "500",
+                      color: viewMode === "card" ? "#F37021" : "#6B7280",
+                      transition: "all 0.2s ease",
+                      boxShadow:
+                        viewMode === "card"
+                          ? "0 1px 3px rgba(0,0,0,0.1)"
+                          : "none",
+                    }}
+                  >
+                    <LayoutGrid size={16} />
+                    Card
+                  </button>
+                  <button
+                    onClick={() => setViewMode("table")}
+                    style={{
+                      padding: "6px 12px",
+                      background:
+                        viewMode === "table" ? "white" : "transparent",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "13px",
+                      fontWeight: "500",
+                      color: viewMode === "table" ? "#F37021" : "#6B7280",
+                      transition: "all 0.2s ease",
+                      boxShadow:
+                        viewMode === "table"
+                          ? "0 1px 3px rgba(0,0,0,0.1)"
+                          : "none",
+                    }}
+                  >
+                    <List size={16} />
+                    Table
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Stats Cards */}
           <div
             style={{
@@ -464,23 +667,9 @@ const LecturerStudents: React.FC = () => {
           </div>
 
           {/* Students List */}
-          <div style={{ display: "grid", gap: "16px" }}>
-            {students
-              .sort((a, b) => {
-                // Thứ tự ưu tiên: Đã duyệt > Cần sửa đổi > Chờ duyệt > Từ chối
-                const priorityOrder = {
-                  approved: 1,
-                  revision: 2,
-                  pending: 3,
-                  rejected: 4,
-                };
-
-                const aPriority = priorityOrder[a.status] || 5;
-                const bPriority = priorityOrder[b.status] || 5;
-
-                return aPriority - bPriority;
-              })
-              .map((student) => (
+          {viewMode === "card" ? (
+            <div style={{ display: "grid", gap: "16px" }}>
+              {filteredAndSortedStudents.map((student) => (
                 <div
                   key={student.studentCode}
                   style={{
@@ -805,7 +994,392 @@ const LecturerStudents: React.FC = () => {
                   </div>
                 </div>
               ))}
-          </div>
+            </div>
+          ) : (
+            // Table View
+            <div
+              style={{
+                background: "white",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                border: "1px solid #E5E7EB",
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr
+                      style={{
+                        background: "#F9FAFB",
+                        borderBottom: "2px solid #E5E7EB",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "left",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                        onClick={() => toggleSort("name")}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          Sinh viên
+                          <ArrowUpDown size={14} />
+                        </div>
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "left",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Liên hệ
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "left",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Đề tài
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "center",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Trạng thái
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "center",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                        onClick={() => toggleSort("progress")}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            justifyContent: "center",
+                          }}
+                        >
+                          Tiến độ
+                          <ArrowUpDown size={14} />
+                        </div>
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "center",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                        onClick={() => toggleSort("date")}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            justifyContent: "center",
+                          }}
+                        >
+                          Ngày đăng ký
+                          <ArrowUpDown size={14} />
+                        </div>
+                      </th>
+                      <th
+                        style={{
+                          padding: "16px",
+                          textAlign: "center",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#374151",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Thao tác
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAndSortedStudents.map((student, index) => (
+                      <tr
+                        key={student.studentCode}
+                        style={{
+                          borderBottom: "1px solid #E5E7EB",
+                          background: index % 2 === 0 ? "white" : "#F9FAFB",
+                          transition: "background 0.2s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#FFF5F0";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background =
+                            index % 2 === 0 ? "white" : "#F9FAFB";
+                        }}
+                      >
+                        {/* Student Info */}
+                        <td style={{ padding: "16px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "40px",
+                                height: "40px",
+                                borderRadius: "50%",
+                                background:
+                                  "linear-gradient(135deg, #F37021 0%, #FF8838 100%)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "white",
+                                fontSize: "14px",
+                                fontWeight: "700",
+                                flexShrink: 0,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {student.studentProfile?.studentImage ? (
+                                <img
+                                  src={getAvatarUrl(
+                                    student.studentProfile.studentImage
+                                  )}
+                                  alt={student.studentName}
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                    borderRadius: "50%",
+                                  }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    const parent =
+                                      e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML =
+                                        student.studentName.charAt(0);
+                                      parent.style.fontSize = "14px";
+                                      parent.style.fontWeight = "700";
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                student.studentName.charAt(0)
+                              )}
+                            </div>
+                            <div>
+                              <div
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "600",
+                                  color: "#1F2937",
+                                }}
+                              >
+                                {student.studentName}
+                              </div>
+                              <div
+                                style={{ fontSize: "12px", color: "#6B7280" }}
+                              >
+                                {student.studentCode}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Contact */}
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ fontSize: "13px", color: "#4B5563" }}>
+                            <div style={{ marginBottom: "4px" }}>
+                              {student.email}
+                            </div>
+                            <div style={{ color: "#9CA3AF" }}>
+                              {student.phone}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Topic */}
+                        <td style={{ padding: "16px", maxWidth: "300px" }}>
+                          <div
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: "500",
+                              color: "#1F2937",
+                              marginBottom: "4px",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                            }}
+                          >
+                            {student.topicTitle}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#9CA3AF" }}>
+                            {student.topicCode}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td style={{ padding: "16px", textAlign: "center" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              padding: "6px 12px",
+                              background: getStatusColor(student.status) + "20",
+                              color: getStatusColor(student.status),
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {getStatusIcon(student.status)}
+                            {getStatusText(student.status)}
+                          </span>
+                        </td>
+
+                        {/* Progress */}
+                        <td style={{ padding: "16px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                flex: 1,
+                                height: "6px",
+                                background: "#E5E7EB",
+                                borderRadius: "3px",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${student.progress}%`,
+                                  height: "100%",
+                                  background:
+                                    "linear-gradient(90deg, #F37021 0%, #FF8838 100%)",
+                                  borderRadius: "3px",
+                                }}
+                              />
+                            </div>
+                            <span
+                              style={{
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#374151",
+                                minWidth: "35px",
+                              }}
+                            >
+                              {student.progress}%
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Date */}
+                        <td style={{ padding: "16px", textAlign: "center" }}>
+                          <div style={{ fontSize: "13px", color: "#4B5563" }}>
+                            {new Date(
+                              student.registrationDate
+                            ).toLocaleDateString("vi-VN")}
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td style={{ padding: "16px", textAlign: "center" }}>
+                          <button
+                            onClick={() => openDetailModal(student)}
+                            style={{
+                              padding: "6px 12px",
+                              background: "#F37021",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              whiteSpace: "nowrap",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#E55A1B";
+                              e.currentTarget.style.transform =
+                                "translateY(-1px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#F37021";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}
+                          >
+                            Chi tiết
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 

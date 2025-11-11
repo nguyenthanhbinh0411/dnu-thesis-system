@@ -1,11 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import AdminNav from "../SideNavs/AdminNav";
 import { Outlet } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
-import { LogOut, Bell } from "lucide-react";
+import { LogOut, Bell, Menu, X } from "lucide-react";
 
 const AdminLayout: React.FC = () => {
   const auth = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
     <>
@@ -20,6 +21,58 @@ const AdminLayout: React.FC = () => {
             opacity: 0.8;
           }
         }
+        
+        /* Responsive Styles */
+        @media (max-width: 768px) {
+          .admin-sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+          }
+          
+          .admin-sidebar.open {
+            transform: translateX(0);
+          }
+          
+          .admin-main {
+            margin-left: 0 !important;
+          }
+          
+          .admin-header {
+            left: 0 !important;
+            padding: 12px 16px !important;
+          }
+          
+          .admin-header h2 {
+            font-size: 16px !important;
+          }
+          
+          .mobile-menu-btn {
+            display: flex !important;
+          }
+          
+          .mobile-close-btn {
+            display: flex !important;
+          }
+          
+          .admin-content {
+            padding: 16px !important;
+            margin-bottom: 60px;
+          }
+        }
+        
+        @media (min-width: 769px) and (max-width: 1024px) {
+          .admin-sidebar {
+            width: 220px !important;
+          }
+          
+          .admin-main {
+            margin-left: 220px !important;
+          }
+          
+          .admin-header {
+            left: 220px !important;
+          }
+        }
       `}</style>
       <div
         style={{
@@ -27,10 +80,10 @@ const AdminLayout: React.FC = () => {
           minHeight: "100vh",
           backgroundColor: "#FFFFFF",
           fontFamily: "'Inter', 'Poppins', 'Roboto', sans-serif",
-          
         }}
       >
         <aside
+          className={`admin-sidebar ${isMobileMenuOpen ? "open" : ""}`}
           style={{
             width: 260,
             backgroundColor: "#001C3D",
@@ -50,10 +103,33 @@ const AdminLayout: React.FC = () => {
             style={{
               textAlign: "center",
               padding: "28px 20px",
-              background: "linear-gradient(180deg, rgba(243, 112, 33, 0.1) 0%, #001C3D 100%)",
+              background:
+                "linear-gradient(180deg, rgba(243, 112, 33, 0.1) 0%, #001C3D 100%)",
               borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+              position: "relative",
             }}
           >
+            {/* Close Button for Mobile */}
+            <button
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="mobile-close-btn"
+              style={{
+                position: "absolute",
+                top: "16px",
+                right: "16px",
+                display: "none",
+                background: "rgba(255, 255, 255, 0.1)",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px",
+                cursor: "pointer",
+                color: "white",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <X size={20} />
+            </button>
+
             <img
               src="/dnu_logo.png"
               alt="Đại học Đại Nam"
@@ -95,7 +171,7 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}>
-            <AdminNav />
+            <AdminNav onNavigate={() => setIsMobileMenuOpen(false)} />
           </div>
 
           <footer
@@ -105,7 +181,8 @@ const AdminLayout: React.FC = () => {
               textAlign: "center",
               padding: "20px 16px",
               borderTop: "1px solid rgba(255, 255, 255, 0.1)",
-              background: "linear-gradient(180deg, #001C3D 0%, rgba(0, 28, 61, 0.8) 100%)",
+              background:
+                "linear-gradient(180deg, #001C3D 0%, rgba(0, 28, 61, 0.8) 100%)",
               fontWeight: 500,
             }}
           >
@@ -117,6 +194,7 @@ const AdminLayout: React.FC = () => {
         </aside>
 
         <main
+          className="admin-main"
           style={{
             flex: 1,
             display: "flex",
@@ -125,6 +203,7 @@ const AdminLayout: React.FC = () => {
           }}
         >
           <header
+            className="admin-header"
             style={{
               backgroundColor: "#001C3D",
               padding: "18px 36px",
@@ -143,6 +222,36 @@ const AdminLayout: React.FC = () => {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                style={{
+                  display: "none",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "8px",
+                  cursor: "pointer",
+                  color: "white",
+                }}
+                className="mobile-menu-btn"
+              >
+                {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+
+              {/* Mobile Logo - Only visible on mobile */}
+              <img
+                src="/logo-ios.png"
+                alt="Đại học Đại Nam"
+                className="admin-mobile-logo"
+                style={{
+                  display: "none",
+                  height: "32px",
+                  width: "auto",
+                  filter: "brightness(0) invert(1)",
+                }}
+              />
+
               <h2
                 style={{
                   margin: 0,
@@ -159,6 +268,7 @@ const AdminLayout: React.FC = () => {
             <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
               {/* Notification Icon with Badge */}
               <div
+                className="admin-notification-bell"
                 style={{
                   position: "relative",
                   cursor: "pointer",
@@ -205,6 +315,7 @@ const AdminLayout: React.FC = () => {
 
               {/* User Info */}
               <div
+                className="admin-avatar-section"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -240,6 +351,7 @@ const AdminLayout: React.FC = () => {
                   👤
                 </div>
                 <span
+                  className="admin-user-info"
                   style={{
                     fontSize: 14,
                     fontWeight: 600,
@@ -289,6 +401,7 @@ const AdminLayout: React.FC = () => {
           </header>
 
           <div
+            className="admin-content"
             style={{
               flex: 1,
               backgroundColor: "#FFFFFF",

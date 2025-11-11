@@ -4,7 +4,11 @@ import { Home, Users, CalendarCheck, FileText, Bell } from "lucide-react";
 import "./SideNav.css";
 import "./LecturerNav.css";
 
-const LecturerNav: React.FC = () => {
+interface LecturerNavProps {
+  onNavigate?: () => void;
+}
+
+const LecturerNav: React.FC<LecturerNavProps> = ({ onNavigate }) => {
   const navItems = [
     { path: "/lecturer", label: "Trang chủ", icon: <Home size={18} /> },
     {
@@ -44,6 +48,7 @@ const LecturerNav: React.FC = () => {
               to={item.path}
               end
               className={({ isActive }) => (isActive ? "active" : undefined)}
+              onClick={onNavigate}
             >
               <span className="icon">{item.icon}</span>
               <span className="label">{item.label}</span>

@@ -9,3 +9,20 @@
   --active-text: #ffffff;
   --active-shadow: 0 6px 16px rgba(243, 112, 33, 0.28);
 }
+
+/* Mobile specific styles for student */
+@media (max-width: 768px) {
+  .sidenav.student-theme a {
+    color: #1a2736;
+  }
+
+  .sidenav.student-theme a:hover {
+    background: rgba(243, 112, 33, 0.15);
+    color: #f37021;
+  }
+
+  .sidenav.student-theme a.active {
+    color: #ffffff;
+    background: #f37021;
+  }
+}

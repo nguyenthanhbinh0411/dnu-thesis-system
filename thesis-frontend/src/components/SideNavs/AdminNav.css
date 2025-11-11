@@ -22,3 +22,20 @@
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
+
+/* Mobile specific styles for admin */
+@media (max-width: 768px) {
+  .sidenav.admin-theme a {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .sidenav.admin-theme a:hover {
+    background: rgba(243, 112, 33, 0.2);
+    color: #ffffff;
+  }
+
+  .sidenav.admin-theme a.active {
+    color: #ffffff;
+    background: #f37021;
+  }
+}

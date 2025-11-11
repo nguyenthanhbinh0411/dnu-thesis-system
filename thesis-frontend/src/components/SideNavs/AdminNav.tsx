@@ -12,7 +12,11 @@ import {
 import "./SideNav.css";
 import "./AdminNav.css";
 
-const AdminNav: React.FC = () => {
+interface AdminNavProps {
+  onNavigate?: () => void;
+}
+
+const AdminNav: React.FC<AdminNavProps> = ({ onNavigate }) => {
   const navItems = [
     { path: "/admin", label: "Trang chủ", icon: <Home size={18} /> },
     {
@@ -56,6 +60,7 @@ const AdminNav: React.FC = () => {
               to={item.path}
               end
               className={({ isActive }) => (isActive ? "active" : undefined)}
+              onClick={onNavigate}
             >
               <span className="icon">{item.icon}</span>
               <span className="label">{item.label}</span>

@@ -157,8 +157,81 @@ const Dashboard: React.FC = () => {
 
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .dashboard-container {
+            padding: 16px !important;
+          }
+          
+          .dashboard-header h1 {
+            font-size: 22px !important;
+          }
+          
+          .dashboard-header p {
+            font-size: 13px !important;
+          }
+          
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 12px !important;
+          }
+          
+          .stat-card {
+            padding: 16px !important;
+          }
+          
+          .stat-card .stat-value {
+            font-size: 24px !important;
+          }
+          
+          .stat-card .stat-label {
+            font-size: 12px !important;
+          }
+          
+          .main-content-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+          
+          .activity-card {
+            padding: 12px !important;
+          }
+          
+          .activity-title {
+            font-size: 13px !important;
+          }
+          
+          .activity-description {
+            font-size: 12px !important;
+          }
+          
+          .quick-actions-grid {
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+          
+          .action-button {
+            padding: 12px !important;
+            font-size: 13px !important;
+          }
+        }
+        
+        @media (min-width: 769px) and (max-width: 1024px) {
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+          
+          .main-content-grid {
+            grid-template-columns: 1fr !important;
+          }
+          
+          .quick-actions-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+        }
+      `}</style>
       {/* Header */}
-      <div style={{ marginBottom: "32px" }}>
+      <div className="dashboard-header" style={{ marginBottom: "32px" }}>
         <h1
           style={{
             fontSize: "28px",
@@ -180,6 +253,7 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Cards */}
       <div
+        className="stats-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
@@ -188,6 +262,7 @@ const Dashboard: React.FC = () => {
         }}
       >
         <div
+          className="stat-card"
           style={{
             background: "linear-gradient(135deg, #FFF5F0 0%, #FFE8DC 100%)",
             border: "1px solid #F37021",
@@ -197,6 +272,7 @@ const Dashboard: React.FC = () => {
         >
           <Users size={24} color="#F37021" style={{ marginBottom: "12px" }} />
           <div
+            className="stat-value"
             style={{
               fontSize: "28px",
               fontWeight: "700",
@@ -206,12 +282,16 @@ const Dashboard: React.FC = () => {
           >
             {stats.totalStudents}
           </div>
-          <div style={{ fontSize: "14px", color: "#666" }}>
+          <div
+            className="stat-label"
+            style={{ fontSize: "14px", color: "#666" }}
+          >
             Sinh viên hướng dẫn
           </div>
         </div>
 
         <div
+          className="stat-card"
           style={{
             background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)",
             border: "1px solid #22C55E",
@@ -225,6 +305,7 @@ const Dashboard: React.FC = () => {
             style={{ marginBottom: "12px" }}
           />
           <div
+            className="stat-value"
             style={{
               fontSize: "28px",
               fontWeight: "700",
@@ -234,10 +315,16 @@ const Dashboard: React.FC = () => {
           >
             {stats.approvedTopics}
           </div>
-          <div style={{ fontSize: "14px", color: "#666" }}>Đề tài đã duyệt</div>
+          <div
+            className="stat-label"
+            style={{ fontSize: "14px", color: "#666" }}
+          >
+            Đề tài đã duyệt
+          </div>
         </div>
 
         <div
+          className="stat-card"
           style={{
             background: "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
             border: "1px solid #F59E0B",
@@ -247,6 +334,7 @@ const Dashboard: React.FC = () => {
         >
           <Clock size={24} color="#F59E0B" style={{ marginBottom: "12px" }} />
           <div
+            className="stat-value"
             style={{
               fontSize: "28px",
               fontWeight: "700",
@@ -256,10 +344,16 @@ const Dashboard: React.FC = () => {
           >
             {stats.pendingReviews}
           </div>
-          <div style={{ fontSize: "14px", color: "#666" }}>Chờ xem xét</div>
+          <div
+            className="stat-label"
+            style={{ fontSize: "14px", color: "#666" }}
+          >
+            Chờ xem xét
+          </div>
         </div>
 
         <div
+          className="stat-card"
           style={{
             background: "linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)",
             border: "1px solid #6366F1",
@@ -273,6 +367,7 @@ const Dashboard: React.FC = () => {
             style={{ marginBottom: "12px" }}
           />
           <div
+            className="stat-value"
             style={{
               fontSize: "28px",
               fontWeight: "700",
@@ -282,12 +377,18 @@ const Dashboard: React.FC = () => {
           >
             {stats.upcomingDefenses}
           </div>
-          <div style={{ fontSize: "14px", color: "#666" }}>Bảo vệ sắp tới</div>
+          <div
+            className="stat-label"
+            style={{ fontSize: "14px", color: "#666" }}
+          >
+            Bảo vệ sắp tới
+          </div>
         </div>
       </div>
 
       {/* Main Content Grid */}
       <div
+        className="main-content-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "2fr 1fr",
@@ -326,6 +427,7 @@ const Dashboard: React.FC = () => {
             {recentActivities.map((activity) => (
               <div
                 key={activity.id}
+                className="activity-card"
                 style={{
                   display: "flex",
                   alignItems: "start",
@@ -343,6 +445,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div
+                    className="activity-title"
                     style={{
                       fontSize: "14px",
                       fontWeight: "600",
@@ -353,6 +456,7 @@ const Dashboard: React.FC = () => {
                     {activity.title}
                   </div>
                   <div
+                    className="activity-description"
                     style={{
                       fontSize: "13px",
                       color: "#666",
@@ -519,8 +623,10 @@ const Dashboard: React.FC = () => {
             gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
             gap: "16px",
           }}
+          className="quick-actions-grid"
         >
           <button
+            className="action-button"
             style={{
               display: "flex",
               alignItems: "center",

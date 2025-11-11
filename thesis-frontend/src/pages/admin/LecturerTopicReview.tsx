@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  Tag as TagIcon,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import { useToast } from "../../context/useToast";
@@ -21,6 +22,8 @@ import type { Topic } from "../../types/topic";
 import type { StudentProfile } from "../../types/studentProfile";
 import type { LecturerProfile } from "../../types/lecturer-profile";
 import type { ProgressMilestone } from "../../types/progressMilestone";
+import type { Tag, CatalogTopicTag, TopicTag } from "../../types/tag";
+import type { ApiResponse } from "../../types/api";
 import { useAuth } from "../../hooks/useAuth";
 
 interface TopicDisplay {
@@ -95,6 +98,8 @@ const LecturerTopicReview: React.FC = () => {
     topic: null,
   });
 
+  const [topicTags, setTopicTags] = useState<Tag[]>([]);
+
   const [statusFilter, setStatusFilter] = useState<string>("Chờ duyệt");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +160,7 @@ const LecturerTopicReview: React.FC = () => {
     page: number,
     size: number
   ): string => {
-    let url = `/Topics/get-list?Page=${page}&PageSize=${size}`;
+    let url = `/Topics/get-list?Page=${page}&PageSize=${size}&SortBy=createdAt&SortOrder=desc`;
 
     if (search.trim()) {
       url += `&Search=${encodeURIComponent(search.trim())}`;
@@ -448,6 +453,9 @@ const LecturerTopicReview: React.FC = () => {
         "approve",
         topics.find((t) => t.topicID === topicID)?.title || ""
       );
+
+      // Reload page after successful approval
+      window.location.reload();
     } catch (err) {
       console.error("Failed to approve topic:", err);
       addToast("Không thể duyệt đề tài. Vui lòng thử lại.", "error");
@@ -480,6 +488,9 @@ const LecturerTopicReview: React.FC = () => {
         "reject",
         topics.find((t) => t.topicID === topicID)?.title || ""
       );
+
+      // Reload page after successful rejection
+      window.location.reload();
     } catch (err) {
       console.error("Failed to reject topic:", err);
       addToast("Không thể từ chối đề tài. Vui lòng thử lại.", "error");
@@ -512,6 +523,9 @@ const LecturerTopicReview: React.FC = () => {
         "revision",
         topics.find((t) => t.topicID === topicID)?.title || ""
       );
+
+      // Reload page after successful revision request
+      window.location.reload();
     } catch (err) {
       console.error("Failed to request revision:", err);
       addToast("Không thể yêu cầu sửa đổi đề tài. Vui lòng thử lại.", "error");
@@ -633,6 +647,57 @@ const LecturerTopicReview: React.FC = () => {
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const openDetailModal = async (topic: TopicDisplay) => {
+    // Fetch topic tags
+    try {
+      let tags: Tag[] = [];
+
+      if (topic.category === "Đề tài catalog") {
+        // For catalog topics, get tags from CatalogTopicTags
+        const catalogTopicTagsRes = await fetchData(
+          `/CatalogTopicTags/list?CatalogTopicCode=${topic.topicCode}`
+        );
+        const catalogTopicTags =
+          (catalogTopicTagsRes as ApiResponse<CatalogTopicTag[]>)?.data || [];
+
+        if (catalogTopicTags.length > 0) {
+          // Get tag details
+          const tagCode = catalogTopicTags[0].tagCode;
+          const tagRes = await fetchData(`/Tags/list?TagCode=${tagCode}`);
+          const tagData = (tagRes as ApiResponse<Tag[]>)?.data || [];
+          tags = tagData;
+        }
+      } else if (topic.category === "Đề tài tự chọn") {
+        // For self-proposed topics, get tags from TopicTags
+        const topicTagsRes = await fetchData(
+          `/TopicTags/by-topic/${topic.topicCode}`
+        );
+        const topicTagRecords =
+          (topicTagsRes as ApiResponse<TopicTag[]>)?.data || [];
+
+        if (topicTagRecords.length > 0) {
+          // Get tag details for each tag
+          const tagPromises = topicTagRecords.map(async (record) => {
+            try {
+              const tagRes = await fetchData(
+                `/Tags/get-by-code/${record.tagCode}`
+              );
+              return (tagRes as ApiResponse<Tag>)?.data;
+            } catch {
+              return null;
+            }
+          });
+
+          const tagResults = await Promise.all(tagPromises);
+          tags = tagResults.filter((tag): tag is Tag => tag !== null);
+        }
+      }
+
+      setTopicTags(tags);
+    } catch (error) {
+      console.error("Error fetching topic tags:", error);
+      setTopicTags([]);
+    }
+
     setDetailModal({
       isOpen: true,
       topic,
@@ -644,6 +709,7 @@ const LecturerTopicReview: React.FC = () => {
       isOpen: false,
       topic: null,
     });
+    setTopicTags([]);
   };
 
   return (
@@ -981,6 +1047,7 @@ const LecturerTopicReview: React.FC = () => {
                         textAlign: "left",
                         fontWeight: "600",
                         color: "#1F3C88",
+                        minWidth: "140px",
                       }}
                     >
                       Sinh viên
@@ -1129,6 +1196,7 @@ const LecturerTopicReview: React.FC = () => {
                             style={{
                               padding: "12px 16px",
                               color: "#4A5775",
+                              minWidth: "140px",
                             }}
                           >
                             <div style={{ fontWeight: "500" }}>
@@ -2972,7 +3040,7 @@ const LecturerTopicReview: React.FC = () => {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns: "1fr 1fr 1fr",
                       gap: "20px",
                     }}
                   >
@@ -3015,6 +3083,50 @@ const LecturerTopicReview: React.FC = () => {
                           }}
                         >
                           {detailModal.topic.topicCode}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "8px",
+                          background: "rgba(168, 85, 247, 0.1)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <TagIcon size={18} color="#A855F7" />
+                      </div>
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#64748b",
+                            fontWeight: "500",
+                            marginBottom: "2px",
+                          }}
+                        >
+                          Chuyên ngành
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#1e293b",
+                            fontWeight: "500",
+                          }}
+                        >
+                          {topicTags.length > 0
+                            ? topicTags.map((tag) => tag.tagName).join(", ")
+                            : "Chưa có thông tin"}
                         </div>
                       </div>
                     </div>
