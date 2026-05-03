@@ -31,6 +31,8 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string Role { get; set; } = string.Empty;
         public string LecturerCode { get; set; } = string.Empty;
         public string LecturerName { get; set; } = string.Empty;
+        public string? Degree { get; set; }
+        public string? Organization { get; set; }
         public List<string> Tags { get; set; } = new();
     }
 
@@ -106,10 +108,16 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string TopicTitle { get; set; } = string.Empty;
         public string? SummaryContent { get; set; }
         public string? ReviewerComments { get; set; }
+        public string? CommitteeMemberComments { get; set; }
         public string? QnaDetails { get; set; }
+        public List<MinuteQuestionAnswerDto> QuestionAnswers { get; set; } = new();
         public string? Strengths { get; set; }
         public string? Weaknesses { get; set; }
         public string? Recommendations { get; set; }
+        public List<MinuteChapterInputDto> ChapterContents { get; set; } = new();
+        public string? CouncilDiscussionConclusion { get; set; }
+        public string? ChairConclusion { get; set; }
+        public ReviewerStructuredSectionsDto? ReviewerSections { get; set; }
         public decimal? ScoreGvhd { get; set; }
         public decimal? ScoreCt { get; set; }
         public decimal? ScoreTk { get; set; }
@@ -117,6 +125,15 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public decimal? FinalScore { get; set; }
         public string? FinalGrade { get; set; }
         public DateTime? LastUpdated { get; set; }
+    }
+
+    public class TopicFinalScoreProgressDto
+    {
+        public int CommitteeId { get; set; }
+        public string CommitteeCode { get; set; } = string.Empty;
+        public int TotalTopics { get; set; }
+        public int ScoredTopics { get; set; }
+        public decimal ProgressPercent { get; set; }
     }
 
     public class StudentDefenseInfoDtoV2

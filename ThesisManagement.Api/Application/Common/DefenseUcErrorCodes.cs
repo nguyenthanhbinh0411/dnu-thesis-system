@@ -47,6 +47,12 @@ namespace ThesisManagement.Api.Application.Common
             public const string LockSuccess = "UC3.5.LOCK.SUCCESS";
         }
 
+        public static class Minutes
+        {
+            public const string SaveSuccess = "UC3.1.MINUTE_SAVE.SUCCESS";
+            public const string LecturerProfileNotFound = "UC3.1.LECTURER_PROFILE_NOT_FOUND";
+        }
+
         public static class Revision
         {
             public const string RejectReasonRequired = "UC4.1.REJECT_REASON_REQUIRED";

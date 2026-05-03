@@ -66,6 +66,9 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string? EndTime { get; set; }
         public string StudentCode { get; set; } = string.Empty;
         public string StudentName { get; set; } = string.Empty;
+        public string? ClassName { get; set; }
+        public string? CohortCode { get; set; }
+        public string? SupervisorOrganization { get; set; }
         public int SubmittedCount { get; set; }
         public int RequiredCount { get; set; }
         public bool IsLocked { get; set; }
@@ -73,6 +76,10 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public decimal? ScoreCt { get; set; }
         public decimal? ScoreTk { get; set; }
         public decimal? ScorePb { get; set; }
+        public string? CommentGvhd { get; set; }
+        public string? CommentCt { get; set; }
+        public string? CommentTk { get; set; }
+        public string? CommentPb { get; set; }
         public decimal? TopicSupervisorScore { get; set; }
         public decimal? FinalScore { get; set; }
         public string? FinalGrade { get; set; }

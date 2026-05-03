@@ -22,6 +22,7 @@ using ThesisManagement.Api.DTOs.DefenseTermStudents.Query;
 using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
 using ThesisManagement.Api.Data;
+using ThesisManagement.Api.Services.DefenseOperationsExport;
 
 namespace ThesisManagement.Api.Controllers
 {
@@ -80,6 +81,7 @@ namespace ThesisManagement.Api.Controllers
         private readonly IGetDefensePublishHistoryQuery _publishHistoryQuery;
         private readonly IGetCouncilAuditHistoryQuery _councilAuditHistoryQuery;
         private readonly IGetRevisionAuditTrailQuery _revisionAuditTrailQuery;
+        private readonly IDefenseOperationsExportService _operationsExportService;
         private readonly ICreateDefenseTermStudentCommand _createDefenseTermStudentCommand;
         private readonly IUpdateDefenseTermStudentCommand _updateDefenseTermStudentCommand;
         private readonly IDeleteDefenseTermStudentCommand _deleteDefenseTermStudentCommand;
@@ -141,6 +143,7 @@ namespace ThesisManagement.Api.Controllers
             IGetDefensePublishHistoryQuery publishHistoryQuery,
             IGetCouncilAuditHistoryQuery councilAuditHistoryQuery,
             IGetRevisionAuditTrailQuery revisionAuditTrailQuery,
+            IDefenseOperationsExportService operationsExportService,
             ICreateDefenseTermStudentCommand createDefenseTermStudentCommand,
             IUpdateDefenseTermStudentCommand updateDefenseTermStudentCommand,
             IDeleteDefenseTermStudentCommand deleteDefenseTermStudentCommand,
@@ -198,6 +201,7 @@ namespace ThesisManagement.Api.Controllers
             _publishHistoryQuery = publishHistoryQuery;
             _councilAuditHistoryQuery = councilAuditHistoryQuery;
             _revisionAuditTrailQuery = revisionAuditTrailQuery;
+            _operationsExportService = operationsExportService;
             _createDefenseTermStudentCommand = createDefenseTermStudentCommand;
             _updateDefenseTermStudentCommand = updateDefenseTermStudentCommand;
             _deleteDefenseTermStudentCommand = deleteDefenseTermStudentCommand;
@@ -432,7 +436,7 @@ namespace ThesisManagement.Api.Controllers
                 return MapFailure(state, stateStatusCode, "Không thể lấy trạng thái setup.");
             }
 
-            var studentsAction = await GetStudentParticipants(periodId, "all", null);
+            var studentsAction = await GetStudentParticipants(periodId, "eligible", null);
             if (!TryExtractApiResponse(studentsAction, out var students, out var studentsStatusCode) || students == null)
             {
                 return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy setup snapshot.", 500));
@@ -1477,6 +1481,62 @@ namespace ThesisManagement.Api.Controllers
                 data,
                 allowedActions: state.Data?.AllowedActions ?? new List<string>(),
                 warnings: state.Warnings));
+        }
+
+        [HttpGet("{periodId:int}/operations/export")]
+        [Authorize(Roles = "Admin,Head")]
+        public async Task<ActionResult<ApiResponse<object>>> ExportOperationsSnapshotCompact(
+            int periodId,
+            [FromQuery] DefensePeriodOperationsSnapshotQueryDto query,
+            [FromQuery] string format = "xlsx")
+        {
+            var operationsAction = await GetOperationsSnapshotCompact(periodId, query);
+            if (!TryExtractApiResponse(operationsAction, out var operations, out var operationsStatusCode) || operations == null)
+            {
+                return FromResult(ApiResponse<object>.Fail("Không thể lấy dữ liệu điều hành chấm điểm.", 500));
+            }
+
+            if (!operations.Success)
+            {
+                return MapFailure(operations, operationsStatusCode, "Không thể lấy dữ liệu điều hành chấm điểm.");
+            }
+
+            var stateAction = await GetState(periodId);
+            if (!TryExtractApiResponse(stateAction, out var state, out var stateStatusCode) || state == null)
+            {
+                return FromResult(ApiResponse<object>.Fail("Không thể lấy trạng thái đợt.", 500));
+            }
+
+            if (!state.Success)
+            {
+                return MapFailure(state, stateStatusCode, "Không thể lấy trạng thái đợt.");
+            }
+
+            var councilsAction = await GetCouncils(periodId, null, null, null, 1, 1000);
+            if (!TryExtractApiResponse(councilsAction, out var councils, out var councilsStatusCode) || councils == null)
+            {
+                return FromResult(ApiResponse<object>.Fail("Không thể lấy danh sách hội đồng.", 500));
+            }
+
+            if (!councils.Success)
+            {
+                return MapFailure(councils, councilsStatusCode, "Không thể lấy danh sách hội đồng.");
+            }
+
+            var exportSnapshot = JsonSerializer.Deserialize<DefenseOperationsExportSnapshotDto>(
+                JsonSerializer.Serialize(operations.Data)) ?? new DefenseOperationsExportSnapshotDto();
+            exportSnapshot.DefenseTermId = periodId;
+            exportSnapshot.State = state.Data ?? new DefensePeriodStateDto();
+            exportSnapshot.Councils = councils.Data ?? new PagedResult<CouncilDraftDto>();
+
+            var exportResult = await _operationsExportService.ExportAsync(exportSnapshot, format, HttpContext.RequestAborted);
+            if (!exportResult.Success)
+            {
+                return StatusCode(exportResult.HttpStatusCode == 0 ? 400 : exportResult.HttpStatusCode, exportResult);
+            }
+
+            var exportedFile = exportResult.Data!;
+            return File(exportedFile.Content, exportedFile.ContentType, exportedFile.FileName);
         }
 
         [HttpGet("{periodId:int}/reports/export")]
@@ -4176,13 +4236,14 @@ namespace ThesisManagement.Api.Controllers
                 var inPeriodLecturerPool = !string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode)
                     && context.PeriodLecturerCodes.Contains(topic.SupervisorLecturerCode);
 
+                assignmentByTopicCode.TryGetValue(topic.TopicCode, out var assignment);
+                var isAssignedToCouncil = assignment != null;
                 var hasEligibleStatus = IsDefenseEligibleTopicStatus(topic.Status);
 
                 var isEligible = inPeriodStudentPool
                     && inPeriodLecturerPool
                     && hasEligibleStatus;
-
-                assignmentByTopicCode.TryGetValue(topic.TopicCode, out var assignment);
+                var resolvedTopicStatus = ResolveTopicStatusForCouncilAssignment(topic.Status, isAssignedToCouncil);
                 var hasScoringResult = assignment != null
                     && resultByAssignmentId.TryGetValue(assignment.AssignmentID, out var result)
                     && HasScoringData(result);
@@ -4214,7 +4275,7 @@ namespace ThesisManagement.Api.Controllers
                     Tags = topicTagMap.TryGetValue(topic.TopicCode, out var topicTags)
                         ? topicTags.OrderBy(x => x).ToList()
                         : new List<string>(),
-                    TopicStatus = topic.Status,
+                    TopicStatus = resolvedTopicStatus,
                     StudentCode = studentCode,
                     StudentName = studentName,
                     SupervisorCode = supervisorCode,
@@ -4223,7 +4284,7 @@ namespace ThesisManagement.Api.Controllers
                     InPeriodLecturerPool = inPeriodLecturerPool,
                     HasCompletedMilestone = hasEligibleStatus,
                     IsEligibleForDefense = isEligible,
-                    IsAssignedToCouncil = assignment != null,
+                    IsAssignedToCouncil = isAssignedToCouncil,
                     HasScoringResult = hasScoringResult,
                     AssignmentId = assignment?.AssignmentID,
                     CommitteeId = assignment?.CommitteeID,
@@ -4324,6 +4385,16 @@ namespace ThesisManagement.Api.Controllers
                 || normalized.Contains("READY FOR DEFENSE", StringComparison.Ordinal)
                 || normalized.Contains("READY_FOR_DEFENSE", StringComparison.Ordinal)
                 || normalized.Contains("APPROVED", StringComparison.Ordinal);
+        }
+
+        private static string ResolveTopicStatusForCouncilAssignment(string? topicStatus, bool isAssignedToCouncil)
+        {
+            if (isAssignedToCouncil)
+            {
+                return "Đã phân hội đồng";
+            }
+
+            return topicStatus ?? string.Empty;
         }
 
         private static decimal CalculateCompletionPercent(int totalCount, int completedCount)

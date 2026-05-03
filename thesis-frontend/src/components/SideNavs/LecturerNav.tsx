@@ -16,11 +16,13 @@ import "./LecturerNav.css";
 interface LecturerNavProps {
   onNavigate?: () => void;
   collapsed?: boolean;
+  showDefenseMenus?: boolean;
 }
 
 const LecturerNav: React.FC<LecturerNavProps> = ({
   onNavigate,
   collapsed = false,
+  showDefenseMenus = false,
 }) => {
   const navItems = [
     { path: "/lecturer", label: "Trang chủ", icon: <Home size={18} /> },
@@ -49,17 +51,21 @@ const LecturerNav: React.FC<LecturerNavProps> = ({
       label: "Workflow Audit",
       icon: <Activity size={18} />,
     },
-    {
+    ...(showDefenseMenus
+      ? [
+          {
       path: "/lecturer/schedule",
       label: "Lịch chấm bảo vệ",
       icon: <CalendarCheck size={18} />,
-    },
-    // Committees view for lecturer
-    {
+          },
+          // Committees view for lecturer
+          {
       path: "/lecturer/committees",
       label: "Ca bảo vệ & chấm điểm",
       icon: <Gavel size={18} />,
-    },
+          },
+        ]
+      : []),
     {
       path: "/lecturer/notifications",
       label: "Thông báo",

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using ThesisManagement.Api.Application.Common;
 using ThesisManagement.Api.Application.Command.DefenseExecution;
 using ThesisManagement.Api.Application.Command.DefenseTermLecturers;
@@ -11,6 +12,7 @@ using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
 using ThesisManagement.Api.DTOs.DefenseTermLecturers.Command;
 using ThesisManagement.Api.DTOs.DefenseTermLecturers.Query;
+using ThesisManagement.Api.Services.DefenseDocuments;
 
 namespace ThesisManagement.Api.Controllers
 {
@@ -31,10 +33,13 @@ namespace ThesisManagement.Api.Controllers
         private readonly IRejectRevisionByLecturerCommand _rejectRevisionCommand;
         private readonly IGetScoringMatrixQuery _scoringMatrixQuery;
         private readonly IGetScoringProgressQuery _scoringProgressQuery;
+        private readonly IGetTopicFinalScoreProgressQuery _topicFinalScoreProgressQuery;
         private readonly IGetScoringAlertsQuery _scoringAlertsQuery;
+        private readonly IBuildDefenseReportQuery _buildDefenseReportQuery;
         private readonly ICreateDefenseTermLecturerCommand _createDefenseTermLecturerCommand;
         private readonly IUpdateDefenseTermLecturerCommand _updateDefenseTermLecturerCommand;
         private readonly IDeleteDefenseTermLecturerCommand _deleteDefenseTermLecturerCommand;
+        private readonly IDefenseTemplateExportService _defenseTemplateExportService;
 
         public LecturerDefenseController(
             Services.IUnitOfWork uow,
@@ -52,10 +57,13 @@ namespace ThesisManagement.Api.Controllers
             IRejectRevisionByLecturerCommand rejectRevisionCommand,
             IGetScoringMatrixQuery scoringMatrixQuery,
             IGetScoringProgressQuery scoringProgressQuery,
+            IGetTopicFinalScoreProgressQuery topicFinalScoreProgressQuery,
             IGetScoringAlertsQuery scoringAlertsQuery,
+            IBuildDefenseReportQuery buildDefenseReportQuery,
             ICreateDefenseTermLecturerCommand createDefenseTermLecturerCommand,
             IUpdateDefenseTermLecturerCommand updateDefenseTermLecturerCommand,
-            IDeleteDefenseTermLecturerCommand deleteDefenseTermLecturerCommand) : base(uow, codeGen, mapper)
+            IDeleteDefenseTermLecturerCommand deleteDefenseTermLecturerCommand,
+            IDefenseTemplateExportService defenseTemplateExportService) : base(uow, codeGen, mapper)
         {
             _getCommitteesQuery = getCommitteesQuery;
             _getMinutesQuery = getMinutesQuery;
@@ -69,10 +77,193 @@ namespace ThesisManagement.Api.Controllers
             _rejectRevisionCommand = rejectRevisionCommand;
             _scoringMatrixQuery = scoringMatrixQuery;
             _scoringProgressQuery = scoringProgressQuery;
+            _topicFinalScoreProgressQuery = topicFinalScoreProgressQuery;
             _scoringAlertsQuery = scoringAlertsQuery;
+            _buildDefenseReportQuery = buildDefenseReportQuery;
             _createDefenseTermLecturerCommand = createDefenseTermLecturerCommand;
             _updateDefenseTermLecturerCommand = updateDefenseTermLecturerCommand;
             _deleteDefenseTermLecturerCommand = deleteDefenseTermLecturerCommand;
+            _defenseTemplateExportService = defenseTemplateExportService;
+        }
+
+        private sealed class LecturerCommitteeAccessScope
+        {
+            public bool CouncilListLocked { get; set; }
+            public HashSet<int> CommitteeIds { get; } = new();
+            public int CommitteeCount => CommitteeIds.Count;
+            public bool HasCommitteeAccess => CouncilListLocked && CommitteeCount > 0;
+        }
+
+        private static List<ScoringProgressDto> BuildScoringProgressSnapshot(IEnumerable<ScoringMatrixRowDto> matrixRows)
+        {
+            return matrixRows
+                .GroupBy(x => new { x.CommitteeId, x.CommitteeCode })
+                .Select(g =>
+                {
+                    var total = g.Count();
+                    // Consider a row "completed" only when it is explicitly completed/locked or a final score exists.
+                    var completed = g.Count(x => x.Status == "COMPLETED" || x.Status == "LOCKED" || x.FinalScore.HasValue);
+                    return new ScoringProgressDto
+                    {
+                        CommitteeId = g.Key.CommitteeId,
+                        CommitteeCode = g.Key.CommitteeCode,
+                        TotalAssignments = total,
+                        CompletedAssignments = completed,
+                        ProgressPercent = total == 0 ? 0 : Math.Round((decimal)completed * 100m / total, 2)
+                    };
+                })
+                .OrderBy(x => x.CommitteeId)
+                .ToList();
+        }
+
+        private static List<TopicFinalScoreProgressDto> BuildTopicFinalScoreProgressSnapshot(IEnumerable<ScoringMatrixRowDto> matrixRows)
+        {
+            return matrixRows
+                .GroupBy(x => new { x.CommitteeId, x.CommitteeCode })
+                .Select(g =>
+                {
+                    var total = g.Count();
+                    // Count a topic as "scored" only when the final score has been calculated.
+                    var scored = g.Count(x => x.FinalScore.HasValue);
+                    return new TopicFinalScoreProgressDto
+                    {
+                        CommitteeId = g.Key.CommitteeId,
+                        CommitteeCode = g.Key.CommitteeCode,
+                        TotalTopics = total,
+                        ScoredTopics = scored,
+                        ProgressPercent = total == 0 ? 0 : Math.Round((decimal)scored * 100m / total, 2)
+                    };
+                })
+                .OrderBy(x => x.CommitteeId)
+                .ToList();
+        }
+
+        private static List<ScoringAlertDto> BuildScoringAlertsSnapshot(IEnumerable<ScoringMatrixRowDto> matrixRows)
+        {
+            const decimal varianceThreshold = 2.0m;
+
+            var alerts = new List<ScoringAlertDto>();
+            foreach (var row in matrixRows)
+            {
+                if (row.Variance.HasValue && row.Variance.Value > varianceThreshold)
+                {
+                    alerts.Add(new ScoringAlertDto
+                    {
+                        AlertCode = DefenseUcErrorCodes.Scoring.VarianceAlert,
+                        Type = "VARIANCE",
+                        CommitteeId = row.CommitteeId,
+                        CommitteeCode = row.CommitteeCode,
+                        AssignmentId = row.AssignmentId,
+                        AssignmentCode = row.AssignmentCode,
+                        Message = $"Chênh lệch điểm vượt ngưỡng cho assignment {row.AssignmentCode}.",
+                        Value = row.Variance,
+                        Threshold = varianceThreshold
+                    });
+                }
+
+                if (!row.IsLocked && row.RequiredCount > 0 && row.SubmittedCount < row.RequiredCount)
+                {
+                    alerts.Add(new ScoringAlertDto
+                    {
+                        AlertCode = DefenseUcErrorCodes.Scoring.IncompleteAlert,
+                        Type = "INCOMPLETE",
+                        CommitteeId = row.CommitteeId,
+                        CommitteeCode = row.CommitteeCode,
+                        AssignmentId = row.AssignmentId,
+                        AssignmentCode = row.AssignmentCode,
+                        Message = $"Assignment {row.AssignmentCode} chưa đủ điểm thành phần ({row.SubmittedCount}/{row.RequiredCount}).",
+                        Value = row.SubmittedCount,
+                        Threshold = row.RequiredCount
+                    });
+                }
+            }
+
+            return alerts;
+        }
+
+        private static int? ReadCommitteeIdFromElement(JsonElement committeeElement)
+        {
+            static int? TryReadInt(JsonElement source, string propertyName)
+            {
+                if (!source.TryGetProperty(propertyName, out var value))
+                {
+                    return null;
+                }
+
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numeric))
+                {
+                    return numeric;
+                }
+
+                if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var parsed))
+                {
+                    return parsed;
+                }
+
+                return null;
+            }
+
+            var candidates = new[]
+            {
+                "CommitteeID",
+                "CommitteeId",
+                "committeeID",
+                "committeeId",
+                "Id",
+                "id"
+            };
+
+            foreach (var propertyName in candidates)
+            {
+                var maybeId = TryReadInt(committeeElement, propertyName);
+                if (maybeId.HasValue && maybeId.Value > 0)
+                {
+                    return maybeId.Value;
+                }
+            }
+
+            return null;
+        }
+
+        private static LecturerCommitteeAccessScope ResolveLecturerCommitteeAccessScope(object? committeesData)
+        {
+            var scope = new LecturerCommitteeAccessScope();
+
+            if (committeesData == null)
+            {
+                return scope;
+            }
+
+            try
+            {
+                using var committeesDocument = JsonDocument.Parse(JsonSerializer.Serialize(committeesData));
+                var committeesRoot = committeesDocument.RootElement;
+
+                if (committeesRoot.TryGetProperty("CouncilListLocked", out var councilListLockedElement) &&
+                    (councilListLockedElement.ValueKind == JsonValueKind.True || councilListLockedElement.ValueKind == JsonValueKind.False))
+                {
+                    scope.CouncilListLocked = councilListLockedElement.GetBoolean();
+                }
+
+                if (committeesRoot.TryGetProperty("Committees", out var committeesElement) &&
+                    committeesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var committeeElement in committeesElement.EnumerateArray())
+                    {
+                        var maybeCommitteeId = ReadCommitteeIdFromElement(committeeElement);
+                        if (maybeCommitteeId.HasValue)
+                        {
+                            scope.CommitteeIds.Add(maybeCommitteeId.Value);
+                        }
+                    }
+                }
+
+                return scope;
+            }
+            catch
+            {
+                return scope;
+            }
         }
 
         [HttpGet("snapshot")]
@@ -93,81 +284,91 @@ namespace ThesisManagement.Api.Controllers
                     committeesResult.AllowedActions));
             }
 
-            var revisionQueueResult = await _revisionQueueQuery.ExecuteAsync(lecturerCode, periodId);
-            if (!revisionQueueResult.Success)
+            var accessScope = ResolveLecturerCommitteeAccessScope(committeesResult.Data);
+            var councilListLocked = accessScope.CouncilListLocked;
+            var committeeCount = accessScope.CommitteeCount;
+            var hasCommitteeAccess = accessScope.HasCommitteeAccess;
+            var scopedCommitteeIds = accessScope.CommitteeIds;
+
+            if (committeeId.HasValue && hasCommitteeAccess && !scopedCommitteeIds.Contains(committeeId.Value))
             {
                 return FromResult(ApiResponse<object>.Fail(
-                    revisionQueueResult.Message ?? "Không thể lấy revision queue.",
-                    revisionQueueResult.HttpStatusCode == 0 ? 400 : revisionQueueResult.HttpStatusCode,
-                    revisionQueueResult.Errors,
-                    revisionQueueResult.Code,
-                    revisionQueueResult.Warnings,
-                    revisionQueueResult.AllowedActions));
+                    "Bạn không thuộc hội đồng được yêu cầu.",
+                    403,
+                    code: "LECTURER_COMMITTEE_ACCESS_DENIED"));
             }
 
-            var matrixResult = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId);
-            if (!matrixResult.Success)
-            {
-                return FromResult(ApiResponse<object>.Fail(
-                    matrixResult.Message ?? "Không thể lấy scoring matrix.",
-                    matrixResult.HttpStatusCode == 0 ? 400 : matrixResult.HttpStatusCode,
-                    matrixResult.Errors,
-                    matrixResult.Code,
-                    matrixResult.Warnings,
-                    matrixResult.AllowedActions));
-            }
+            var revisionQueueResult = ApiResponse<List<object>>.SuccessResponse(new List<object>());
+            var matrixResult = ApiResponse<List<ScoringMatrixRowDto>>.SuccessResponse(new List<ScoringMatrixRowDto>());
+            var progressResult = ApiResponse<List<ScoringProgressDto>>.SuccessResponse(new List<ScoringProgressDto>());
+            var topicFinalProgressResult = ApiResponse<List<TopicFinalScoreProgressDto>>.SuccessResponse(new List<TopicFinalScoreProgressDto>());
+            var alertsResult = ApiResponse<List<ScoringAlertDto>>.SuccessResponse(new List<ScoringAlertDto>());
+            var minutes = new List<LecturerCommitteeMinuteDto>();
 
-            var progressResult = await _scoringProgressQuery.ExecuteAsync(periodId, committeeId);
-            if (!progressResult.Success)
+            if (hasCommitteeAccess)
             {
-                return FromResult(ApiResponse<object>.Fail(
-                    progressResult.Message ?? "Không thể lấy scoring progress.",
-                    progressResult.HttpStatusCode == 0 ? 400 : progressResult.HttpStatusCode,
-                    progressResult.Errors,
-                    progressResult.Code,
-                    progressResult.Warnings,
-                    progressResult.AllowedActions));
-            }
-
-            var alertsResult = await _scoringAlertsQuery.ExecuteAsync(periodId, committeeId);
-            if (!alertsResult.Success)
-            {
-                return FromResult(ApiResponse<object>.Fail(
-                    alertsResult.Message ?? "Không thể lấy scoring alerts.",
-                    alertsResult.HttpStatusCode == 0 ? 400 : alertsResult.HttpStatusCode,
-                    alertsResult.Errors,
-                    alertsResult.Code,
-                    alertsResult.Warnings,
-                    alertsResult.AllowedActions));
-            }
-
-            List<LecturerCommitteeMinuteDto> minutes = new();
-            if (committeeId.HasValue)
-            {
-                var minutesResult = await _getMinutesQuery.ExecuteAsync(committeeId.Value, periodId);
-                if (!minutesResult.Success)
+                // Execute queries sequentially to avoid DbContext threading violations
+                // EF Core does not support concurrent async operations on the same DbContext instance
+                revisionQueueResult = await _revisionQueueQuery.ExecuteAsync(lecturerCode, periodId);
+                if (!revisionQueueResult.Success)
                 {
                     return FromResult(ApiResponse<object>.Fail(
-                        minutesResult.Message ?? "Không thể lấy biên bản hội đồng.",
-                        minutesResult.HttpStatusCode == 0 ? 400 : minutesResult.HttpStatusCode,
-                        minutesResult.Errors,
-                        minutesResult.Code,
-                        minutesResult.Warnings,
-                        minutesResult.AllowedActions));
+                        revisionQueueResult.Message ?? "Không thể lấy revision queue.",
+                        revisionQueueResult.HttpStatusCode == 0 ? 400 : revisionQueueResult.HttpStatusCode,
+                        revisionQueueResult.Errors,
+                        revisionQueueResult.Code,
+                        revisionQueueResult.Warnings,
+                        revisionQueueResult.AllowedActions));
                 }
 
-                minutes = minutesResult.Data ?? new List<LecturerCommitteeMinuteDto>();
+                matrixResult = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId);
+                if (!matrixResult.Success)
+                {
+                    return FromResult(ApiResponse<object>.Fail(
+                        matrixResult.Message ?? "Không thể lấy scoring matrix.",
+                        matrixResult.HttpStatusCode == 0 ? 400 : matrixResult.HttpStatusCode,
+                        matrixResult.Errors,
+                        matrixResult.Code,
+                        matrixResult.Warnings,
+                        matrixResult.AllowedActions));
+                }
+
+                var matrixRows = matrixResult.Data ?? new List<ScoringMatrixRowDto>();
+                progressResult = ApiResponse<List<ScoringProgressDto>>.SuccessResponse(BuildScoringProgressSnapshot(matrixRows));
+                topicFinalProgressResult = ApiResponse<List<TopicFinalScoreProgressDto>>.SuccessResponse(BuildTopicFinalScoreProgressSnapshot(matrixRows));
+                alertsResult = ApiResponse<List<ScoringAlertDto>>.SuccessResponse(BuildScoringAlertsSnapshot(matrixRows));
+
+                if (committeeId.HasValue)
+                {
+                    var minutesResult = await _getMinutesQuery.ExecuteAsync(committeeId.Value, periodId);
+                    if (!minutesResult.Success)
+                    {
+                        return FromResult(ApiResponse<object>.Fail(
+                            minutesResult.Message ?? "Không thể lấy biên bản hội đồng.",
+                            minutesResult.HttpStatusCode == 0 ? 400 : minutesResult.HttpStatusCode,
+                            minutesResult.Errors,
+                            minutesResult.Code,
+                            minutesResult.Warnings,
+                            minutesResult.AllowedActions));
+                    }
+
+                    minutes = minutesResult.Data ?? new List<LecturerCommitteeMinuteDto>();
+                }
             }
 
             var snapshot = new
             {
                 LecturerCode = lecturerCode,
+                CouncilListLocked = councilListLocked,
+                HasCommitteeAccess = hasCommitteeAccess,
+                CommitteeCount = committeeCount,
                 Committees = committeesResult.Data,
                 RevisionQueue = revisionQueueResult.Data,
                 Scoring = new
                 {
                     Matrix = matrixResult.Data,
                     Progress = progressResult.Data,
+                    TopicFinalProgress = topicFinalProgressResult.Data,
                     Alerts = alertsResult.Data
                 },
                 Minutes = minutes
@@ -230,12 +431,159 @@ namespace ThesisManagement.Api.Controllers
                 snapshot.AllowedActions));
         }
 
+        [HttpGet("/api/lecturer-defense/current/access")]
+        [Authorize(Roles = "Lecturer,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<object>>> GetCurrentLecturerAccess()
+        {
+            var resolved = await ResolveCurrentLecturerPeriodAsync(HttpContext.RequestAborted);
+            if (!resolved.Success || resolved.Period == null)
+            {
+                return StatusCode(resolved.StatusCode, ApiResponse<object>.Fail(
+                    resolved.Message ?? "Không thể xác định đợt bảo vệ hiện tại.",
+                    resolved.StatusCode,
+                    code: resolved.Code));
+            }
+
+            var lecturerCode = GetRequestUserCode() ?? string.Empty;
+            var committeesResult = await _getCommitteesQuery.ExecuteAsync(lecturerCode, resolved.Period.DefenseTermId, HttpContext.RequestAborted);
+            if (!committeesResult.Success)
+            {
+                return FromResult(ApiResponse<object>.Fail(
+                    committeesResult.Message ?? "Không thể lấy danh sách hội đồng.",
+                    committeesResult.HttpStatusCode == 0 ? 400 : committeesResult.HttpStatusCode,
+                    committeesResult.Errors,
+                    committeesResult.Code,
+                    committeesResult.Warnings,
+                    committeesResult.AllowedActions));
+            }
+
+            var accessScope = ResolveLecturerCommitteeAccessScope(committeesResult.Data);
+            var payload = new
+            {
+                Period = new
+                {
+                    resolved.Period.DefenseTermId,
+                    resolved.Period.Name,
+                    resolved.Period.Status,
+                    resolved.Period.StartDate,
+                    resolved.Period.EndDate
+                },
+                CouncilListLocked = accessScope.CouncilListLocked,
+                HasCommitteeAccess = accessScope.HasCommitteeAccess,
+                CommitteeCount = accessScope.CommitteeCount
+            };
+
+            return StatusCode(200, ApiResponse<object>.SuccessResponse(payload));
+        }
+
         [HttpPost("minutes/upsert")]
         [Authorize(Roles = "Lecturer,Head,Secretary")]
         public async Task<ActionResult<ApiResponse<object>>> UpsertMinutes(int periodId, [FromBody] LecturerMinutesUpsertRequestDto request)
         {
             var result = await SaveMinutes(periodId, request.CommitteeId, request.Data);
             return WrapAsObject(result, "UPSERT_MINUTES");
+        }
+
+        [HttpGet("minutes/export-docx")]
+        [HttpGet("minutes/export-document")]
+        [Authorize(Roles = "Lecturer,Head,Secretary")]
+        public async Task<IActionResult> ExportMinutesDocx(
+            int periodId,
+            [FromQuery] int committeeId,
+            [FromQuery] int assignmentId,
+            [FromQuery] string template = "meeting",
+            [FromQuery] string format = "word")
+        {
+            var normalizedTemplate = (template ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedFormat = (format ?? string.Empty).Trim().ToLowerInvariant();
+            ApiResponse<(byte[] Content, string FileName, string ContentType)> result;
+
+            switch (normalizedTemplate)
+            {
+                case "meeting":
+                case "minutes":
+                case "bien-ban":
+                    result = normalizedFormat switch
+                    {
+                        "pdf" => await _defenseTemplateExportService.ExportMeetingMinutesPdfAsync(
+                            periodId,
+                            committeeId,
+                            assignmentId,
+                            HttpContext.RequestAborted),
+                        _ => await _defenseTemplateExportService.ExportMeetingMinutesAsync(
+                            periodId,
+                            committeeId,
+                            assignmentId,
+                            HttpContext.RequestAborted),
+                    };
+                    break;
+
+                case "reviewer":
+                case "nhan-xet":
+                case "review":
+                    result = normalizedFormat switch
+                    {
+                        "pdf" => await _defenseTemplateExportService.ExportReviewerCommentsPdfAsync(
+                            periodId,
+                            committeeId,
+                            assignmentId,
+                            HttpContext.RequestAborted),
+                        _ => await _defenseTemplateExportService.ExportReviewerCommentsAsync(
+                            periodId,
+                            committeeId,
+                            assignmentId,
+                            HttpContext.RequestAborted),
+                    };
+                    break;
+
+                default:
+                    return BadRequest(ApiResponse<object>.Fail("template không hợp lệ. Hỗ trợ: meeting, reviewer.", 400));
+            }
+
+            if (!result.Success || result.Data.Content.Length == 0)
+            {
+                return StatusCode(
+                    result.HttpStatusCode == 0 ? 400 : result.HttpStatusCode,
+                    ApiResponse<object>.Fail(
+                        result.Message ?? "Không thể xuất tài liệu.",
+                        result.HttpStatusCode == 0 ? 400 : result.HttpStatusCode,
+                        result.Errors,
+                        result.Code));
+            }
+
+            return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
+        }
+
+        [HttpGet("reports/export-form-1")]
+        [Authorize(Roles = "Lecturer,Head,Secretary")]
+        public async Task<IActionResult> ExportScoreSheet(
+            int periodId,
+            [FromQuery] int committeeId,
+            [FromQuery] string format = "word")
+        {
+            var normalizedFormat = (format ?? string.Empty).Trim().ToLowerInvariant();
+            var response = await _buildDefenseReportQuery.ExecuteAsync(periodId, "form-1", normalizedFormat, committeeId, HttpContext.RequestAborted);
+
+            if (!response.Success || response.Data.Content.Length == 0)
+            {
+                return StatusCode(
+                    response.HttpStatusCode == 0 ? 400 : response.HttpStatusCode,
+                    ApiResponse<object>.Fail(
+                        response.Message ?? "Không thể xuất bảng điểm.",
+                        response.HttpStatusCode == 0 ? 400 : response.HttpStatusCode,
+                        response.Errors,
+                        response.Code));
+            }
+
+            return File(response.Data.Content, response.Data.ContentType, response.Data.FileName);
+        }
+
+        [HttpGet("scoring/progress-topic-final")]
+        [Authorize(Roles = "Lecturer,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<List<TopicFinalScoreProgressDto>>>> GetTopicFinalScoreProgress(int periodId, [FromQuery] int? committeeId = null)
+        {
+            var response = await _topicFinalScoreProgressQuery.ExecuteAsync(periodId, committeeId, HttpContext.RequestAborted);
+            return StatusCode(response.HttpStatusCode == 0 ? 200 : response.HttpStatusCode, response);
         }
 
         [HttpPost("scoring/actions")]

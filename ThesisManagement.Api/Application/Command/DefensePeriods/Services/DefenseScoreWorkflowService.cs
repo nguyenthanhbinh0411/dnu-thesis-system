@@ -102,13 +102,12 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 throw new BusinessRuleException("Hội đồng đã chốt/công bố kết quả, không thể chấm điểm thêm.", "UC3.4.INVALID_COMMITTEE_STATE");
             }
 
-            var result = await _db.DefenseResults.FirstOrDefaultAsync(x => x.AssignmentId == request.AssignmentId, cancellationToken);
+            // Check if DEFENSE_RESULTS is locked (scores have been finalized by Chair)
+            var result = await _db.DefenseResults.AsNoTracking().FirstOrDefaultAsync(x => x.AssignmentId == request.AssignmentId, cancellationToken);
             if (result != null && result.IsLocked)
             {
                 throw new BusinessRuleException("Phiên điểm đang bị khóa, cần mở khóa trước khi chỉnh sửa điểm.");
             }
-
-            var beforeSnapshot = result == null ? null : new { result.IsLocked, result.LastUpdated };
 
             var score = await _db.DefenseScores.FirstOrDefaultAsync(x => x.AssignmentID == request.AssignmentId && x.MemberLecturerCode == lecturerCode, cancellationToken);
             var beforeScoreSnapshot = score == null
@@ -136,10 +135,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 };
                 await _uow.DefenseScores.AddAsync(score);
             }
-            else if (score.IsSubmitted)
-            {
-                throw new BusinessRuleException("Biểu mẫu chấm điểm cá nhân đã khóa sau khi submit. Cần Chủ tịch mở lại để chỉnh sửa.");
-            }
 
             score.Score = request.Score;
             score.Comment = request.Comment;
@@ -152,7 +147,8 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
 
             await _uow.SaveChangesAsync();
 
-            await RecalculateAggregateForAssignmentIfCompleteAsync(committeeId, request.AssignmentId, cancellationToken);
+            // NOTE: Do NOT write to DEFENSE_RESULTS here.
+            // DEFENSE_RESULTS is only populated when the Chair locks (chốt) the session.
 
             await _auditTrail.WriteAsync(
                 "SUBMIT_INDEPENDENT_SCORE",
@@ -188,41 +184,16 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 }
             }
 
-            var scores = await _db.DefenseScores.Where(x => x.AssignmentID == request.AssignmentId && x.IsSubmitted).Select(x => x.Score).ToListAsync(cancellationToken);
-            if (scores.Count >= 2)
+            // Variance warning (notification only, no auto-lock)
+            var allScores = await _db.DefenseScores
+                .Where(x => x.AssignmentID == request.AssignmentId && x.IsSubmitted)
+                .Select(x => x.Score)
+                .ToListAsync(cancellationToken);
+            if (allScores.Count >= 2)
             {
-                var variance = scores.Max() - scores.Min();
+                var variance = allScores.Max() - allScores.Min();
                 if (variance > ScoreVarianceThreshold)
                 {
-                    result = await _db.DefenseResults.FirstOrDefaultAsync(x => x.AssignmentId == request.AssignmentId, cancellationToken);
-                    if (result == null)
-                    {
-                        result = new DefenseResult
-                        {
-                            AssignmentId = request.AssignmentId,
-                            IsLocked = true,
-                            CreatedAt = DateTime.UtcNow,
-                            LastUpdated = DateTime.UtcNow
-                        };
-                        await _uow.DefenseResults.AddAsync(result);
-                    }
-                    else
-                    {
-                        result.IsLocked = true;
-                        result.LastUpdated = DateTime.UtcNow;
-                        _uow.DefenseResults.Update(result);
-                    }
-
-                    await _uow.SaveChangesAsync();
-                    await _auditTrail.WriteAsync(
-                        "SCORE_VARIANCE_WARNING",
-                        "WARNING",
-                        beforeSnapshot,
-                        new { result.IsLocked, result.LastUpdated },
-                        new { CommitteeId = committeeId, request.AssignmentId, Variance = variance, Threshold = ScoreVarianceThreshold },
-                        actorUserId,
-                        cancellationToken);
-
                     await _resiliencePolicy.ExecuteAsync("DEFENSE_HUB_NOTIFY", async ct =>
                     {
                         await _hub.Clients.All.SendAsync("DefenseScoreVarianceAlert", new { CommitteeId = committeeId, AssignmentId = request.AssignmentId, Variance = variance }, ct);
@@ -373,32 +344,48 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 throw new BusinessRuleException("Hội đồng đang ở trạng thái Draft. Không thể mở ca bảo vệ.", "UC3.4.INVALID_COMMITTEE_STATE");
             }
 
-            if (committeeStatus == CommitteeStatus.Completed || committeeStatus == CommitteeStatus.Finalized || committeeStatus == CommitteeStatus.Published)
+            if (committeeStatus == CommitteeStatus.Finalized || committeeStatus == CommitteeStatus.Published)
             {
-                throw new BusinessRuleException("Hội đồng đã kết thúc/chốt, không thể mở ca bảo vệ.", "UC3.4.INVALID_COMMITTEE_STATE");
+                throw new BusinessRuleException("Hội đồng đã chốt/công bố kết quả, không thể mở ca bảo vệ.", "UC3.4.INVALID_COMMITTEE_STATE");
             }
 
             var now = DateTime.UtcNow;
-            if (committeeStatus == CommitteeStatus.Ready)
+            if (committeeStatus == CommitteeStatus.Ready || committeeStatus == CommitteeStatus.Completed)
             {
-                DefenseWorkflowStateMachine.EnsureCommitteeTransition(committeeStatus, CommitteeStatus.Ongoing, "UC3.4.INVALID_COMMITTEE_STATE");
                 committee.Status = DefenseWorkflowStateMachine.ToValue(CommitteeStatus.Ongoing);
             }
 
             committee.LastUpdated = now;
             _uow.Committees.Update(committee);
 
+            // Unlock all assignment results and clear aggregate scores when reopening
+            // DEFENSE_RESULTS should only contain finalized scores when locked (chốt)
+            var assignmentIds = assignments.Select(x => x.AssignmentID).ToList();
+            var lockedResults = await _db.DefenseResults
+                .Where(x => assignmentIds.Contains(x.AssignmentId))
+                .ToListAsync(cancellationToken);
+            foreach (var result in lockedResults)
+            {
+                result.IsLocked = false;
+                result.ScoreGvhd = null;
+                result.ScoreCt = null;
+                result.ScoreUvtk = null;
+                result.ScoreUvpb = null;
+                result.FinalScoreNumeric = null;
+                result.FinalScoreText = null;
+                result.LastUpdated = now;
+                _uow.DefenseResults.Update(result);
+            }
+
             foreach (var assignment in assignments)
             {
                 var assignmentStatus = DefenseWorkflowStateMachine.ParseAssignmentStatus(assignment.Status);
-                if (assignmentStatus != AssignmentStatus.Pending)
+                if (assignmentStatus == AssignmentStatus.Pending || assignmentStatus == AssignmentStatus.Graded)
                 {
-                    continue;
+                    assignment.Status = DefenseWorkflowStateMachine.ToValue(AssignmentStatus.Defending);
+                    assignment.LastUpdated = now;
+                    _uow.DefenseAssignments.Update(assignment);
                 }
-
-                assignment.Status = DefenseWorkflowStateMachine.ToValue(AssignmentStatus.Defending);
-                assignment.LastUpdated = now;
-                _uow.DefenseAssignments.Update(assignment);
             }
 
             await _uow.SaveChangesAsync();
@@ -450,15 +437,26 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 .ToDictionaryAsync(x => x.AssignmentID, x => x.Score, cancellationToken);
             var now = DateTime.UtcNow;
 
-            var memberCodes = await _db.CommitteeMembers.AsNoTracking()
+            var committeeMemberRows = await _db.CommitteeMembers.AsNoTracking()
                 .Where(x => x.CommitteeID == committeeId && !string.IsNullOrWhiteSpace(x.MemberLecturerCode))
-                .Select(x => x.MemberLecturerCode!)
+                .Select(x => new
+                {
+                    x.MemberLecturerCode,
+                    x.Role
+                })
                 .ToListAsync(cancellationToken);
 
-            var normalizedMemberCodes = memberCodes
-                .Select(x => x.Trim().ToUpperInvariant())
+            var normalizedMemberCodes = committeeMemberRows
+                .Select(x => x.MemberLecturerCode!.Trim().ToUpperInvariant())
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
+
+            var committeeRoleMap = committeeMemberRows
+                .GroupBy(x => x.MemberLecturerCode!.Trim().ToUpperInvariant())
+                .ToDictionary(
+                    g => g.Key,
+                    g => NormalizeRole(g.Select(x => x.Role).FirstOrDefault()),
+                    StringComparer.Ordinal);
 
             if (normalizedMemberCodes.Count == 0)
             {
@@ -473,10 +471,17 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     AssignmentID = x.AssignmentID,
                     MemberLecturerCode = x.MemberLecturerCode!,
                     Score = x.Score,
-                    Role = x.Role,
                     LastUpdated = x.LastUpdated
                 })
                 .ToListAsync(cancellationToken);
+
+            foreach (var row in rawSubmittedScores)
+            {
+                if (committeeRoleMap.TryGetValue(row.MemberLecturerCode.Trim().ToUpperInvariant(), out var role))
+                {
+                    row.Role = role;
+                }
+            }
 
             var submittedByAssignment = rawSubmittedScores
                 .GroupBy(x => x.AssignmentID)
@@ -517,8 +522,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                         });
                 }
 
-                var memberScores = submittedRows.Select(x => (decimal)x.Score).ToList();
-
                 var scoreCt = ResolveRoleScore(submittedRows, x => x.Role, x => x.Score, "CT");
                 var scoreTk = ResolveRoleScore(submittedRows, x => x.Role, x => x.Score, "UVTK");
                 var scorePb = ResolveRoleScore(submittedRows, x => x.Role, x => x.Score, "UVPB");
@@ -527,7 +530,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     .Where(x => NormalizeRole((string?)x.Role) == "GVHD")
                     .Select(x => (decimal?)x.Score)
                     .FirstOrDefault();
-                var finalScore = ResolveFinalScore(memberScores, scoreGvhd, scoreCt, scoreTk, scorePb);
+                var finalScore = ResolveFinalScore(scoreGvhd, scoreCt, scoreTk, scorePb);
 
                 if (!existingResultIds.Contains(assignmentId))
                 {
@@ -659,15 +662,26 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
 
         private async Task RecalculateAggregateForAssignmentIfCompleteAsync(int committeeId, int assignmentId, CancellationToken cancellationToken)
         {
-            var memberCodes = await _db.CommitteeMembers.AsNoTracking()
+            var committeeMemberRows = await _db.CommitteeMembers.AsNoTracking()
                 .Where(x => x.CommitteeID == committeeId && !string.IsNullOrWhiteSpace(x.MemberLecturerCode))
-                .Select(x => x.MemberLecturerCode!)
+                .Select(x => new
+                {
+                    x.MemberLecturerCode,
+                    x.Role
+                })
                 .ToListAsync(cancellationToken);
 
-            var normalizedMemberCodes = memberCodes
-                .Select(x => x.Trim().ToUpperInvariant())
+            var normalizedMemberCodes = committeeMemberRows
+                .Select(x => x.MemberLecturerCode!.Trim().ToUpperInvariant())
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
+
+            var committeeRoleMap = committeeMemberRows
+                .GroupBy(x => x.MemberLecturerCode!.Trim().ToUpperInvariant())
+                .ToDictionary(
+                    g => g.Key,
+                    g => NormalizeRole(g.Select(x => x.Role).FirstOrDefault()),
+                    StringComparer.Ordinal);
 
             if (normalizedMemberCodes.Count == 0)
             {
@@ -681,11 +695,18 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     ScoreID = x.ScoreID,
                     AssignmentID = x.AssignmentID,
                     MemberLecturerCode = x.MemberLecturerCode!,
-                    Role = x.Role,
                     Score = x.Score,
                     LastUpdated = x.LastUpdated
                 })
                 .ToListAsync(cancellationToken);
+
+            foreach (var row in submittedRows)
+            {
+                if (committeeRoleMap.TryGetValue(row.MemberLecturerCode.Trim().ToUpperInvariant(), out var role))
+                {
+                    row.Role = role;
+                }
+            }
 
             var perMemberLatest = submittedRows
                 .GroupBy(x => x.MemberLecturerCode!.Trim().ToUpperInvariant())
@@ -710,7 +731,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             var scorePb = ResolveRoleScore(perMemberLatest, x => x.Role, x => x.Score, "UVPB");
             var topicSupervisorScore = await GetTopicSupervisorScoreByAssignmentAsync(assignmentId, cancellationToken);
             var scoreGvhd = topicSupervisorScore ?? perMemberLatest.Where(x => NormalizeRole(x.Role) == "GVHD").Select(x => (decimal?)x.Score).FirstOrDefault();
-            var finalScore = ResolveFinalScore(perMemberLatest.Select(x => x.Score).ToList(), scoreGvhd, scoreCt, scoreTk, scorePb);
+            var finalScore = ResolveFinalScore(scoreGvhd, scoreCt, scoreTk, scorePb);
 
             var now = DateTime.UtcNow;
             var result = await _db.DefenseResults.FirstOrDefaultAsync(x => x.AssignmentId == assignmentId, cancellationToken);
@@ -746,19 +767,23 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             await _uow.SaveChangesAsync();
         }
 
-        private static decimal ResolveFinalScore(
-            IReadOnlyCollection<decimal> memberScores,
+        private static decimal? ResolveFinalScore(
             decimal? scoreGvhd,
             decimal? scoreCt,
             decimal? scoreTk,
             decimal? scorePb)
         {
-            if (scoreGvhd.HasValue && scoreCt.HasValue && scoreTk.HasValue && scorePb.HasValue)
+            var componentScores = new[] { scoreGvhd, scoreCt, scoreTk, scorePb }
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .ToList();
+
+            if (componentScores.Count >= 3)
             {
-                return Math.Round((scoreGvhd.Value + scoreCt.Value + scoreTk.Value + scorePb.Value) / 4m, 1);
+                return Math.Round(componentScores.Average(), 1);
             }
 
-            return Math.Round(memberScores.Average(), 1);
+            return null;
         }
 
         private async Task<decimal?> GetTopicSupervisorScoreByAssignmentAsync(int assignmentId, CancellationToken cancellationToken)

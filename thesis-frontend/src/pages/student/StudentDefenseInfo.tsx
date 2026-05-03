@@ -361,14 +361,14 @@ const pickFirstRecordArray = (
 const hasMeaningfulDefenseInfo = (value: DefenseInfoView): boolean => {
   return Boolean(
     value.studentCode ||
-      value.studentName ||
-      value.topicCode ||
-      value.topicTitle ||
-      value.committeeCode ||
-      value.room ||
-      value.scheduledAt ||
-      value.finalScore != null ||
-      value.grade,
+    value.studentName ||
+    value.topicCode ||
+    value.topicTitle ||
+    value.committeeCode ||
+    value.room ||
+    value.scheduledAt ||
+    value.finalScore != null ||
+    value.grade,
   );
 };
 
@@ -1365,27 +1365,21 @@ const StudentDefenseInfo: React.FC = () => {
       <style>
         {`
           .sd-root {
-            --sd-ink: #0f172a;
-            --sd-muted: #475569;
-            --sd-line: #cbd5e1;
-            --sd-main: #f37021;
-            --sd-soft: #fff7ed;
-            max-width: 1240px;
-            margin: 0 auto;
-            padding: 18px;
-            color: var(--sd-ink);
-            font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif;
+            max-width: 1360px;
+            padding: 20px;
+            color: #0f172a;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
           }
           .sd-card {
             background: #ffffff;
-            border: 1px solid var(--sd-line);
-            border-radius: 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             padding: 18px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
           }
           .sd-header {
-            margin-bottom: 14px;
-            background: linear-gradient(140deg, #ffffff 0%, #fff8f3 100%);
+            margin-bottom: 16px;
+            background: #ffffff;
           }
           .sd-hero-head {
             display: flex;
@@ -1401,19 +1395,19 @@ const StudentDefenseInfo: React.FC = () => {
             margin: 0;
             font-size: 26px;
             font-weight: 700;
-            color: #c2410c;
-            line-height: 1.2;
+            color: #0f172a;
+            line-height: 1.25;
           }
           .sd-sub {
             margin: 8px 0 0;
-            color: var(--sd-muted);
+            color: #475569;
             font-size: 14px;
-            line-height: 1.5;
+            line-height: 1.6;
             max-width: 760px;
           }
           .sd-top-actions {
             display: flex;
-            align-items: flex-end;
+            align-items: flex-start;
             gap: 10px;
             flex-wrap: wrap;
           }
@@ -1426,25 +1420,20 @@ const StudentDefenseInfo: React.FC = () => {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: var(--sd-muted);
+            color: #64748b;
             font-weight: 700;
           }
           .sd-period-select {
-            height: 38px;
-            border: 1px solid var(--sd-line);
-            border-radius: 10px;
-            padding: 0 11px;
+            min-height: 40px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 0 12px;
             font-size: 13px;
-            color: var(--sd-ink);
+            color: #0f172a;
             background: #ffffff;
           }
-          .sd-period-select:focus {
-            outline: none;
-            border-color: var(--sd-main);
-            box-shadow: 0 0 0 3px rgba(243, 112, 33, 0.12);
-          }
           .sd-refresh {
-            min-height: 38px;
+            min-height: 40px;
             border-radius: 10px;
             border: 1px solid #f37021;
             background: #f37021;
@@ -1453,9 +1442,15 @@ const StudentDefenseInfo: React.FC = () => {
             font-weight: 700;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 6px;
             padding: 0 12px;
             cursor: pointer;
+            transition: all 0.2s ease;
+          }
+          .sd-refresh:hover:enabled {
+            background: #ea580c;
+            border-color: #ea580c;
           }
           .sd-refresh:disabled {
             border-color: #cbd5e1;
@@ -1477,47 +1472,53 @@ const StudentDefenseInfo: React.FC = () => {
             gap: 8px;
           }
           .sd-chip {
-            border: 1px solid var(--sd-line);
+            border: 1px solid #cbd5e1;
             border-radius: 999px;
-            padding: 6px 10px;
-            font-size: 11px;
+            padding: 6px 12px;
+            font-size: 12px;
             font-weight: 700;
             background: #ffffff;
-            color: var(--sd-ink);
+            color: #0f172a;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
           }
           .sd-chip--locked {
-            border-color: #16a34a;
+            border-color: #bbf7d0;
             color: #166534;
             background: #f0fdf4;
           }
           .sd-chip--waiting {
-            border-color: #f59e0b;
+            border-color: #fde68a;
             color: #92400e;
             background: #fffbeb;
           }
           .sd-grid-4 {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-            gap: 12px;
-            margin-bottom: 14px;
+            gap: 14px;
+            margin-bottom: 16px;
           }
           .sd-kicker {
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            color: var(--sd-muted);
+            color: #64748b;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
           }
           .sd-value {
             font-size: 21px;
             font-weight: 700;
-            color: var(--sd-ink);
+            color: #0f172a;
             margin-top: 4px;
             line-height: 1.3;
           }
           .sd-meta {
             font-size: 13px;
-            color: var(--sd-muted);
+            color: #475569;
             line-height: 1.5;
             margin-top: 6px;
           }
@@ -1534,8 +1535,8 @@ const StudentDefenseInfo: React.FC = () => {
           }
           .sd-toolbar {
             margin-bottom: 14px;
-            border: 1px solid var(--sd-line);
-            border-radius: 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             background: #ffffff;
             padding: 8px;
             display: flex;
@@ -1543,13 +1544,13 @@ const StudentDefenseInfo: React.FC = () => {
             gap: 8px;
           }
           .sd-pill {
-            border: 1px solid var(--sd-line);
-            border-radius: 999px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             background: #ffffff;
             padding: 8px 13px;
             font-size: 13px;
             font-weight: 700;
-            color: var(--sd-ink);
+            color: #0f172a;
             display: inline-flex;
             align-items: center;
             gap: 6px;
@@ -1560,7 +1561,7 @@ const StudentDefenseInfo: React.FC = () => {
             border-color: #94a3b8;
           }
           .sd-pill.active {
-            border-color: var(--sd-main);
+            border-color: #f37021;
             background: #fff7ed;
             color: #9a3412;
           }
@@ -1576,14 +1577,15 @@ const StudentDefenseInfo: React.FC = () => {
             display: flex;
             align-items: center;
             gap: 8px;
+            color: #0f172a;
           }
           .sd-list {
             display: grid;
             gap: 10px;
           }
           .sd-list-item {
-            border: 1px solid var(--sd-line);
-            border-radius: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             padding: 12px;
             background: #ffffff;
           }
@@ -1591,23 +1593,24 @@ const StudentDefenseInfo: React.FC = () => {
             font-weight: 700;
             line-height: 1.4;
             font-size: 15px;
+            color: #0f172a;
           }
           .sd-list-sub {
             margin-top: 4px;
-            color: var(--sd-muted);
+            color: #475569;
             font-size: 13px;
             line-height: 1.5;
           }
           .sd-empty {
-            border: 1px dashed var(--sd-line);
-            border-radius: 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
             padding: 14px;
             font-size: 13px;
-            color: var(--sd-muted);
+            color: #64748b;
             background: #f8fafc;
           }
           .sd-warning-card {
-            border-color: #f59e0b;
+            border-color: #fde68a;
             background: #fffbeb;
           }
           .sd-note-list {
@@ -1615,14 +1618,14 @@ const StudentDefenseInfo: React.FC = () => {
             gap: 8px;
             margin: 0;
             padding-left: 18px;
-            color: var(--sd-ink);
+            color: #0f172a;
             line-height: 1.55;
             font-size: 14px;
           }
           .sd-upload {
             margin-top: 10px;
-            border: 1px dashed var(--sd-line);
-            border-radius: 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
             padding: 12px;
             display: flex;
             justify-content: space-between;
@@ -1631,14 +1634,15 @@ const StudentDefenseInfo: React.FC = () => {
             background: #ffffff;
             cursor: pointer;
             font-weight: 600;
+            transition: all 0.2s ease;
           }
           .sd-upload:hover {
-            border-color: #94a3b8;
-            background: #f8fafc;
+            border-color: #f37021;
+            background: #fff7ed;
           }
           .sd-textarea {
             width: 100%;
-            border: 1px solid var(--sd-line);
+            border: 1px solid #cbd5e1;
             border-radius: 10px;
             padding: 10px 12px;
             font-size: 14px;
@@ -1646,384 +1650,7 @@ const StudentDefenseInfo: React.FC = () => {
             resize: vertical;
             min-height: 110px;
             font-family: inherit;
-          }
-          .sd-textarea:focus {
-            outline: none;
-            border-color: var(--sd-main);
-            box-shadow: 0 0 0 3px rgba(243, 112, 33, 0.16);
-          }
-          .sd-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 12px;
-          }
-          .sd-btn-primary,
-          .sd-btn-soft {
-            border-radius: 10px;
-            min-height: 38px;
-            padding: 8px 14px;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-          }
-          .sd-btn-primary {
-            border: 1px solid #f37021;
-            background: #f37021;
-            color: #ffffff;
-          }
-          .sd-btn-primary:disabled {
-            border-color: var(--sd-line);
-            background: #f8fafc;
-            color: #94a3b8;
-            cursor: not-allowed;
-          }
-          .sd-btn-soft {
-            border: 1px solid var(--sd-line);
-            background: #ffffff;
-            color: var(--sd-ink);
-          }
-          .sd-status {
-            display: inline-flex;
-            align-items: center;
-            border: 1px solid var(--sd-line);
-            border-radius: 999px;
-            padding: 5px 10px;
-            font-size: 11px;
-            font-weight: 700;
-          }
-          .sd-status--approved {
-            border-color: #22c55e;
-            color: #166534;
-            background: #f0fdf4;
-          }
-          .sd-status--rejected {
-            border-color: #ef4444;
-            color: #991b1b;
-            background: #fef2f2;
-          }
-          .sd-status--pending {
-            border-color: #f59e0b;
-            color: #92400e;
-            background: #fffbeb;
-          }
-          .sd-approval-row {
-            margin-top: 8px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-          }
-          .sd-approval {
-            border: 1px solid var(--sd-line);
-            border-radius: 999px;
-            padding: 4px 8px;
-            font-size: 12px;
-            font-weight: 600;
-            background: #ffffff;
-            color: var(--sd-muted);
-          }
-          .sd-approval.done {
-            border-color: #22c55e;
-            color: #166534;
-            background: #f0fdf4;
-          }
-          @media (max-width: 900px) {
-            .sd-root {
-              padding: 12px;
-            }
-            .sd-title {
-              font-size: 22px;
-            }
-            .sd-top-actions {
-              width: 100%;
-            }
-            .sd-period-wrap {
-              min-width: 100%;
-            }
-          }
-
-          .sd-root {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 32px;
-            color: #111827;
-            font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif;
-          }
-          .sd-card {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: none;
-          }
-          .sd-header {
-            margin-bottom: 18px;
-            background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
-          }
-          .sd-hero-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            flex-wrap: wrap;
-          }
-          .sd-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 0;
-            font-size: 30px;
-            font-weight: 700;
-            color: #111827;
-            line-height: 1.25;
-          }
-          .sd-sub {
-            margin: 10px 0 0;
-            color: #4b5563;
-            font-size: 15px;
-            line-height: 1.6;
-            max-width: 760px;
-          }
-          .sd-top-actions {
-            display: grid;
-            gap: 10px;
-            min-width: 320px;
-            align-items: end;
-          }
-          .sd-period-wrap {
-            display: grid;
-            gap: 6px;
-            min-width: 320px;
-          }
-          .sd-period-label {
-            font-size: 12px;
-            letter-spacing: 0.02em;
-            color: #6b7280;
-            font-weight: 700;
-            text-transform: none;
-          }
-          .sd-period-select {
-            min-height: 42px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            padding: 0 12px;
-            font-size: 14px;
-            color: #111827;
-            background: #ffffff;
-          }
-          .sd-refresh {
-            min-height: 42px;
-            border-radius: 10px;
-            border: 1px solid #f37021;
-            background: #f37021;
-            color: #fff;
-            font-size: 14px;
-            font-weight: 700;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 0 14px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-          }
-          .sd-refresh:hover:enabled {
-            background: #ea580c;
-            border-color: #ea580c;
-          }
-          .sd-refresh:disabled {
-            border-color: #e5e7eb;
-            background: #f9fafb;
-            color: #9ca3af;
-            cursor: not-allowed;
-          }
-          .sd-chip-row {
-            margin-top: 14px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-          }
-          .sd-chip {
-            border: 1px solid #d1d5db;
-            border-radius: 999px;
-            padding: 7px 11px;
-            font-size: 12px;
-            font-weight: 700;
-            background: #f9fafb;
-            color: #374151;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-          }
-          .sd-chip--locked {
-            border-color: #22c55e;
-            color: #166534;
-            background: #f0fdf4;
-          }
-          .sd-chip--waiting {
-            border-color: #f59e0b;
-            color: #92400e;
-            background: #fffbeb;
-          }
-          .sd-grid-4 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 14px;
-            margin-bottom: 18px;
-          }
-          .sd-kicker {
-            font-size: 13px;
-            font-weight: 700;
-            color: #6b7280;
-            letter-spacing: 0;
-            text-transform: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-          }
-          .sd-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #111827;
-            margin-top: 8px;
-            line-height: 1.35;
-          }
-          .sd-meta {
-            font-size: 14px;
-            color: #4b5563;
-            line-height: 1.55;
-            margin-top: 8px;
-          }
-          .sd-progress {
-            margin-top: 10px;
-            height: 10px;
-            border-radius: 999px;
-            background: #e5e7eb;
-            overflow: hidden;
-          }
-          .sd-progress > div {
-            height: 100%;
-            background: linear-gradient(90deg, #f37021 0%, #fb923c 100%);
-          }
-          .sd-toolbar {
-            margin-bottom: 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            background: #ffffff;
-            padding: 8px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-          }
-          .sd-pill {
-            border: 1px solid #d1d5db;
-            border-radius: 999px;
-            background: #ffffff;
-            padding: 9px 14px;
-            font-size: 14px;
-            font-weight: 700;
-            color: #374151;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-          }
-          .sd-pill:hover {
-            border-color: #f37021;
-            color: #9a3412;
-          }
-          .sd-pill.active {
-            border-color: #f37021;
-            background: #fff7ed;
-            color: #9a3412;
-          }
-          .sd-grid-2 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 14px;
-          }
-          .sd-panel-title {
-            margin: 0 0 12px;
-            font-size: 22px;
-            line-height: 1.3;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #111827;
-          }
-          .sd-list {
-            display: grid;
-            gap: 10px;
-          }
-          .sd-list-item {
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 14px;
-            background: #ffffff;
-          }
-          .sd-list-title {
-            font-weight: 700;
-            line-height: 1.45;
-            font-size: 16px;
-            color: #111827;
-          }
-          .sd-list-sub {
-            margin-top: 6px;
-            color: #4b5563;
-            font-size: 14px;
-            line-height: 1.6;
-          }
-          .sd-empty {
-            border: 1px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 14px;
-            font-size: 14px;
-            color: #64748b;
-            background: #f8fafc;
-          }
-          .sd-warning-card {
-            border-color: #fdba74;
-            background: #fffbeb;
-          }
-          .sd-note-list {
-            display: grid;
-            gap: 8px;
-            margin: 0;
-            padding-left: 20px;
-            color: #1f2937;
-            line-height: 1.6;
-            font-size: 14px;
-          }
-          .sd-upload {
-            margin-top: 12px;
-            border: 1px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            background: #ffffff;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s ease;
-          }
-          .sd-upload:hover {
-            border-color: #f37021;
-            background: #fff7ed;
-          }
-          .sd-textarea {
-            width: 100%;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            padding: 11px 12px;
-            font-size: 14px;
-            background: #ffffff;
-            resize: vertical;
-            min-height: 110px;
-            font-family: inherit;
-            color: #111827;
+            color: #0f172a;
           }
           .sd-textarea:focus {
             outline: none;
@@ -2041,7 +1668,7 @@ const StudentDefenseInfo: React.FC = () => {
             border-radius: 10px;
             min-height: 40px;
             padding: 8px 14px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             cursor: pointer;
           }
@@ -2055,40 +1682,40 @@ const StudentDefenseInfo: React.FC = () => {
             background: #ea580c;
           }
           .sd-btn-primary:disabled {
-            border-color: #e5e7eb;
+            border-color: #cbd5e1;
             background: #f8fafc;
-            color: #9ca3af;
+            color: #94a3b8;
             cursor: not-allowed;
           }
           .sd-btn-soft {
-            border: 1px solid #d1d5db;
+            border: 1px solid #cbd5e1;
             background: #ffffff;
-            color: #374151;
+            color: #0f172a;
           }
           .sd-btn-soft:hover {
-            background: #f9fafb;
+            background: #f8fafc;
           }
           .sd-status {
             display: inline-flex;
             align-items: center;
-            border: 1px solid #d1d5db;
+            border: 1px solid #cbd5e1;
             border-radius: 999px;
             padding: 5px 10px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
           }
           .sd-status--approved {
-            border-color: #22c55e;
+            border-color: #bbf7d0;
             color: #166534;
             background: #f0fdf4;
           }
           .sd-status--rejected {
-            border-color: #ef4444;
+            border-color: #fecaca;
             color: #991b1b;
             background: #fef2f2;
           }
           .sd-status--pending {
-            border-color: #f59e0b;
+            border-color: #fde68a;
             color: #92400e;
             background: #fffbeb;
           }
@@ -2099,16 +1726,16 @@ const StudentDefenseInfo: React.FC = () => {
             gap: 8px;
           }
           .sd-approval {
-            border: 1px solid #d1d5db;
+            border: 1px solid #cbd5e1;
             border-radius: 999px;
             padding: 4px 8px;
             font-size: 12px;
             font-weight: 600;
             background: #ffffff;
-            color: #4b5563;
+            color: #475569;
           }
           .sd-approval.done {
-            border-color: #22c55e;
+            border-color: #bbf7d0;
             color: #166534;
             background: #f0fdf4;
           }
@@ -2135,7 +1762,7 @@ const StudentDefenseInfo: React.FC = () => {
               padding: 14px;
             }
             .sd-panel-title {
-              font-size: 19px;
+              font-size: 18px;
             }
           }
         `}

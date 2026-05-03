@@ -102,10 +102,10 @@ const statusOptions: DefenseTermStatus[] = [
 ];
 
 const badgeStyles: Record<DefenseTermStatus, { bg: string; text: string }> = {
-  Draft: { bg: "#ffffff", text: "#64748b" },
-  Preparing: { bg: "#fff7ed", text: "#c2410c" },
-  Finalized: { bg: "#ffedd5", text: "#c2410c" },
-  Published: { bg: "#ffffff", text: "#0f172a" },
+  Draft: { bg: "#f8fafc", text: "#64748b" },
+  Preparing: { bg: "#fffbeb", text: "#b45309" },
+  Finalized: { bg: "#fff7ed", text: "#c2410c" },
+  Published: { bg: "#f0fdf4", text: "#166534" },
   Archived: { bg: "#f8fafc", text: "#64748b" },
 };
 
@@ -152,7 +152,7 @@ const pageStyles: Record<string, React.CSSProperties> = {
     color: "#0f172a",
   },
   shell: {
-    maxWidth: 1480,
+    maxWidth: 1360,
     width: "100%",
     margin: "0 auto",
   },
@@ -160,34 +160,27 @@ const pageStyles: Record<string, React.CSSProperties> = {
     position: "relative",
     overflow: "hidden",
     border: "1px solid #cbd5e1",
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 18,
     marginBottom: 16,
     background: "#ffffff",
     boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
   },
   heroGlow: {
-    position: "absolute",
-    inset: "auto -40px -30px auto",
-    width: 220,
-    height: 220,
-    borderRadius: "50%",
-    background:
-      "radial-gradient(circle, rgba(0, 0, 0, 0.16) 0, rgba(0, 0, 0, 0) 72%)",
-    pointerEvents: "none",
+    display: "none",
   },
   sectionCard: {
     border: "1px solid #cbd5e1",
-    borderRadius: 12,
+    borderRadius: 10,
     background: "#ffffff",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.04)",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
   },
   statCard: {
     border: "1px solid #cbd5e1",
     borderRadius: 10,
     padding: 14,
     background: "#ffffff",
-    boxShadow: "0 4px 14px rgba(0, 0, 0, 0.04)",
+    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
     minHeight: 96,
   },
   chip: {
@@ -214,14 +207,14 @@ const pageStyles: Record<string, React.CSSProperties> = {
   },
   panel: {
     border: "1px solid #cbd5e1",
-    borderRadius: 12,
+    borderRadius: 10,
     background: "#ffffff",
     boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
     overflow: "hidden",
   },
   detailPanel: {
     border: "1px solid #cbd5e1",
-    borderRadius: 12,
+    borderRadius: 10,
     background: "#ffffff",
     boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
     padding: 16,
@@ -233,9 +226,9 @@ const pageStyles: Record<string, React.CSSProperties> = {
     border: "none",
     borderRadius: 10,
     padding: "10px 14px",
-    minHeight: 42,
+    minHeight: 40,
     fontWeight: 700,
-    fontSize: 15,
+    fontSize: 14,
     color: "#ffffff",
     cursor: "pointer",
     background: "#f37021",
@@ -252,9 +245,9 @@ const pageStyles: Record<string, React.CSSProperties> = {
     border: "1px solid #cbd5e1",
     borderRadius: 10,
     padding: "10px 14px",
-    minHeight: 42,
+    minHeight: 40,
     fontWeight: 700,
-    fontSize: 15,
+    fontSize: 14,
     color: "#0f172a",
     cursor: "pointer",
     background: "#ffffff",
@@ -267,13 +260,13 @@ const pageStyles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   dangerButton: {
-    border: "1px solid #cbd5e1",
+    border: "1px solid #fecaca",
     borderRadius: 10,
     padding: "10px 14px",
-    minHeight: 42,
+    minHeight: 40,
     fontWeight: 700,
-    fontSize: 15,
-    color: "#0f172a",
+    fontSize: 14,
+    color: "#b91c1c",
     cursor: "pointer",
     background: "#ffffff",
     display: "inline-flex",
@@ -285,9 +278,9 @@ const pageStyles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   iconActionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     border: "1px solid #cbd5e1",
     background: "#ffffff",
     color: "#0f172a",
@@ -295,18 +288,20 @@ const pageStyles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
+    transition: "all 0.2s ease",
   },
   iconDangerButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     border: "1px solid #fecaca",
     background: "#ffffff",
-    color: "#b91c1c",
+    color: "#ef4444",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
+    transition: "all 0.2s ease",
   },
 };
 
@@ -353,19 +348,19 @@ const roadmapStatusTheme: Record<
   }
 > = {
   completed: {
-    dotBorder: "#cbd5e1",
-    dotBg: "#ffffff",
-    cardBorder: "#cbd5e1",
-    cardBg: "linear-gradient(135deg, #ffffff 0%, #ffffff 100%)",
-    text: "#0f172a",
-    line: "#cbd5e1",
+    dotBorder: "#bbf7d0",
+    dotBg: "#f0fdf4",
+    cardBorder: "#bbf7d0",
+    cardBg: "#ffffff",
+    text: "#166534",
+    line: "#bbf7d0",
   },
   "in-progress": {
     dotBorder: "#f37021",
-    dotBg: "#ffffff",
+    dotBg: "#fff7ed",
     cardBorder: "#f37021",
-    cardBg: "linear-gradient(135deg, #ffffff 0%, #ffffff 100%)",
-    text: "#f37021",
+    cardBg: "#ffffff",
+    text: "#c2410c",
     line: "#f37021",
   },
   pending: {
@@ -373,7 +368,7 @@ const roadmapStatusTheme: Record<
     dotBg: "#ffffff",
     cardBorder: "#cbd5e1",
     cardBg: "#ffffff",
-    text: "#0f172a",
+    text: "#475569",
     line: "#cbd5e1",
   },
 };
@@ -1528,34 +1523,35 @@ const DefensePeriodsManagement: React.FC = () => {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 8,
-                  padding: "7px 12px",
+                  padding: "6px 12px",
                   borderRadius: 999,
                   background: "#ffffff",
+                  border: "1px solid #e2e8f0",
                   color: "#f37021",
                   fontWeight: 800,
                   fontSize: 12,
                   marginBottom: 12,
                 }}
               >
-                <Workflow size={14} /> QUẢN TRỊ ĐỢT BẢO VỆ
+                <Workflow size={14} /> FIT DNU · Quản lý đợt
               </div>
               <h1
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
-                  color: "#f37021",
-                  fontSize: "clamp(34px, 4.2vw, 52px)",
-                  lineHeight: 1.12,
-                  fontWeight: 800,
+                  color: "#0f172a",
+                  fontSize: "clamp(26px, 2.6vw, 32px)",
+                  lineHeight: 1.25,
+                  fontWeight: 700,
                   margin: 0,
                 }}
               >
                 <span
                   style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 12,
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1564,15 +1560,15 @@ const DefensePeriodsManagement: React.FC = () => {
                     color: "#f37021",
                   }}
                 >
-                  <Workflow size={26} />
+                  <Workflow size={20} />
                 </span>
-                Quản lý đợt
+                Quản lý đợt bảo vệ
               </h1>
               <p
                 style={{
                   margin: "12px 0 0",
                   color: "#0f172a",
-                  fontSize: 15,
+                  fontSize: 14,
                   maxWidth: 900,
                   lineHeight: 1.6,
                 }}

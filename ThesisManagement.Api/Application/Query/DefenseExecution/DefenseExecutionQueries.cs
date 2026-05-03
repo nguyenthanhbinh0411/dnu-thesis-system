@@ -59,6 +59,11 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
         Task<ApiResponse<List<ScoringProgressDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
     }
 
+    public interface IGetTopicFinalScoreProgressQuery
+    {
+        Task<ApiResponse<List<TopicFinalScoreProgressDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
+    }
+
     public interface IGetScoringAlertsQuery
     {
         Task<ApiResponse<List<ScoringAlertDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
@@ -165,6 +170,14 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
         public GetScoringProgressQuery(IDefensePeriodQueryProcessor processor) => _processor = processor;
         public Task<ApiResponse<List<ScoringProgressDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
             => _processor.GetScoringProgressAsync(periodId, committeeId, cancellationToken);
+    }
+
+    public class GetTopicFinalScoreProgressQuery : IGetTopicFinalScoreProgressQuery
+    {
+        private readonly IDefensePeriodQueryProcessor _processor;
+        public GetTopicFinalScoreProgressQuery(IDefensePeriodQueryProcessor processor) => _processor = processor;
+        public Task<ApiResponse<List<TopicFinalScoreProgressDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
+            => _processor.GetTopicFinalScoreProgressAsync(periodId, committeeId, cancellationToken);
     }
 
     public class GetScoringAlertsQuery : IGetScoringAlertsQuery

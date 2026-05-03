@@ -39,6 +39,57 @@ public class DefensePeriodScoringQueriesTests
     }
 
     [Fact]
+    public async Task GetScoringMatrixAsync_ShouldAverageOnlyAvailableScores()
+    {
+        await using var db = CreateDbContext();
+        SeedScoringScenario(db);
+
+        var topic = db.Topics.Single(x => x.TopicCode == "T001");
+        topic.Score = 9m;
+        db.SaveChanges();
+
+        var processor = new DefensePeriodQueryProcessor(db);
+
+        var result = await processor.GetScoringMatrixAsync(periodId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+
+        var scored = result.Data!.Single(x => x.AssignmentCode == "ASG-001");
+        scored.ScoreGvhd.Should().Be(9m);
+        scored.ScoreCt.Should().Be(8m);
+        scored.ScoreTk.Should().Be(5m);
+        scored.ScorePb.Should().BeNull();
+        scored.FinalScore.Should().Be(7.3m);
+    }
+
+    [Fact]
+    public async Task GetScoringMatrixAsync_ShouldNotCalculateFinalScoreWithOnlyTwoComponentScores()
+    {
+        await using var db = CreateDbContext();
+        SeedScoringScenario(db);
+
+        var topic = db.Topics.Single(x => x.TopicCode == "T001");
+        topic.Score = 9m;
+        db.DefenseScores.RemoveRange(db.DefenseScores.Where(x => x.AssignmentID == 101 && x.MemberLecturerCode == "L002"));
+        db.SaveChanges();
+
+        var processor = new DefensePeriodQueryProcessor(db);
+
+        var result = await processor.GetScoringMatrixAsync(periodId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+
+        var scored = result.Data!.Single(x => x.AssignmentCode == "ASG-001");
+        scored.ScoreGvhd.Should().Be(9m);
+        scored.ScoreCt.Should().Be(8m);
+        scored.ScoreTk.Should().BeNull();
+        scored.ScorePb.Should().BeNull();
+        scored.FinalScore.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetScoringProgressAsync_ShouldAggregateCommitteeProgress()
     {
         await using var db = CreateDbContext();
@@ -139,7 +190,7 @@ public class DefensePeriodScoringQueriesTests
                 CommitteeID = 11,
                 CommitteeCode = "CMT-11",
                 MemberLecturerCode = "L001",
-                Role = "Chair"
+                Role = "CT"
             },
             new CommitteeMember
             {
@@ -147,7 +198,7 @@ public class DefensePeriodScoringQueriesTests
                 CommitteeID = 11,
                 CommitteeCode = "CMT-11",
                 MemberLecturerCode = "L002",
-                Role = "Secretary"
+                Role = "UVTK"
             });
 
         db.Topics.AddRange(

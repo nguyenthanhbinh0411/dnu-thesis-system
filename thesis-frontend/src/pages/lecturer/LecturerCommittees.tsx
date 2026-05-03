@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   createConcurrencyToken,
   createIdempotencyKey,
@@ -34,6 +34,8 @@ import {
   CheckCircle2,
   ClipboardPen,
   Clock3,
+  Download,
+  Eraser,
   Eye,
   ExternalLink,
   FileText,
@@ -44,11 +46,15 @@ import {
   MapPin,
   MessageSquareText,
   PencilRuler,
+  Plus,
   Save,
   Star,
+  Trash2,
+  Undo2,
   Users2,
   XCircle,
 } from "lucide-react";
+import { getAccessToken } from "../../services/auth-session.service";
 
 type Committee = {
   id: string;
@@ -70,12 +76,14 @@ type Committee = {
   members: CommitteeMemberView[];
 };
 
-type CommitteeRoleCode = "CT" | "UVTK" | "UVPB" | "UV" | "UNKNOWN";
+type CommitteeRoleCode = "CT" | "UVTK" | "UVPB" | "UNKNOWN";
 
 type CommitteeMemberView = {
   memberId: string;
   lecturerCode: string;
   lecturerName: string;
+  degree: string | null;
+  organization: string | null;
   roleRaw: string;
   roleCode: CommitteeRoleCode;
   roleLabel: string;
@@ -99,7 +107,7 @@ type CommitteeDetailTabKey = "overview" | "members" | "topics";
 
 type WorkspaceTabKey = "scoring" | "minutes" | "review";
 
-type GradingRoomView = "scoring" | "reports";
+type PreviewModalType = "meeting" | "reviewer";
 
 type CurrentDefensePeriodView = {
   periodId: number;
@@ -173,15 +181,20 @@ type ScoringAlertRow = {
   threshold: number | null;
 };
 
-const panels: Array<{ key: PanelKey; label: string; icon: React.ReactNode }> = [
-  { key: "councils", label: "Hội đồng của tôi", icon: <Users2 size={15} /> },
-  { key: "grading", label: "Phòng chấm điểm hội đồng", icon: <PencilRuler size={15} /> },
-];
+
+
+type TopicFinalProgressRow = {
+  committeeId: number;
+  committeeCode: string;
+  totalTopics: number;
+  scoredTopics: number;
+  progressPercent: number;
+};
 
 const cardStyle: React.CSSProperties = {
   background: "#ffffff",
   border: "1px solid #cbd5e1",
-  borderRadius: 12,
+  borderRadius: 10,
   padding: 18,
   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
 };
@@ -219,10 +232,6 @@ const normalizeCommitteeRole = (value: unknown): CommitteeRoleCode => {
     raw.includes("PHẢN BIỆN")
   ) {
     return "UVPB";
-  }
-
-  if (raw === "UV" || raw === "MEMBER" || raw.includes("UY VIEN") || raw.includes("ỦY VIÊN")) {
-    return "UV";
   }
 
   return "UNKNOWN";
@@ -279,6 +288,32 @@ const toIsoDateOrNull = (value: unknown): string | null => {
 const toNumberOrNull = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+const toRomanNumeral = (value: number): string => {
+  const numerals: Array<[number, string]> = [
+    [1000, "M"],
+    [900, "CM"],
+    [500, "D"],
+    [400, "CD"],
+    [100, "C"],
+    [90, "XC"],
+    [50, "L"],
+    [40, "XL"],
+    [10, "X"],
+    [9, "IX"],
+    [5, "V"],
+    [4, "IV"],
+    [1, "I"],
+  ];
+  let remaining = Math.max(1, Math.floor(value));
+  let result = "";
+  for (const [amount, numeral] of numerals) {
+    while (remaining >= amount) {
+      result += numeral;
+      remaining -= amount;
+    }
+  }
+  return result;
 };
 
 const normalizeTopicTagNames = (value: unknown): string[] => {
@@ -445,11 +480,111 @@ const getRoleLabel = (roleCode: CommitteeRoleCode): string => {
       return "Ủy viên thư ký hội đồng";
     case "UVPB":
       return "Ủy viên phản biện hội đồng";
-    case "UV":
-      return "Ủy viên hội đồng";
     default:
       return "Không xác định";
   }
+};
+
+const getCommitteeMemberParticipation = (
+  member: CommitteeMemberView,
+  scoringRows: ScoringMatrixRow[],
+  context?: {
+    isCurrentUser: boolean;
+    hasJoinedCurrentCommittee: boolean;
+    isCommitteeLive: boolean;
+  },
+) => {
+  const onlineByScore = scoringRows.some((row) => {
+    if (member.roleCode === "CT") {
+      return row.scoreCt != null;
+    }
+
+    if (member.roleCode === "UVTK") {
+      return row.scoreTk != null;
+    }
+
+    if (member.roleCode === "UVPB") {
+      return row.scorePb != null;
+    }
+
+    return false;
+  });
+
+  const onlineByPresence = Boolean(
+    context?.isCurrentUser && context?.hasJoinedCurrentCommittee && context?.isCommitteeLive,
+  );
+
+  const online = onlineByPresence || onlineByScore;
+
+  return {
+    online,
+    emoji: online ? "🟢" : "⚫",
+    label: online ? "Online" : "Offline",
+    bg: online ? "#ecfdf5" : "#f8fafc",
+    border: online ? "#22c55e" : "#cbd5e1",
+    text: online ? "#166534" : "#475569",
+  };
+};
+
+const normalizeCommitteeKey = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
+const extractDigits = (value: unknown) => String(value ?? "").replace(/\D+/g, "");
+
+type CommitteeStatusVisual = {
+  emoji: string;
+  label: string;
+  cardBorder: string;
+  cardGlow: string;
+  chipBg: string;
+  chipBorder: string;
+  chipText: string;
+};
+
+const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusVisual => {
+  switch (status) {
+    case "Đang họp":
+      return {
+        emoji: "🔴",
+        label: "Đang họp",
+        cardBorder: "#f97316",
+        cardGlow: "rgba(249, 115, 22, 0.20)",
+        chipBg: "#fff7ed",
+        chipBorder: "#f97316",
+        chipText: "#c2410c",
+      };
+    case "Đã khóa":
+      return {
+        emoji: "⚫",
+        label: "Đã khóa",
+        cardBorder: "#cbd5e1",
+        cardGlow: "rgba(148, 163, 184, 0.18)",
+        chipBg: "#f8fafc",
+        chipBorder: "#cbd5e1",
+        chipText: "#475569",
+      };
+    default:
+      return {
+        emoji: "🟢",
+        label: "Sắp diễn ra",
+        cardBorder: "#86efac",
+        cardGlow: "rgba(34, 197, 94, 0.18)",
+        chipBg: "#f0fdf4",
+        chipBorder: "#86efac",
+        chipText: "#166534",
+      };
+  }
+};
+
+const getCommitteeScheduleLabel = (committee: Committee): string => {
+  if (!committee.date) {
+    return "Chưa cập nhật";
+  }
+
+  return "Cả ngày";
 };
 
 const mapCommitteeStatus = (value: unknown): Committee["status"] => {
@@ -495,7 +630,10 @@ const includesAnyAction = (allowedActions: string[], ...targets: string[]): bool
 
 const LecturerCommittees: React.FC = () => {
   const { addToast } = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isGradingScreen = false;
+  const committeeIdParam = String(searchParams.get("committeeId") ?? "").trim();
   const [periodId, setPeriodId] = useState<number | null>(() => getActiveDefensePeriodId());
   const [currentPeriod, setCurrentPeriod] = useState<CurrentDefensePeriodView | null>(null);
   const [currentSnapshotError, setCurrentSnapshotError] = useState<string | null>(null);
@@ -600,15 +738,15 @@ const LecturerCommittees: React.FC = () => {
         Array.isArray(committeesSource)
           ? committeesSource
           : pickSnapshotSection<unknown[]>(
-              committeeContainer ?? {},
-              ["committees", "Committees", "items", "Items"],
-              [],
-            );
+            committeeContainer ?? {},
+            ["committees", "Committees", "items", "Items"],
+            [],
+          );
 
       const rows = Array.isArray(rowsSource)
         ? rowsSource
-            .map((item) => toRecord(item))
-            .filter((item): item is Record<string, unknown> => Boolean(item))
+          .map((item) => toRecord(item))
+          .filter((item): item is Record<string, unknown> => Boolean(item))
         : [];
 
       const lockFlag = toBooleanOrNull(
@@ -748,11 +886,11 @@ const LecturerCommittees: React.FC = () => {
         committeeId == null
           ? normalizedRows
           : normalizedRows.filter(
-              (item) =>
-                Number(item.committeeId ?? item.councilId ?? 0) ===
-                  Number(committeeId) ||
-                String(item.committeeCode ?? "") === String(committeeId),
-            );
+            (item) =>
+              Number(item.committeeId ?? item.councilId ?? 0) ===
+              Number(committeeId) ||
+              String(item.committeeCode ?? "") === String(committeeId),
+          );
       return toCompatResponse(snapshotRes, filtered);
     },
     getScoringAlerts: async (committeeId?: string | number) => {
@@ -773,11 +911,37 @@ const LecturerCommittees: React.FC = () => {
         committeeId == null
           ? normalizedRows
           : normalizedRows.filter(
-              (item) =>
-                Number(item.committeeId ?? item.councilId ?? 0) ===
-                  Number(committeeId) ||
-                String(item.committeeCode ?? "") === String(committeeId),
-            );
+            (item) =>
+              Number(item.committeeId ?? item.councilId ?? 0) ===
+              Number(committeeId) ||
+              String(item.committeeCode ?? "") === String(committeeId),
+          );
+      return toCompatResponse(snapshotRes, filtered);
+    },
+    getTopicFinalProgress: async (committeeId?: string | number) => {
+      const snapshotRes = await getLecturerSnapshot();
+      const snapshot = readEnvelopeData<Record<string, unknown>>(snapshotRes);
+      const scoring = pickSnapshotSection<Record<string, unknown>>(
+        snapshot,
+        ["scoring", "Scoring"],
+        {},
+      );
+      const rows = pickSnapshotSection<Array<Record<string, unknown>>>(
+        scoring,
+        ["topicFinalProgress", "TopicFinalProgress"],
+        [],
+      );
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      const filtered =
+        committeeId == null
+          ? normalizedRows
+          : normalizedRows.filter(
+            (item) =>
+              Number(item.committeeId ?? item.councilId ?? 0) ===
+              Number(committeeId) ||
+              String(item.committeeCode ?? "") === String(committeeId),
+          );
+
       return toCompatResponse(snapshotRes, filtered);
     },
     approveRevision: (revisionId: number, idempotencyKey?: string) =>
@@ -812,16 +976,16 @@ const LecturerCommittees: React.FC = () => {
     setActiveDefensePeriodId(periodId);
   }, [periodId]);
 
-  const [activePanel, setActivePanel] = useState<PanelKey>("councils");
+  const [activePanel, setActivePanel] = useState<PanelKey>(isGradingScreen ? "grading" : "councils");
   const [committees, setCommittees] = useState<Committee[]>([]);
   const [detailCommitteeId, setDetailCommitteeId] = useState<string>("");
   const [detailTab, setDetailTab] = useState<CommitteeDetailTabKey>("overview");
-  const [revisionQueue, setRevisionQueue] = useState<RevisionRequest[]>([]);
   const [selectedCommitteeId, setSelectedCommitteeId] = useState<string>("");
   const [joinedCommitteeId, setJoinedCommitteeId] = useState<string>("");
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTabKey>("scoring");
   const [loadingData, setLoadingData] = useState(false);
-  const [reopenReason, setReopenReason] = useState("Cần hội đồng thống nhất lại vì có chênh lệch điểm.");
+  const [reopenReason, setReopenReason] = useState("");
+  const [revisionQueue, setRevisionQueue] = useState<RevisionRequest[]>([]);
+  const [revision, setRevision] = useState<RevisionRequest>(EMPTY_REVISION);
   const [assignmentConcurrencyToken, setAssignmentConcurrencyToken] = useState(
     createConcurrencyToken("lecturer-assignment")
   );
@@ -833,29 +997,46 @@ const LecturerCommittees: React.FC = () => {
     finalLetter: null,
   });
 
-  const [summary, setSummary] = useState("Sinh viên trình bày rõ phạm vi và mục tiêu đề tài.");
-  const [review, setReview] = useState("Cần bổ sung đánh giá hiệu năng theo từng nhóm dữ liệu.");
-  const [questions, setQuestions] = useState("1) Baseline đang dùng là gì? 2) Kết quả theo từng lớp dữ liệu?");
-  const [answers, setAnswers] = useState("Sinh viên trả lời đúng trọng tâm và có minh chứng số liệu.");
-  const [strengths, setStrengths] = useState("Mô hình có tính ứng dụng tốt, pipeline rõ ràng.");
-  const [weaknesses, setWeaknesses] = useState("Thiếu đối sánh benchmark đầy đủ ở vài ngữ cảnh.");
-  const [recommendations, setRecommendations] = useState("Bổ sung benchmark đa bộ dữ liệu trước khi công bố chính thức.");
-  const [lastAutoSave, setLastAutoSave] = useState<string | null>(null);
 
-  const [myScore, setMyScore] = useState("8.5");
-  const [myComment, setMyComment] = useState("Đề tài đạt yêu cầu, có tiềm năng ứng dụng thực tế.");
-  const [submitted, setSubmitted] = useState(false);
-  const [chairRequestedReopen, setChairRequestedReopen] = useState(false);
-  const [sessionLocked, setSessionLocked] = useState(false);
-
-  const [revision, setRevision] = useState<RevisionRequest>(EMPTY_REVISION);
   const [allScoringRows, setAllScoringRows] = useState<ScoringMatrixRow[]>([]);
   const [scoringMatrix, setScoringMatrix] = useState<ScoringMatrixRow[]>([]);
   const [scoringAlerts, setScoringAlerts] = useState<ScoringAlertRow[]>([]);
+  const [topicFinalProgressRows, setTopicFinalProgressRows] = useState<TopicFinalProgressRow[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number>(0);
   const [fallbackAllowedActions, setFallbackAllowedActions] = useState<string[]>([]);
-  const [roomView, setRoomView] = useState<GradingRoomView>("scoring");
   const [roomNow, setRoomNow] = useState<Date>(() => new Date());
+
+
+  useEffect(() => {
+    setActivePanel(isGradingScreen ? "grading" : "councils");
+  }, [isGradingScreen]);
+
+  useEffect(() => {
+    if (!isGradingScreen || committees.length === 0) {
+      return;
+    }
+
+    const fallbackCommittee = committees.find((item) => item.status === "Đang họp") ?? committees[0] ?? null;
+    const targetCommittee = committees.find((item) => item.id === committeeIdParam) ?? fallbackCommittee;
+
+    if (!targetCommittee) {
+      return;
+    }
+
+    if (selectedCommitteeId !== targetCommittee.id) {
+      setSelectedCommitteeId(targetCommittee.id);
+    }
+
+    if (joinedCommitteeId !== targetCommittee.id) {
+      setJoinedCommitteeId(targetCommittee.id);
+    }
+  }, [
+    committees,
+    committeeIdParam,
+    isGradingScreen,
+    joinedCommitteeId,
+    selectedCommitteeId,
+  ]);
 
   const normalizedFallbackAllowedActions = useMemo(
     () => normalizeAllowedActions(fallbackAllowedActions),
@@ -891,94 +1072,122 @@ const LecturerCommittees: React.FC = () => {
       notifyError(messages[0] || message || fallback);
       return true;
     }
-
     if (message) {
       notifyInfo(message);
     }
+
     return false;
   };
 
   const extractMissingMemberCodes = (error: unknown): string[] => {
-    if (!(error instanceof FetchDataError) || !error.data || typeof error.data !== "object") {
+    const record = toRecord(error);
+    if (!record) {
       return [];
     }
-    const payload = error.data as Record<string, unknown>;
-    const details = payload.details as Record<string, unknown> | undefined;
-    const raw = details?.MissingMemberCodes ?? payload.MissingMemberCodes;
-    return Array.isArray(raw) ? raw.map((item) => String(item)).filter(Boolean) : [];
+
+    const candidateValues: unknown[] = [
+      pickCaseInsensitiveValue<unknown>(record, ["missingMembers", "MissingMembers"], null),
+      pickCaseInsensitiveValue<unknown>(record, ["missingMemberCodes", "MissingMemberCodes"], null),
+      pickCaseInsensitiveValue<unknown>(record, ["members", "Members"], null),
+      pickCaseInsensitiveValue<unknown>(record, ["errors", "Errors"], null),
+    ];
+
+    for (const candidate of candidateValues) {
+      if (Array.isArray(candidate)) {
+        return candidate
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean);
+      }
+
+      if (typeof candidate === "string") {
+        return candidate
+          .split(/[;,|]/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+    }
+
+    return [];
   };
 
-  const mapRevisionQueueRows = (rows: Array<Record<string, unknown>>): RevisionRequest[] =>
-    rows.map((item, index) => {
-      const revisionId = Number(
-        pickSnapshotSection<unknown>(item, ["revisionId", "RevisionId", "id", "Id"], 0),
-      );
-      const assignmentIdValue = Number(
-        pickSnapshotSection<unknown>(item, ["assignmentId", "AssignmentId"], 0),
-      );
-      const statusRaw = String(
-        pickSnapshotSection<unknown>(item, ["finalStatus", "FinalStatus", "status", "Status"], "PENDING"),
-      )
-        .trim()
-        .toUpperCase();
+  const mapRevisionQueueRows = (rows: unknown): RevisionRequest[] => {
+    if (!Array.isArray(rows)) {
+      return [];
+    }
 
-      const status: RevisionRequest["status"] =
-        statusRaw === "2" || statusRaw === "APPROVED"
-          ? "approved"
-          : statusRaw === "3" || statusRaw === "REJECTED"
-            ? "rejected"
-            : "pending";
+    return rows
+      .map((item, index): RevisionRequest => {
+        const revisionId = Number(
+          pickSnapshotSection<unknown>(item, ["revisionId", "RevisionId", "id", "Id"], 0),
+        );
+        const assignmentIdValue = Number(
+          pickSnapshotSection<unknown>(item, ["assignmentId", "AssignmentId"], 0),
+        );
+        const statusRaw = String(
+          pickSnapshotSection<unknown>(item, ["finalStatus", "FinalStatus", "status", "Status"], "PENDING"),
+        )
+          .trim()
+          .toUpperCase();
 
-      const topicCode = toStringOrNull(
-        pickSnapshotSection<unknown>(item, ["topicCode", "TopicCode"], null),
-      );
-      const topicTitle =
-        toStringOrNull(
-          pickSnapshotSection<unknown>(item, ["topicTitle", "TopicTitle", "title", "Title"], null),
-        ) ??
-        topicCode ??
-        "-";
+        const status: RevisionRequest["status"] =
+          statusRaw === "2" || statusRaw === "APPROVED"
+            ? "approved"
+            : statusRaw === "3" || statusRaw === "REJECTED"
+              ? "rejected"
+              : "pending";
 
-      const studentCode =
-        toStringOrNull(
-          pickSnapshotSection<unknown>(
-            item,
-            ["studentCode", "StudentCode", "proposerStudentCode", "ProposerStudentCode"],
-            null,
-          ),
-        ) ?? "-";
-
-      return {
-        revisionId:
-          Number.isFinite(revisionId) && revisionId > 0
-            ? revisionId
-            : Number.isFinite(assignmentIdValue) && assignmentIdValue > 0
-              ? assignmentIdValue
-              : index + 1,
-        assignmentId:
-          Number.isFinite(assignmentIdValue) && assignmentIdValue > 0
-            ? assignmentIdValue
-            : null,
-        studentCode,
-        topicCode,
-        topicTitle,
-        revisionFileUrl: toStringOrNull(
-          pickSnapshotSection<unknown>(
-            item,
-            ["revisionFileUrl", "RevisionFileUrl", "fileUrl", "FileUrl"],
-            null,
-          ),
-        ),
-        lastUpdated: toStringOrNull(
-          pickSnapshotSection<unknown>(item, ["lastUpdated", "LastUpdated", "updatedAt", "UpdatedAt"], null),
-        ),
-        status,
-        reason:
+        const topicCode = toStringOrNull(
+          pickSnapshotSection<unknown>(item, ["topicCode", "TopicCode"], null),
+        );
+        const topicTitle =
           toStringOrNull(
-            pickSnapshotSection<unknown>(item, ["reason", "Reason", "rejectReason", "RejectReason"], null),
-          ) ?? undefined,
-      };
-    });
+            pickSnapshotSection<unknown>(item, ["topicTitle", "TopicTitle", "title", "Title"], null),
+          ) ??
+          topicCode ??
+          "-";
+
+        const studentCode =
+          toStringOrNull(
+            pickSnapshotSection<unknown>(
+              item,
+              ["studentCode", "StudentCode", "proposerStudentCode", "ProposerStudentCode"],
+              null,
+            ),
+          ) ?? "-";
+        const reason = toStringOrNull(
+          pickSnapshotSection<unknown>(item, ["reason", "Reason", "rejectReason", "RejectReason"], null),
+        );
+
+        return {
+          revisionId:
+            Number.isFinite(revisionId) && revisionId > 0
+              ? revisionId
+              : Number.isFinite(assignmentIdValue) && assignmentIdValue > 0
+                ? assignmentIdValue
+                : index + 1,
+          assignmentId:
+            Number.isFinite(assignmentIdValue) && assignmentIdValue > 0
+              ? assignmentIdValue
+              : null,
+          studentCode,
+          topicCode,
+          topicTitle,
+          revisionFileUrl: toStringOrNull(
+            pickSnapshotSection<unknown>(
+              item,
+              ["revisionFileUrl", "RevisionFileUrl", "fileUrl", "FileUrl"],
+              null,
+            ),
+          ),
+          lastUpdated: toStringOrNull(
+            pickSnapshotSection<unknown>(item, ["lastUpdated", "LastUpdated", "updatedAt", "UpdatedAt"], null),
+          ),
+          status,
+          ...(reason ? { reason } : {}),
+        };
+      })
+      ;
+  };
 
   const mapDefenseDocuments = (documents: unknown): DefenseDocument[] => {
     if (!Array.isArray(documents)) {
@@ -1104,6 +1313,12 @@ const LecturerCommittees: React.FC = () => {
             ) ?? `${lecturerCode || "member"}-${index + 1}`,
           lecturerCode,
           lecturerName,
+          degree: toStringOrNull(
+            pickSnapshotSection<unknown>(record, ["degree", "Degree"], null),
+          ),
+          organization: toStringOrNull(
+            pickSnapshotSection<unknown>(record, ["organization", "Organization"], null),
+          ),
           roleRaw,
           roleCode,
           roleLabel: getRoleLabel(roleCode),
@@ -1163,21 +1378,21 @@ const LecturerCommittees: React.FC = () => {
       );
       const supervisorNameFromTopic = topicRecord
         ? toStringOrNull(
-            pickSnapshotSection<unknown>(
-              topicRecord,
-              [
-                "supervisorLecturerName",
-                "SupervisorLecturerName",
-                "supervisorName",
-                "SupervisorName",
-                "lecturerName",
-                "LecturerName",
-                "supervisorFullName",
-                "SupervisorFullName",
-              ],
-              null,
-            ),
-          )
+          pickSnapshotSection<unknown>(
+            topicRecord,
+            [
+              "supervisorLecturerName",
+              "SupervisorLecturerName",
+              "supervisorName",
+              "SupervisorName",
+              "lecturerName",
+              "LecturerName",
+              "supervisorFullName",
+              "SupervisorFullName",
+            ],
+            null,
+          ),
+        )
         : null;
       const supervisorCode =
         toStringOrNull(
@@ -1189,12 +1404,12 @@ const LecturerCommittees: React.FC = () => {
         ) ??
         (topicRecord
           ? toStringOrNull(
-              pickSnapshotSection<unknown>(
-                topicRecord,
-                ["supervisorLecturerCode", "SupervisorLecturerCode", "supervisorCode", "SupervisorCode"],
-                null,
-              ),
-            )
+            pickSnapshotSection<unknown>(
+              topicRecord,
+              ["supervisorLecturerCode", "SupervisorLecturerCode", "supervisorCode", "SupervisorCode"],
+              null,
+            ),
+          )
           : null);
 
       const rowTagNames = normalizeTopicTagNames(
@@ -1206,12 +1421,12 @@ const LecturerCommittees: React.FC = () => {
       );
       const topicTagNames = topicRecord
         ? normalizeTopicTagNames(
-            pickSnapshotSection<unknown>(
-              topicRecord,
-              ["topicTags", "TopicTags", "tags", "Tags", "tagNames", "TagNames", "tagCodes", "TagCodes"],
-              [],
-            ),
-          )
+          pickSnapshotSection<unknown>(
+            topicRecord,
+            ["topicTags", "TopicTags", "tags", "Tags", "tagNames", "TagNames", "tagCodes", "TagCodes"],
+            [],
+          ),
+        )
         : [];
       const topicTags = Array.from(new Set([...rowTagNames, ...topicTagNames]));
 
@@ -1307,13 +1522,29 @@ const LecturerCommittees: React.FC = () => {
     });
 
   const refreshAllScoringRows = async () => {
-    const allMatrixResponse = await lecturerApi.getScoringMatrix();
+    const [allMatrixResponse, topicProgressResponse] = await Promise.all([
+      lecturerApi.getScoringMatrix(),
+      lecturerApi.getTopicFinalProgress(),
+    ]);
     if (notifyApiFailure(allMatrixResponse as ApiResponse<unknown>, "Không tải được danh sách đề tài chấm điểm.")) {
       return;
     }
 
     const matrixItems = (allMatrixResponse?.data ?? []) as Array<Record<string, unknown>>;
     setAllScoringRows(mapScoringMatrixRows(matrixItems));
+
+    if (!notifyApiFailure(topicProgressResponse as ApiResponse<unknown>, "Không tải được tiến độ điểm tổng theo đề tài.")) {
+      const rows = (topicProgressResponse?.data ?? []) as Array<Record<string, unknown>>;
+      setTopicFinalProgressRows(
+        rows.map((item) => ({
+          committeeId: Number(item.committeeId ?? 0),
+          committeeCode: String(item.committeeCode ?? ""),
+          totalTopics: Number(item.totalTopics ?? 0),
+          scoredTopics: Number(item.scoredTopics ?? 0),
+          progressPercent: Number(item.progressPercent ?? 0),
+        })),
+      );
+    }
   };
 
   const refreshRevisionQueue = async () => {
@@ -1327,9 +1558,10 @@ const LecturerCommittees: React.FC = () => {
   };
 
   const refreshScoringData = async (committeeId: number) => {
-    const [matrixRes, alertsRes] = await Promise.all([
+    const [matrixRes, alertsRes, topicProgressRes] = await Promise.all([
       lecturerApi.getScoringMatrix(committeeId),
       lecturerApi.getScoringAlerts(committeeId),
+      lecturerApi.getTopicFinalProgress(),
     ]);
 
     if (notifyApiFailure(matrixRes as ApiResponse<unknown>, "Không tải được bảng chấm điểm.")) {
@@ -1363,31 +1595,22 @@ const LecturerCommittees: React.FC = () => {
         threshold: Number.isFinite(Number(item.threshold)) ? Number(item.threshold) : null,
       }))
     );
+
+    if (!notifyApiFailure(topicProgressRes as ApiResponse<unknown>, "Không tải được tiến độ điểm tổng theo đề tài.")) {
+      const rows = (topicProgressRes?.data ?? []) as Array<Record<string, unknown>>;
+      setTopicFinalProgressRows(
+        rows.map((item) => ({
+          committeeId: Number(item.committeeId ?? 0),
+          committeeCode: String(item.committeeCode ?? ""),
+          totalTopics: Number(item.totalTopics ?? 0),
+          scoredTopics: Number(item.scoredTopics ?? 0),
+          progressPercent: Number(item.progressPercent ?? 0),
+        })),
+      );
+    }
   };
 
-  const hydrateMinutes = async (committeeId: number, assignmentId?: number) => {
-    const response = await lecturerApi.getCommitteeMinutes(committeeId);
-    if (notifyApiFailure(response as ApiResponse<unknown>, "Không tải được biên bản hội đồng.")) {
-      return;
-    }
 
-    const rows = (response?.data ?? []) as Array<Record<string, unknown>>;
-    const target =
-      rows.find((item) => Number(item.assignmentId ?? 0) === (assignmentId ?? selectedAssignmentId)) ??
-      rows[0] ??
-      null;
-    if (!target) {
-      return;
-    }
-
-    setSummary(String(target.summaryContent ?? target.summary ?? ""));
-    setReview(String(target.reviewerComments ?? target.review ?? ""));
-    setQuestions(String(target.qnaDetails ?? target.questions ?? ""));
-    setAnswers(String(target.answers ?? ""));
-    setStrengths(String(target.strengths ?? ""));
-    setWeaknesses(String(target.weaknesses ?? ""));
-    setRecommendations(String(target.recommendations ?? ""));
-  };
 
   useEffect(() => {
     const hydrateLecturerData = async () => {
@@ -1581,6 +1804,7 @@ const LecturerCommittees: React.FC = () => {
           setCommittees(mapped);
           setSelectedCommitteeId((prev) => (mapped.some((item) => item.id === prev) ? prev : mapped[0]?.id ?? ""));
           setDetailCommitteeId((prev) => (mapped.some((item) => item.id === prev) ? prev : ""));
+          await refreshAllScoringRows();
         } else {
           setCommittees([]);
           setSelectedCommitteeId("");
@@ -1592,8 +1816,6 @@ const LecturerCommittees: React.FC = () => {
           setRevisionQueue(mappedRevisions);
           setRevision(mappedRevisions[0] ?? EMPTY_REVISION);
         }
-
-        await refreshAllScoringRows();
       } catch (error) {
         setCommittees([]);
         setAllScoringRows([]);
@@ -1660,6 +1882,13 @@ const LecturerCommittees: React.FC = () => {
       ? `Đợt #${periodId}`
       : "Chưa xác định";
   const waitingCouncilLock = !currentSnapshotError && councilListLocked === false;
+  const hasCommitteeAccess = councilListLocked === true && committees.length > 0;
+  const accessDeniedMessage =
+    councilListLocked === false
+      ? "Danh sách hội đồng chưa được chốt. Giảng viên chỉ có thể xem khi hội đồng đã khóa."
+      : councilListLocked === true
+        ? "Giảng viên hiện không thuộc hội đồng nào trong đợt bảo vệ này."
+        : "Không xác định được quyền xem hội đồng hiện tại.";
 
   const selectedCommittee = useMemo(
     () => committees.find((item) => item.id === selectedCommitteeId) ?? null,
@@ -1690,20 +1919,26 @@ const LecturerCommittees: React.FC = () => {
     if (!committee) {
       return false;
     }
+
+    const committeeCode = normalizeCommitteeKey(committee.id);
+    const rowCommitteeCode = normalizeCommitteeKey(row.committeeCode);
+    const committeeDigits = extractDigits(committee.id);
+    const rowCommitteeDigits = extractDigits(row.committeeCode);
+    const rowCommitteeIdDigits = extractDigits(row.committeeId);
+
     return (
       row.committeeId === committee.numericId ||
-      String(row.committeeCode).trim().toUpperCase() === committee.id.trim().toUpperCase()
+      rowCommitteeCode === committeeCode ||
+      (committeeDigits.length > 0 && (rowCommitteeDigits === committeeDigits || rowCommitteeIdDigits === committeeDigits)) ||
+      normalizeCommitteeKey(row.committeeName) === normalizeCommitteeKey(committee.name)
     );
   };
 
   const committeeBadgeStats = useMemo(() => {
     const statsMap = new Map<string, { total: number; scored: number; locked: number }>();
+
     committees.forEach((committee) => {
-      statsMap.set(committee.id, {
-        total: 0,
-        scored: 0,
-        locked: 0,
-      });
+      statsMap.set(committee.id, { total: 0, scored: 0, locked: 0 });
     });
 
     allScoringRows.forEach((row) => {
@@ -1711,9 +1946,10 @@ const LecturerCommittees: React.FC = () => {
       if (!matched) {
         return;
       }
+
       const current = statsMap.get(matched.id) ?? { total: 0, scored: 0, locked: 0 };
       current.total += 1;
-      if (row.finalScore != null || row.submittedCount > 0) {
+      if (row.finalScore != null && Number(row.finalScore) > 0) {
         current.scored += 1;
       }
       if (row.isLocked) {
@@ -1723,15 +1959,21 @@ const LecturerCommittees: React.FC = () => {
     });
 
     committees.forEach((committee) => {
+      const fromTopicProgress =
+        topicFinalProgressRows.find(
+          (row) =>
+            row.committeeId === committee.numericId ||
+            String(row.committeeCode).trim().toUpperCase() === committee.id.trim().toUpperCase(),
+        ) ?? null;
+
       const current = statsMap.get(committee.id) ?? { total: 0, scored: 0, locked: 0 };
-      if (current.total <= 0 && committee.studentCount > 0) {
-        current.total = committee.studentCount;
-      }
+      current.total = Math.max(current.total, fromTopicProgress?.totalTopics ?? 0, committee.studentCount);
+      current.scored = Math.max(current.scored, fromTopicProgress?.scoredTopics ?? 0);
       statsMap.set(committee.id, current);
     });
 
     return statsMap;
-  }, [allScoringRows, committees]);
+  }, [allScoringRows, committees, topicFinalProgressRows]);
 
   const detailCommitteeRows = useMemo(
     () => allScoringRows.filter((row) => isRowInCommittee(row, detailCommittee)),
@@ -1831,94 +2073,11 @@ const LecturerCommittees: React.FC = () => {
     "UC3.5.LOCK",
   );
 
-  const canOpenSession = canOpenSessionByActions;
-  const canSubmitScore = canSubmitScoreByActions;
-  const canRequestReopen = canRequestReopenByActions;
-  const canLockSession = canLockSessionByActions;
-
-  const canEditMinutesByActions = hasAllowedAction(
-    selectedMinuteActions,
-    "UPSERT",
-    "UPSERT_MINUTES",
-    "UPDATE_MINUTES",
-    "EDIT_MINUTES",
-  );
-  const canEditMinutes = canEditMinutesByActions;
-
-  const canEditReviewerComments =
-    canEditMinutes ||
-    hasAllowedAction(
-      selectedScoringActions,
-      "SUBMIT",
-      "SUBMIT_SCORE",
-      "UC3.2.SUBMIT",
-    );
-
-  const canApproveRevisionByActions = hasAllowedAction(
-    selectedRevisionActions,
-    "APPROVE",
-    "APPROVE_REVISION",
-    "UC4.2.APPROVE",
-  );
-  const canRejectRevisionByActions = hasAllowedAction(
-    selectedRevisionActions,
-    "REJECT",
-    "REJECT_REVISION",
-    "UC4.2.REJECT",
-  );
-  const canApproveRevision = canApproveRevisionByActions;
-  const canRejectRevision = canRejectRevisionByActions;
   const isSessionOpened = selectedCommittee?.status === "Đang họp";
   const isSessionClosed = selectedCommittee?.status === "Đã khóa";
-  const isCurrentSessionLocked = isSessionClosed || sessionLocked;
 
   const permissionSourceMissing =
     !hasScoringPermissionSource && !hasMinutePermissionSource && !hasRevisionPermissionSource;
-
-  const isScoreValid = useMemo(() => {
-    const num = Number(myScore);
-    return Number.isFinite(num) && num >= 0 && num <= 10;
-  }, [myScore]);
-
-  const hasVarianceAlert = useMemo(() => {
-    if (scoringOverview.variance == null || scoringOverview.varianceThreshold == null) {
-      return false;
-    }
-    return scoringOverview.variance > scoringOverview.varianceThreshold;
-  }, [scoringOverview]);
-
-  useEffect(() => {
-    const hydrateScoringOverview = async () => {
-      if (!selectedCommitteeId) {
-        setScoringOverview({ variance: null, varianceThreshold: null, finalScore: null, finalLetter: null });
-        setScoringMatrix([]);
-        setScoringAlerts([]);
-        setSelectedAssignmentId(0);
-        return;
-      }
-      try {
-        await refreshScoringData(selectedCommitteeNumericId);
-      } catch {
-        setScoringOverview({ variance: null, varianceThreshold: null, finalScore: null, finalLetter: null });
-      }
-    };
-
-    void hydrateScoringOverview();
-  }, [selectedCommitteeId, selectedCommitteeNumericId]);
-
-  useEffect(() => {
-    const row = selectedMatrixRow;
-    const relatedAlert = scoringAlerts.find((item) => item.assignmentId === (row?.assignmentId ?? 0)) ?? null;
-    setScoringOverview({
-      variance: row?.variance ?? relatedAlert?.value ?? null,
-      varianceThreshold: relatedAlert?.threshold ?? null,
-      finalScore: row?.finalScore ?? null,
-      finalLetter: row?.finalGrade ?? null,
-    });
-    if (row) {
-      setSessionLocked(Boolean(row.isLocked));
-    }
-  }, [selectedMatrixRow, scoringAlerts]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1955,61 +2114,8 @@ const LecturerCommittees: React.FC = () => {
     }
   }, [joinedCommitteeId, selectedCommitteeId]);
 
-  useEffect(() => {
-    if (!joinedCommitteeId) {
-      setRoomView("scoring");
-      return;
-    }
-    setRoomView("scoring");
-  }, [joinedCommitteeId]);
 
-  useEffect(() => {
-    if (activePanel !== "grading" || !selectedCommitteeId) {
-      return;
-    }
-    if (workspaceTab !== "minutes" && workspaceTab !== "review") {
-      return;
-    }
-    void hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId || undefined);
-  }, [
-    activePanel,
-    selectedCommitteeId,
-    selectedCommitteeNumericId,
-    selectedAssignmentId,
-    workspaceTab,
-  ]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      window.localStorage.setItem(
-        "lecturer_minutes_draft",
-        JSON.stringify({
-          periodId: periodIdText,
-          selectedCommitteeId,
-          summary,
-          review,
-          questions,
-          answers,
-          strengths,
-          weaknesses,
-          recommendations,
-        })
-      );
-      setLastAutoSave(new Date().toLocaleTimeString("vi-VN"));
-    }, 30000);
-
-    return () => window.clearInterval(timer);
-  }, [
-    selectedCommitteeId,
-    summary,
-    review,
-    questions,
-    answers,
-    strengths,
-    weaknesses,
-    recommendations,
-    periodIdText,
-  ]);
 
   const formatSession = (session: SessionCode | null) => {
     if (session === "MORNING") {
@@ -2041,9 +2147,8 @@ const LecturerCommittees: React.FC = () => {
     }
     setJoinedCommitteeId(committee.id);
     setSelectedCommitteeId(committee.id);
-    setRoomView("scoring");
-    setWorkspaceTab("scoring");
     setActivePanel("grading");
+    navigate(`/lecturer/committees/grading?committeeId=${encodeURIComponent(committee.id)}`);
   };
 
   const syncCommitteeSessionStatus = (committeeId: string, nextStatus: Committee["status"]) => {
@@ -2052,10 +2157,6 @@ const LecturerCommittees: React.FC = () => {
         committee.id === committeeId ? { ...committee, status: nextStatus } : committee,
       ),
     );
-
-    if (joinedCommitteeId === committeeId || selectedCommitteeId === committeeId) {
-      setSessionLocked(nextStatus === "Đã khóa");
-    }
   };
 
   const handleChairOpenSession = async (committee: Committee) => {
@@ -2140,61 +2241,8 @@ const LecturerCommittees: React.FC = () => {
     return idempotencyKey;
   };
 
-  const handleSubmitScore = async () => {
-    if (!canSubmitScore) {
-      notifyError("Vai trò hiện tại không có quyền gửi điểm độc lập.");
-      return;
-    }
-    if (!isSessionOpened) {
-      notifyError("Phiên chấm chưa mở. Vui lòng để CT mở phiên trước khi gửi điểm.");
-      return;
-    }
-    if (!isScoreValid) {
-      notifyError(ucError("UC3.2-SCORE_INVALID"));
-      return;
-    }
-    if (isSessionClosed || sessionLocked) {
-      notifyError(ucError("UC3.3-SESSION_LOCKED"));
-      return;
-    }
-    try {
-      const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-score-submit");
-      const assignmentId = selectedAssignmentId;
-      if (!assignmentId) {
-        notifyError("Vui lòng chọn assignment cần chấm điểm.");
-        return;
-      }
-      const response = await lecturerApi.submitIndependentScore(selectedCommitteeNumericId, {
-        assignmentId,
-        score: Number(myScore),
-        comment: myComment,
-      }, idempotencyKey);
-      if (notifyApiFailure(response as ApiResponse<unknown>, "Không gửi được điểm độc lập.")) {
-        return;
-      }
-      setSubmitted(true);
-      setChairRequestedReopen(false);
-      pushTrace("submit-score", "[UC3.2] Đã gửi điểm độc lập.");
-      setAssignmentConcurrencyToken(createConcurrencyToken("lecturer-assignment"));
-      await refreshScoringData(selectedCommitteeNumericId);
-      if (response?.idempotencyReplay ?? response?.IdempotencyReplay) {
-        notifyInfo("Yêu cầu gửi điểm đã được xử lý trước đó (idempotency replay).");
-      } else {
-        notifySuccess("Đã gửi điểm độc lập thành công.");
-      }
-    } catch {
-      notifyError("Không gửi được điểm. Vui lòng thử lại.");
-    }
-  };
 
-  const openReportDrawer = (row: ScoringMatrixRow) => {
-    if (row.defenseDocuments.length === 0) {
-      notifyInfo("Đề tài này chưa có tệp báo cáo để xem.");
-      return;
-    }
-    setSelectedAssignmentId(row.assignmentId);
-    setRoomView("reports");
-  };
+
 
   const formatDate = (value: string | null) => {
     if (!value) {
@@ -2220,29 +2268,52 @@ const LecturerCommittees: React.FC = () => {
     label: string;
     icon: React.ReactNode;
   }> = [
-    { key: "overview", label: "Tổng quan", icon: <Info size={14} /> },
-    { key: "members", label: "Thành viên", icon: <Users2 size={14} /> },
-    { key: "topics", label: "Đề tài", icon: <ClipboardPen size={14} /> },
-  ];
+      { key: "overview", label: "Tổng quan", icon: <Info size={14} /> },
+      { key: "members", label: "Thành viên", icon: <Users2 size={14} /> },
+      { key: "topics", label: "Đề tài", icon: <ClipboardPen size={14} /> },
+    ];
 
-  const workspaceTabs: Array<{
-    key: WorkspaceTabKey;
-    label: string;
-    icon: React.ReactNode;
-  }> = [
-    { key: "scoring", label: "Chấm điểm", icon: <Star size={14} /> },
-    { key: "minutes", label: "Biên bản họp", icon: <ClipboardPen size={14} /> },
-    { key: "review", label: "Nhận xét phản biện", icon: <MessageSquareText size={14} /> },
-  ];
+
+
+  if (!loadingData && councilListLocked !== null && !currentSnapshotError && !hasCommitteeAccess) {
+    return (
+      <div
+        style={{
+          maxWidth: 1460,
+          margin: "0 auto",
+          padding: 24,
+          position: "relative",
+          fontFamily: '"Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif',
+        }}
+        className="lecturer-revamp-root"
+      >
+        <div
+          style={{
+            border: "1px solid #fed7aa",
+            borderRadius: 16,
+            padding: 28,
+            background: "linear-gradient(145deg, #ffffff 0%, #fff7ed 100%)",
+            boxShadow: "0 14px 36px rgba(15, 23, 42, 0.09)",
+            color: "#9a3412",
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+            Hội đồng giảng viên chưa khả dụng
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.7 }}>{accessDeniedMessage}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       style={{
-        maxWidth: 1460,
+        maxWidth: 1360,
         margin: "0 auto",
-        padding: 24,
+        padding: 20,
         position: "relative",
-        fontFamily: '"Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif',
+        fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
       }}
       className="lecturer-revamp-root"
     >
@@ -2252,14 +2323,17 @@ const LecturerCommittees: React.FC = () => {
             --lec-accent: #f37021;
             --lec-accent-strong: #d85f1a;
             --lec-ink: #111111;
-            --lec-line: #ffd4b5;
-            --lec-bg-soft: #fff7ed;
+            --lec-muted: #475569;
+            --lec-line: #cbd5e1;
+            --lec-bg-soft: #f8fafc;
             color: var(--lec-ink);
             background: #ffffff;
           }
           .lecturer-revamp-root .content {
             position: relative;
             z-index: 1;
+            display: grid;
+            gap: 14px;
           }
           .lecturer-revamp-root h1,
           .lecturer-revamp-root h2,
@@ -2267,20 +2341,22 @@ const LecturerCommittees: React.FC = () => {
             line-height: 1.2;
             letter-spacing: -0.01em;
             margin: 0;
+            color: #111111;
           }
           .lecturer-revamp-root .lec-heading {
-            font-size: 33px;
-            font-weight: 750;
+            font-size: 30px;
+            font-weight: 800;
+            color: #111111;
           }
           .lecturer-revamp-root .lec-kicker {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #111111;
+            color: #475569;
             font-weight: 700;
           }
           .lecturer-revamp-root .lec-value {
-            font-size: 26px;
+            font-size: 24px;
             font-weight: 800;
             color: #111111;
           }
@@ -2288,46 +2364,51 @@ const LecturerCommittees: React.FC = () => {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            border: 1px solid #f37021;
+            border: 1px solid #cbd5e1;
             border-radius: 999px;
             padding: 6px 12px;
             font-size: 12px;
             font-weight: 600;
             background: #ffffff;
             color: #111111;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
           }
           .lecturer-revamp-root .lec-pill {
-            border: 1px solid #f37021;
-            border-radius: 999px;
-            background: #f37021;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #ffffff;
             padding: 8px 14px;
             display: inline-flex;
             align-items: center;
             gap: 6px;
             font-size: 13px;
-            font-weight: 700;
-            color: #ffffff;
+            font-weight: 600;
+            color: #0f172a;
             cursor: pointer;
             transition: all .2s ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+          }
+          .lecturer-revamp-root .lec-pill:hover {
+            border-color: #f37021;
+            background: #fffaf5;
+            color: #d85f1a;
           }
           .lecturer-revamp-root .lec-pill.active {
-            border-color: #d85f1a;
-            color: #ffffff;
-            background: #d85f1a;
+            border-color: #f37021;
+            color: #f37021;
+            background: #fff7ed;
           }
           .lecturer-revamp-root .lec-pill:disabled {
-            opacity: 1;
             cursor: not-allowed;
-            background: #f7b486;
-            border-color: #f7b486;
-            color: #ffffff;
+            background: #f8fafc;
+            border-color: #e2e8f0;
+            color: #94a3b8;
+            box-shadow: none;
           }
           .lecturer-revamp-root .lec-primary,
-          .lecturer-revamp-root .lec-soft,
-          .lecturer-revamp-root .lec-ghost,
           .lecturer-revamp-root .lec-accent {
             border-radius: 10px;
-            min-height: 42px;
+            min-height: 40px;
             padding: 0 14px;
             font-weight: 700;
             cursor: pointer;
@@ -2340,34 +2421,51 @@ const LecturerCommittees: React.FC = () => {
             justify-content: center;
             gap: 8px;
             transition: all .2s ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
           }
-          .lecturer-revamp-root .lec-primary,
           .lecturer-revamp-root .lec-soft,
-          .lecturer-revamp-root .lec-ghost,
-          .lecturer-revamp-root .lec-accent {
-            box-shadow: 0 8px 18px rgba(243, 112, 33, 0.22);
+          .lecturer-revamp-root .lec-ghost {
+            border-radius: 10px;
+            min-height: 40px;
+            padding: 0 14px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all .2s ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
           }
           .lecturer-revamp-root .lec-primary:hover,
-          .lecturer-revamp-root .lec-soft:hover,
-          .lecturer-revamp-root .lec-ghost:hover,
           .lecturer-revamp-root .lec-accent:hover {
             background: #d85f1a;
             border-color: #d85f1a;
           }
+          .lecturer-revamp-root .lec-soft:hover,
+          .lecturer-revamp-root .lec-ghost:hover {
+            border-color: #f37021;
+            background: #fffaf5;
+            color: #d85f1a;
+          }
           .lecturer-revamp-root .lec-primary:disabled,
+          .lecturer-revamp-root .lec-accent:disabled,
           .lecturer-revamp-root .lec-soft:disabled,
-          .lecturer-revamp-root .lec-ghost:disabled,
-          .lecturer-revamp-root .lec-accent:disabled {
+          .lecturer-revamp-root .lec-ghost:disabled {
             cursor: not-allowed;
-            background: #f7b486;
-            border-color: #f7b486;
-            color: #ffffff;
+            background: #f8fafc;
+            border-color: #e2e8f0;
+            color: #94a3b8;
             box-shadow: none;
           }
           .lecturer-revamp-root .lec-input,
           .lecturer-revamp-root select,
           .lecturer-revamp-root textarea {
-            border: 1px solid #f7b486;
+            border: 1px solid #cbd5e1;
             border-radius: 10px;
             padding: 10px 12px;
             font-size: 14px;
@@ -2384,7 +2482,14 @@ const LecturerCommittees: React.FC = () => {
           .lecturer-revamp-root textarea:focus {
             outline: none;
             border-color: #f37021;
-            box-shadow: 0 0 0 3px rgba(243, 112, 33, 0.18);
+            box-shadow: 0 0 0 3px rgba(243, 112, 33, 0.12);
+          }
+          .lecturer-revamp-root .content > section {
+            background: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 10px !important;
+            padding: 18px !important;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
           }
           .lecturer-revamp-root .lec-committee-grid {
             display: grid;
@@ -2392,18 +2497,98 @@ const LecturerCommittees: React.FC = () => {
             gap: 12px;
           }
           .lecturer-revamp-root .lec-committee-card {
-            border: 1px solid #ffd4b5;
-            border-radius: 14px;
-            padding: 14px;
-            background: linear-gradient(165deg, #ffffff 0%, #fff9f4 100%);
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 16px;
+            background: #ffffff;
             display: grid;
-            gap: 10px;
-            box-shadow: 0 10px 24px rgba(243, 112, 33, 0.14);
-            transition: transform .2s ease, box-shadow .2s ease;
+            gap: 14px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
           }
           .lecturer-revamp-root .lec-committee-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 14px 28px rgba(243, 112, 33, 0.18);
+            transform: translateY(-1px);
+            border-color: #f37021;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+          }
+          .lecturer-revamp-root .lec-committee-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 228px;
+            gap: 14px;
+            align-items: start;
+          }
+          .lecturer-revamp-root .lec-committee-info {
+            display: grid;
+            gap: 12px;
+          }
+          .lecturer-revamp-root .lec-committee-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+          }
+          .lecturer-revamp-root .lec-status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 100px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 12px;
+            font-weight: 800;
+          }
+          .lecturer-revamp-root .lec-progress-block {
+            display: grid;
+            gap: 6px;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: transparent;
+          }
+          .lecturer-revamp-root .lec-progress-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+            font-size: 13px;
+            color: #334155;
+          }
+          .lecturer-revamp-root .lec-progress-track {
+            height: 9px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            overflow: hidden;
+          }
+          .lecturer-revamp-root .lec-progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #f37021 0%, #fb923c 100%);
+          }
+          .lecturer-revamp-root .lec-progress-foot {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #64748b;
+          }
+          .lecturer-revamp-root .lec-committee-side {
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            padding: 0;
+            display: grid;
+            gap: 10px;
+            align-content: start;
+          }
+          .lecturer-revamp-root .lec-side-title {
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #475569;
           }
           .lecturer-revamp-root .lec-badge-row {
             display: flex;
@@ -2414,13 +2599,13 @@ const LecturerCommittees: React.FC = () => {
             display: inline-flex;
             gap: 6px;
             align-items: center;
-            border: 1px solid #fed7aa;
+            border: 1px solid #cbd5e1;
             border-radius: 999px;
             padding: 4px 10px;
             font-size: 12px;
             font-weight: 600;
             color: #111111;
-            background: #fff7ed;
+            background: #f8fafc;
           }
           .lecturer-revamp-root .lec-info-row {
             display: flex;
@@ -2435,39 +2620,45 @@ const LecturerCommittees: React.FC = () => {
           }
           .lecturer-revamp-root .lec-workspace {
             display: grid;
-            grid-template-columns: 320px minmax(0, 1fr);
-            gap: 14px;
+            grid-template-columns: 340px minmax(0, 1fr);
+            gap: 16px;
+            align-items: start;
           }
           .lecturer-revamp-root .lec-left-pane,
           .lecturer-revamp-root .lec-right-pane {
-            border: 1px solid #ffd4b5;
-            border-radius: 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             background: #ffffff;
-            padding: 12px;
-            box-shadow: 0 4px 14px rgba(243, 112, 33, 0.08);
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
           }
           .lecturer-revamp-root .lec-assign-list {
             display: grid;
             gap: 8px;
           }
           .lecturer-revamp-root .lec-assign-btn {
-            border: 1px solid #ffd4b5;
+            border: 1px solid #cbd5e1;
             border-radius: 10px;
-            padding: 10px;
+            padding: 12px;
             text-align: left;
             background: #ffffff;
             cursor: pointer;
             color: #111111;
+            transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+          }
+          .lecturer-revamp-root .lec-assign-btn:hover {
+            border-color: #f37021;
+            background: #fffaf5;
           }
           .lecturer-revamp-root .lec-assign-btn.active {
             border-color: #f37021;
             background: #fff7ed;
           }
           .lecturer-revamp-root .lec-room-header {
-            border: 1px solid #ffd4b5;
+            border: 1px solid #cbd5e1;
             border-radius: 12px;
-            background: #fff7ed;
-            padding: 10px 12px;
+            background: #ffffff;
+            padding: 12px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -2480,7 +2671,7 @@ const LecturerCommittees: React.FC = () => {
             gap: 6px;
             padding: 6px 10px;
             border-radius: 999px;
-            border: 1px solid #f37021;
+            border: 1px solid #cbd5e1;
             background: #ffffff;
             color: #111111;
             font-size: 12px;
@@ -2490,6 +2681,7 @@ const LecturerCommittees: React.FC = () => {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            align-items: center;
           }
           .lecturer-revamp-root .lec-tab-bar {
             display: flex;
@@ -2500,14 +2692,15 @@ const LecturerCommittees: React.FC = () => {
           }
           .lecturer-revamp-root .lec-score-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
             gap: 10px;
           }
           .lecturer-revamp-root .lec-score-item {
-            border: 1px solid #ffd4b5;
-            border-radius: 12px;
-            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 12px;
             background: #ffffff;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
           }
           .lecturer-revamp-root button svg,
           .lecturer-revamp-root a svg {
@@ -2518,17 +2711,30 @@ const LecturerCommittees: React.FC = () => {
           .lecturer-revamp-root .lec-committee-actions {
             display: grid;
             gap: 8px;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
           }
           .lecturer-revamp-root .lec-report-screen {
-            border: 1px solid #ffd4b5;
-            border-radius: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
             background: #ffffff;
-            padding: 12px;
+            padding: 16px;
             display: grid;
             gap: 10px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+          }
+          .lecturer-revamp-root .lec-alert-card {
+            border: 1px solid #fecaca;
+            border-left: 4px solid #f37021;
+            border-radius: 10px;
+            padding: 18px;
+            background: #fff1f2;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            color: #9f1239;
           }
           @media (max-width: 1060px) {
+            .lecturer-revamp-root .lec-committee-main {
+              grid-template-columns: 1fr;
+            }
             .lecturer-revamp-root .lec-workspace {
               grid-template-columns: 1fr;
             }
@@ -2540,30 +2746,32 @@ const LecturerCommittees: React.FC = () => {
       </style>
 
       <div className="content">
-        <section
-          style={{
-            ...cardStyle,
-            marginBottom: 14,
-            background: "linear-gradient(145deg, #ffffff 0%, #fff7ed 100%)",
-          }}
-        >
-          <h1 className="lec-heading" style={{ color: "#f37021", display: "flex", alignItems: "center", gap: 10 }}>
-            <Gavel size={30} color="#f37021" /> Hội đồng và chấm điểm giảng viên
-          </h1>
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span className="lec-tag-live">Đợt: {periodDisplay}</span>
-            {currentPeriod && <span className="lec-tag-live">Trạng thái đợt: {currentPeriod.status}</span>}
-            <span className="lec-tag-live">
-              Danh sách hội đồng: {councilListLocked === true ? "Đã chốt" : councilListLocked === false ? "Đang mở" : councilLockStatus}
-            </span>
-            <span className="lec-tag-live">Phòng chấm: {joinedCommittee ? `Đang tham gia ${joinedCommittee.id}` : "Chưa tham gia"}</span>
-          </div>
-          <div style={{ marginTop: 10, fontSize: 13, color: "#334155" }}>
-            Cập nhật gần nhất: {latestActionTrace?.at ?? "Chưa có"}
-          </div>
-        </section>
+        {!isGradingScreen && (
+          <section
+            style={{
+              ...cardStyle,
+              marginBottom: 14,
+              background: "linear-gradient(145deg, #ffffff 0%, #fff7ed 100%)",
+            }}
+          >
+            <h1 className="lec-heading" style={{ color: "#f37021", display: "flex", alignItems: "center", gap: 10 }}>
+              <Gavel size={30} color="#f37021" /> Danh sách Hội đồng bảo vệ
+            </h1>
+            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span className="lec-tag-live">Đợt: {periodDisplay}</span>
+              {currentPeriod && <span className="lec-tag-live">Trạng thái đợt: {currentPeriod.status}</span>}
+              <span className="lec-tag-live">
+                Danh sách hội đồng: {councilListLocked === true ? "Đã chốt" : councilListLocked === false ? "Đang mở" : councilLockStatus}
+              </span>
+              <span className="lec-tag-live">Phòng chấm: {joinedCommittee ? `Đang tham gia ${joinedCommittee.id}` : "Chưa tham gia"}</span>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 13, color: "#334155" }}>
+              Cập nhật gần nhất: {latestActionTrace?.at ?? "Chưa có"}
+            </div>
+          </section>
+        )}
 
-        {currentSnapshotError && (
+        {!isGradingScreen && currentSnapshotError && (
           <section
             style={{
               ...cardStyle,
@@ -2578,51 +2786,30 @@ const LecturerCommittees: React.FC = () => {
           </section>
         )}
 
-        <section style={{ ...cardStyle, marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
-              <div className="lec-kicker">Đang họp</div>
-              <div className="lec-value">{committeeStats.live}</div>
+        {!isGradingScreen && (
+          <section style={{ ...cardStyle, marginBottom: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
+                <div className="lec-kicker">Đang họp</div>
+                <div className="lec-value">{committeeStats.live}</div>
+              </div>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
+                <div className="lec-kicker">Sắp diễn ra</div>
+                <div className="lec-value">{committeeStats.upcoming}</div>
+              </div>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
+                <div className="lec-kicker">Đã khóa</div>
+                <div className="lec-value">{committeeStats.locked}</div>
+              </div>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
+                <div className="lec-kicker">Chờ duyệt chỉnh sửa</div>
+                <div className="lec-value" style={{ color: "#f37021" }}>{committeeStats.pendingRevision}</div>
+              </div>
             </div>
-            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
-              <div className="lec-kicker">Sắp diễn ra</div>
-              <div className="lec-value">{committeeStats.upcoming}</div>
-            </div>
-            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
-              <div className="lec-kicker">Đã khóa</div>
-              <div className="lec-value">{committeeStats.locked}</div>
-            </div>
-            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
-              <div className="lec-kicker">Chờ duyệt chỉnh sửa</div>
-              <div className="lec-value" style={{ color: "#f37021" }}>{committeeStats.pendingRevision}</div>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
-        <section style={{ ...cardStyle, marginBottom: 14 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {panels.map((panel) => (
-              <button
-                key={panel.key}
-                type="button"
-                className={`lec-pill ${activePanel === panel.key ? "active" : ""}`}
-                onClick={() => {
-                  if (panel.key === "grading" && !joinedCommitteeId) {
-                    notifyInfo("Vui lòng bấm Tham gia tại hội đồng đang họp để mở phòng chấm.");
-                    return;
-                  }
-                  setActivePanel(panel.key);
-                }}
-                disabled={panel.key === "grading" && !joinedCommitteeId}
-                title={panel.key === "grading" && !joinedCommitteeId ? "Chỉ mở sau khi tham gia hội đồng đang họp." : undefined}
-              >
-                {panel.icon} {panel.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {activePanel === "councils" && (
+        {!isGradingScreen && activePanel === "councils" && (
           <section style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2636,7 +2823,6 @@ const LecturerCommittees: React.FC = () => {
             </div>
 
             <div className="lec-committee-grid">
-              {loadingData && <div style={{ fontSize: 13 }}>Đang tải danh sách hội đồng...</div>}
               {!loadingData && committees.length === 0 && (
                 <div style={{ fontSize: 13, color: "#475569" }}>
                   {waitingCouncilLock
@@ -2651,87 +2837,127 @@ const LecturerCommittees: React.FC = () => {
                   scored: 0,
                   locked: 0,
                 };
+                const progressPercent = metric.total > 0 ? Math.min(100, Math.round((metric.scored / metric.total) * 100)) : 0;
+                const statusVisual = getCommitteeStatusVisual(committee.status);
                 const canJoin = committee.status === "Đang họp";
                 const isChairCommittee = committee.normalizedRole === "CT";
 
                 return (
-                  <article key={committee.id} className="lec-committee-card">
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ display: "grid", gap: 4 }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
-                          <Building2 size={17} color="#f37021" /> {committee.id}
+                  <article
+                    key={committee.id}
+                    className="lec-committee-card"
+                    style={{
+                      borderColor: statusVisual.cardBorder,
+                      boxShadow: `0 2px 8px rgba(15, 23, 42, 0.08), 0 0 18px ${statusVisual.cardGlow}`,
+                    }}
+                  >
+                    <div className="lec-committee-main">
+                      <div className="lec-committee-info">
+                        <div className="lec-committee-head">
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
+                              <Building2 size={17} color="#f37021" /> {committee.id}
+                            </div>
+                            <div style={{ fontSize: 14, color: "#111111", marginTop: 2, fontWeight: 700 }}>{committee.name}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="lec-status-pill"
+                            style={{
+                              background: statusVisual.chipBg,
+                              borderColor: statusVisual.chipBorder,
+                              color: statusVisual.chipText,
+                            }}
+                            disabled
+                          >
+                            {statusVisual.label}
+                          </button>
                         </div>
-                        <div style={{ fontSize: 14, color: "#111111", marginTop: 2, fontWeight: 700 }}>{committee.name}</div>
-                      </div>
-                      <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
-                        <span className="lec-tag-live">{committee.status}</span>
+
                         {joinedCommitteeId === committee.id && (
-                          <span className="lec-tag-live" style={{ borderColor: "#f37021", color: "#111111", background: "#fff7ed" }}>
+                          <span className="lec-tag-live" style={{ borderColor: "#f37021", color: "#111111", background: "#fff7ed", width: "fit-content" }}>
                             Đang tham gia
                           </span>
                         )}
-                      </div>
-                    </div>
 
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div className="lec-info-row">
-                        <Users2 size={14} />
-                        <span>Vai trò của tôi: <strong>{committee.roleLabel}</strong></span>
-                      </div>
-                      <div className="lec-info-row">
-                        <CalendarDays size={14} />
-                        <span>Ngày bảo vệ: <strong>{formatDate(committee.date)}</strong></span>
-                      </div>
-                      <div className="lec-info-row">
-                        <MapPin size={14} />
-                        <span>Phòng: <strong>{committee.room}</strong> · Ca: <strong>{formatSession(committee.session)}</strong></span>
-                      </div>
-                      <div className="lec-info-row">
-                        <Clock3 size={14} />
-                        <span>Khung giờ: <strong>{committee.slot ?? "Chưa cập nhật"}</strong></span>
-                      </div>
-                    </div>
+                        <div className="lec-progress-block">
+                          <div className="lec-progress-head">
+                            <span style={{ fontWeight: 700 }}>Tiến độ chấm đề tài</span>
+                            <strong>{metric.scored}/{metric.total}</strong>
+                          </div>
+                          <div className="lec-progress-track">
+                            <div className="lec-progress-fill" style={{ width: `${progressPercent}%` }} />
+                          </div>
+                          <div className="lec-progress-foot">
+                            <span>Đã chấm {metric.scored} đề tài</span>
+                            <span>{progressPercent}% hoàn thành</span>
+                          </div>
+                        </div>
 
-                    <div className="lec-badge-row">
-                      <span className="lec-count-badge"><FileText size={12} /> Tổng đề tài: {metric.total}</span>
-                      <span className="lec-count-badge"><CheckCircle2 size={12} /> Đã có điểm: {metric.scored}</span>
-                      <span className="lec-count-badge"><Lock size={12} /> Đã khóa: {metric.locked}</span>
-                    </div>
+                        <div className="lec-badge-row">
+                          <span className="lec-count-badge"><FileText size={12} /> Tổng đề tài: {metric.total}</span>
+                          <span className="lec-count-badge"><CheckCircle2 size={12} /> Đã có điểm: {metric.scored}</span>
+                        </div>
 
-                    <div className="lec-committee-actions">
-                      {isChairCommittee && committee.status !== "Đã khóa" && (
-                        <button
-                          type="button"
-                          className="lec-primary"
-                          onClick={() => {
-                            void (committee.status === "Đang họp"
-                              ? handleChairCloseSession(committee)
-                              : handleChairOpenSession(committee));
-                          }}
-                        >
-                          {committee.status === "Đang họp" ? <Lock size={14} /> : <CalendarClock size={14} />}
-                          {committee.status === "Đang họp" ? "Đóng phiên" : "Mở phiên"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="lec-ghost"
-                        onClick={() => {
-                          setDetailCommitteeId(committee.id);
-                          setSelectedCommitteeId(committee.id);
-                        }}
-                      >
-                        <Eye size={14} /> Xem chi tiết
-                      </button>
-                      <button
-                        type="button"
-                        className="lec-primary"
-                        onClick={() => openRoleWorkspace(committee)}
-                        disabled={!canJoin}
-                        title={!canJoin ? "Nút Tham gia chỉ mở khi Chủ tịch đã mở phiên (Đang họp)." : undefined}
-                      >
-                        <ArrowRight size={14} /> Tham gia phòng chấm
-                      </button>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div className="lec-info-row">
+                            <Users2 size={14} />
+                            <span>Vai trò của tôi: <strong>{committee.roleLabel}</strong></span>
+                          </div>
+                          <div className="lec-info-row">
+                            <CalendarDays size={14} />
+                            <span>Ngày bảo vệ: <strong>{formatDate(committee.date)}</strong></span>
+                          </div>
+                          <div className="lec-info-row">
+                            <MapPin size={14} />
+                            <span>Phòng: <strong>{committee.room}</strong></span>
+                          </div>
+                          <div className="lec-info-row">
+                            <Clock3 size={14} />
+                            <span>Khung giờ: <strong>{getCommitteeScheduleLabel(committee)}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <aside className="lec-committee-side">
+                        <div className="lec-side-title">Thao tác</div>
+                        <div className="lec-committee-actions">
+                          {isChairCommittee && committee.status !== "Đã khóa" && (
+                            <button
+                              type="button"
+                              className="lec-primary"
+                              onClick={() => {
+                                void (committee.status === "Đang họp"
+                                  ? handleChairCloseSession(committee)
+                                  : handleChairOpenSession(committee));
+                              }}
+                            >
+                              {committee.status === "Đang họp" ? <Lock size={14} /> : <CalendarClock size={14} />}
+                              {committee.status === "Đang họp" ? "Đóng phiên" : "Mở phiên"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="lec-ghost"
+                            onClick={() => {
+                                setDetailCommitteeId(committee.id);
+                                setSelectedCommitteeId(committee.id);
+                                setDetailTab("topics");
+                            }}
+                          >
+                            <Eye size={14} /> Xem chi tiết
+                          </button>
+                          <button
+                            type="button"
+                            className="lec-primary"
+                            onClick={() => openRoleWorkspace(committee)}
+                            disabled={!canJoin}
+                            title={!canJoin ? "Nút Tham gia chỉ mở khi Chủ tịch đã mở phiên (Đang họp)." : undefined}
+                          >
+                            <ArrowRight size={14} /> Tham gia phòng chấm
+                          </button>
+                        </div>
+                      </aside>
                     </div>
                   </article>
                 );
@@ -2740,839 +2966,12 @@ const LecturerCommittees: React.FC = () => {
           </section>
         )}
 
-        {activePanel === "grading" && (
-          <section style={cardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <LayoutDashboard size={18} /> Phòng chấm điểm hội đồng
-              </h2>
-              {joinedCommittee ? (
-                <div className="lec-room-switch">
-                  <span className="lec-tag-live">{joinedCommittee.id} · {joinedCommittee.name}</span>
-                  <span className="lec-clock-chip">
-                    <Clock3 size={13} /> {roomNow.toLocaleTimeString("vi-VN", { hour12: false })}
-                  </span>
-                  <button
-                    type="button"
-                    className="lec-soft"
-                    onClick={() => setRoomView("scoring")}
-                  >
-                    <PencilRuler size={14} /> Phòng chấm điểm
-                  </button>
-                  <button
-                    type="button"
-                    className="lec-soft"
-                    onClick={() => setRoomView("reports")}
-                    disabled={!selectedMatrixRow && sortedScoringRows.length === 0}
-                  >
-                    <FileText size={14} /> Phòng báo cáo
-                  </button>
-                  <button
-                    type="button"
-                    className="lec-ghost"
-                    onClick={() => {
-                      setJoinedCommitteeId("");
-                      setSelectedCommitteeId("");
-                      setRoomView("scoring");
-                      setWorkspaceTab("scoring");
-                      setActivePanel("councils");
-                    }}
-                  >
-                    <ArrowRight size={14} /> Rời phòng
-                  </button>
-                </div>
-              ) : (
-                <span className="lec-tag-live" style={{ borderColor: "#fed7aa", color: "#9a3412", background: "#fff7ed" }}>
-                  Chưa tham gia hội đồng đang họp
-                </span>
-              )}
-            </div>
 
-            {!joinedCommittee ? (
-              <div
-                style={{
-                  border: "1px solid #fed7aa",
-                  borderRadius: 12,
-                  padding: 14,
-                  background: "#fff7ed",
-                  color: "#9a3412",
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>Phòng chấm chỉ xuất hiện sau khi Tham gia hội đồng.</div>
-                <div style={{ fontSize: 13 }}>
-                  Vui lòng chuyển sang tab Danh sách hội đồng và bấm <strong>Tham gia</strong> tại hội đồng đang ở trạng thái <strong>Đang họp</strong>.
-                </div>
-                <div>
-                  <button type="button" className="lec-primary" onClick={() => setActivePanel("councils")}>Mở danh sách hội đồng</button>
-                </div>
-              </div>
-            ) : !selectedCommittee ? (
-              <div style={{ fontSize: 13, color: "#475569" }}>Không tìm thấy dữ liệu hội đồng đã tham gia trong snapshot hiện tại.</div>
-            ) : roomView === "reports" ? (
-              <div className="lec-report-screen">
-                <div className="lec-room-header">
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
-                      <FileText size={16} color="#f37021" /> Báo cáo đồ án tốt nghiệp
-                    </div>
-                    <div style={{ fontSize: 13, color: "#111111" }}>
-                      Màn hình riêng để xem toàn bộ báo cáo đã phát sinh theo từng đề tài của hội đồng.
-                    </div>
-                  </div>
-                  <button type="button" className="lec-primary" onClick={() => setRoomView("scoring")}>
-                    <ArrowRight size={14} /> Quay lại phòng chấm điểm
-                  </button>
-                </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span className="lec-kicker">Chọn đề tài cần xem báo cáo</span>
-                    <select
-                      value={selectedAssignmentId || ""}
-                      onChange={(event) => setSelectedAssignmentId(Number(event.target.value) || 0)}
-                    >
-                      {sortedScoringRows.length === 0 && <option value="">Chưa có assignment</option>}
-                      {sortedScoringRows.map((row) => (
-                        <option key={`report-assignment-${row.assignmentId}`} value={row.assignmentId}>
-                          {row.topicTitle} · {row.studentCode} · {formatSession(row.session)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div style={{ border: "1px solid #ffd4b5", borderRadius: 10, padding: 10, background: "#fff7ed", display: "grid", gap: 6 }}>
-                    <div className="lec-info-row"><Building2 size={14} /> Hội đồng: <strong>{selectedCommittee.id}</strong></div>
-                    <div className="lec-info-row"><CalendarDays size={14} /> Ngày bảo vệ: <strong>{formatDate(selectedCommittee.date)}</strong></div>
-                    <div className="lec-info-row"><MapPin size={14} /> Phòng: <strong>{selectedCommittee.room}</strong></div>
-                  </div>
-                </div>
 
-                {!selectedMatrixRow && (
-                  <div style={{ fontSize: 13, color: "#64748b" }}>Chưa chọn đề tài để xem báo cáo.</div>
-                )}
-
-                {selectedMatrixRow && (
-                  <>
-                    <div style={{ border: "1px solid #ffd4b5", borderRadius: 12, padding: 12, background: "#fff7ed", display: "grid", gap: 8 }}>
-                      <div className="lec-info-row"><Users2 size={14} /> Sinh viên: <strong>{selectedMatrixRow.studentCode} - {selectedMatrixRow.studentName}</strong></div>
-                      <div className="lec-info-row"><FileText size={14} /> Đề tài: <strong>{selectedMatrixRow.topicTitle}</strong></div>
-                      <div className="lec-info-row"><Users2 size={14} /> GVHD: <strong>{selectedMatrixRow.supervisorLecturerName ?? "Chưa cập nhật"}</strong></div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {selectedMatrixRow.topicTags.length > 0 ? (
-                          selectedMatrixRow.topicTags.map((tag) => (
-                            <span
-                              key={`report-tag-${selectedMatrixRow.assignmentId}-${tag}`}
-                              style={{
-                                border: "1px solid #fdba74",
-                                borderRadius: 999,
-                                padding: "1px 8px",
-                                fontSize: 11,
-                                color: "#111111",
-                                background: "#ffffff",
-                              }}
-                            >
-                              {tag}
-                            </span>
-                          ))
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {selectedMatrixRow.defenseDocuments.length === 0 ? (
-                      <div style={{ fontSize: 13, color: "#64748b" }}>Đề tài hiện tại chưa có báo cáo đồ án tốt nghiệp.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {selectedMatrixRow.defenseDocuments.map((document) => (
-                          <article
-                            key={`doc-${selectedMatrixRow.assignmentId}-${document.documentId}`}
-                            style={{ border: "1px solid #ffd4b5", borderRadius: 12, padding: 12, display: "grid", gap: 8, background: "#ffffff" }}
-                          >
-                            <div style={{ fontWeight: 700 }}>{document.fileName}</div>
-                            <div style={{ fontSize: 12, color: "#64748b" }}>
-                              {document.mimeType ?? "Tệp báo cáo"}
-                              {document.uploadedAt ? ` · ${formatDateTime(document.uploadedAt)}` : ""}
-                            </div>
-                            {document.fileUrl ? (
-                              <a
-                                href={document.fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="lec-primary"
-                                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", width: "fit-content" }}
-                              >
-                                <ExternalLink size={14} /> Xem báo cáo đồ án tốt nghiệp
-                              </a>
-                            ) : (
-                              <button type="button" className="lec-soft" disabled>
-                                Chưa có URL báo cáo
-                              </button>
-                            )}
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="lec-workspace">
-                <aside className="lec-left-pane">
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Danh sách đề tài theo ca</div>
-                  <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
-                    {selectedCommittee.id} · {selectedCommittee.name}
-                  </div>
-
-                  <div className="lec-assign-list">
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>Ca sáng</div>
-                    {morningRows.map((row) => (
-                      <button
-                        key={`morning-${row.assignmentId}`}
-                        type="button"
-                        className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
-                        onClick={() => setSelectedAssignmentId(row.assignmentId)}
-                      >
-                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>
-                          GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {row.topicTags.length > 0 ? (
-                            row.topicTags.slice(0, 3).map((tag) => (
-                              <span
-                                key={`m-tag-${row.assignmentId}-${tag}`}
-                                style={{
-                                  border: "1px solid #fed7aa",
-                                  borderRadius: 999,
-                                  padding: "1px 7px",
-                                  fontSize: 11,
-                                  color: "#9a3412",
-                                  background: "#fff7ed",
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                          {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                        </div>
-                      </button>
-                    ))}
-                    {morningRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca sáng.</div>}
-
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginTop: 6 }}>Ca chiều</div>
-                    {afternoonRows.map((row) => (
-                      <button
-                        key={`afternoon-${row.assignmentId}`}
-                        type="button"
-                        className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
-                        onClick={() => setSelectedAssignmentId(row.assignmentId)}
-                      >
-                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>
-                          GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {row.topicTags.length > 0 ? (
-                            row.topicTags.slice(0, 3).map((tag) => (
-                              <span
-                                key={`a-tag-${row.assignmentId}-${tag}`}
-                                style={{
-                                  border: "1px solid #fed7aa",
-                                  borderRadius: 999,
-                                  padding: "1px 7px",
-                                  fontSize: 11,
-                                  color: "#9a3412",
-                                  background: "#fff7ed",
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                          {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                        </div>
-                      </button>
-                    ))}
-                    {afternoonRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca chiều.</div>}
-
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginTop: 6 }}>Chưa phân ca</div>
-                    {unscheduledRows.map((row) => (
-                      <button
-                        key={`unscheduled-${row.assignmentId}`}
-                        type="button"
-                        className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
-                        onClick={() => setSelectedAssignmentId(row.assignmentId)}
-                      >
-                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>
-                          GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {row.topicTags.length > 0 ? (
-                            row.topicTags.slice(0, 3).map((tag) => (
-                              <span
-                                key={`u-tag-${row.assignmentId}-${tag}`}
-                                style={{
-                                  border: "1px solid #fed7aa",
-                                  borderRadius: 999,
-                                  padding: "1px 7px",
-                                  fontSize: 11,
-                                  color: "#9a3412",
-                                  background: "#fff7ed",
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                          {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                        </div>
-                      </button>
-                    ))}
-                    {unscheduledRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Không có đề tài chưa phân ca.</div>}
-                  </div>
-                </aside>
-
-                <div className="lec-right-pane">
-                  <div className="lec-room-header" style={{ marginBottom: 10 }}>
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
-                        <PencilRuler size={16} color="#f37021" /> Màn hình chấm điểm hội đồng
-                      </div>
-                      <div style={{ fontSize: 12, color: "#111111" }}>
-                        Mỗi thao tác chấm điểm, biên bản và phản biện được ghi nhận theo đề tài đang chọn.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="lec-primary"
-                      onClick={() => {
-                        if (!selectedMatrixRow) {
-                          notifyInfo("Vui lòng chọn đề tài trước khi mở phòng báo cáo.");
-                          return;
-                        }
-                        openReportDrawer(selectedMatrixRow);
-                      }}
-                      disabled={!selectedMatrixRow || selectedMatrixRow.defenseDocuments.length === 0}
-                    >
-                      <FileText size={14} /> Mở phòng báo cáo đồ án tốt nghiệp
-                    </button>
-                  </div>
-
-                  <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, background: "#fff7ed" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, fontSize: 13 }}>
-                      <div>
-                        <span className="lec-kicker">Sinh viên</span>
-                        <div style={{ fontWeight: 700 }}>{selectedMatrixRow ? `${selectedMatrixRow.studentCode} - ${selectedMatrixRow.studentName}` : "-"}</div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Đề tài</span>
-                        <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.topicTitle ?? "-"}</div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Giảng viên hướng dẫn</span>
-                        <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.supervisorLecturerName ?? "Chưa cập nhật"}</div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Tags đề tài</span>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {(selectedMatrixRow?.topicTags ?? []).length > 0 ? (
-                            (selectedMatrixRow?.topicTags ?? []).slice(0, 4).map((tag) => (
-                              <span
-                                key={`selected-tag-${selectedMatrixRow?.assignmentId ?? 0}-${tag}`}
-                                style={{
-                                  border: "1px solid #fdba74",
-                                  borderRadius: 999,
-                                  padding: "1px 7px",
-                                  fontSize: 11,
-                                  color: "#9a3412",
-                                  background: "#fff7ed",
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : (
-                            <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags</span>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Hội đồng</span>
-                        <div style={{ fontWeight: 700 }}>
-                          {selectedMatrixRow ? `${selectedMatrixRow.committeeCode} - ${selectedMatrixRow.committeeName}` : "-"}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Trạng thái khóa điểm</span>
-                        <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.isLocked ? "Đã khóa" : "Đang mở"}</div>
-                      </div>
-                      <div>
-                        <span className="lec-kicker">Điểm GVHD (Topic.Score)</span>
-                        <div style={{ fontWeight: 700 }}>{formatScore(scoreGvhdDisplay)}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="lec-tab-bar">
-                    {workspaceTabs.map((tab) => (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        className={`lec-pill ${workspaceTab === tab.key ? "active" : ""}`}
-                        onClick={() => setWorkspaceTab(tab.key)}
-                      >
-                        {tab.icon} {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {workspaceTab === "scoring" && (
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div className="lec-score-grid">
-                        <div className="lec-score-item">
-                          <div className="lec-kicker">GVHD</div>
-                          <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreGvhd ?? scoreGvhdDisplay)}</div>
-                        </div>
-                        <div className="lec-score-item">
-                          <div className="lec-kicker">CT</div>
-                          <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreCt ?? null)}</div>
-                        </div>
-                        <div className="lec-score-item">
-                          <div className="lec-kicker">UVTK</div>
-                          <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreTk ?? null)}</div>
-                        </div>
-                        <div className="lec-score-item">
-                          <div className="lec-kicker">UVPB</div>
-                          <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scorePb ?? null)}</div>
-                        </div>
-                        <div className="lec-score-item">
-                          <div className="lec-kicker">Điểm tổng hợp</div>
-                          <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(scoringOverview.finalScore)}</div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span className="lec-kicker">Điểm cá nhân (0-10)</span>
-                          <input
-                            className="lec-input"
-                            type="number"
-                            step={0.1}
-                            min={0}
-                            max={10}
-                            value={myScore}
-                            onChange={(event) => setMyScore(event.target.value)}
-                            disabled={!canSubmitScore || !isSessionOpened || isCurrentSessionLocked}
-                          />
-                        </label>
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span className="lec-kicker">Đề tài đang chấm</span>
-                          <select
-                            value={selectedAssignmentId || ""}
-                            onChange={(event) => setSelectedAssignmentId(Number(event.target.value) || 0)}
-                          >
-                            {sortedScoringRows.length === 0 && <option value="">Chưa có assignment</option>}
-                            {sortedScoringRows.map((row) => (
-                              <option key={row.assignmentId} value={row.assignmentId}>
-                                {row.topicTitle} · {row.studentCode} · {row.committeeCode}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">Nhận xét chấm điểm</span>
-                        <textarea
-                          value={myComment}
-                          onChange={(event) => setMyComment(event.target.value)}
-                          disabled={!canSubmitScore || !isSessionOpened || isCurrentSessionLocked}
-                        />
-                      </label>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">Lý do yêu cầu mở lại chấm</span>
-                        <textarea
-                          value={reopenReason}
-                          onChange={(event) => setReopenReason(event.target.value)}
-                          rows={3}
-                        />
-                      </label>
-
-                      {!isScoreValid && <div style={{ color: "#b91c1c", fontSize: 13 }}>Điểm phải trong khoảng từ 0 đến 10.</div>}
-                      {hasVarianceAlert && (
-                        <div style={{ border: "1px solid #fecaca", borderRadius: 10, padding: 10, background: "#fff7ed", color: "#9a3412", fontSize: 13 }}>
-                          Chênh lệch điểm vượt ngưỡng ({formatScore(scoringOverview.variance)} / {formatScore(scoringOverview.varianceThreshold)}).
-                        </div>
-                      )}
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="lec-primary"
-                          onClick={async () => {
-                            await handleSubmitScore();
-                            await refreshAllScoringRows();
-                          }}
-                          disabled={!canSubmitScore || !isSessionOpened || isCurrentSessionLocked || !isScoreValid || submitted}
-                        >
-                          Gửi điểm cá nhân
-                        </button>
-
-                        <button
-                          type="button"
-                          className="lec-soft"
-                          disabled={!canRequestReopen || !selectedAssignmentId || isCurrentSessionLocked}
-                          onClick={async () => {
-                            if (!canRequestReopen) {
-                              notifyError("Tài khoản hiện tại không có quyền REOPEN_REQUEST.");
-                              return;
-                            }
-                            if (!selectedAssignmentId) {
-                              notifyError("Vui lòng chọn assignment trước khi yêu cầu mở lại chấm.");
-                              return;
-                            }
-                            try {
-                              const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-score-reopen");
-                              const response = await lecturerApi.reopenRequestByCommittee(
-                                selectedCommitteeNumericId,
-                                {
-                                  assignmentId: selectedAssignmentId,
-                                  reason: reopenReason.trim() || "Cần mở lại chấm để cập nhật đánh giá.",
-                                },
-                                idempotencyKey,
-                              );
-                              if (notifyApiFailure(response as ApiResponse<unknown>, "Không gửi được yêu cầu mở lại chấm.")) {
-                                return;
-                              }
-                              setChairRequestedReopen(true);
-                              setSubmitted(false);
-                              pushTrace("reopen-score", "[UC3.3] Đã gửi yêu cầu mở lại chấm.");
-                              setAssignmentConcurrencyToken(createConcurrencyToken("lecturer-assignment"));
-                              await refreshScoringData(selectedCommitteeNumericId);
-                              await refreshAllScoringRows();
-                            } catch {
-                              notifyError("Không gửi được yêu cầu mở lại chấm.");
-                            }
-                          }}
-                        >
-                          <MessageSquareText size={14} /> Yêu cầu mở lại chấm
-                        </button>
-
-                        <button
-                          type="button"
-                          className="lec-soft"
-                          disabled={!canOpenSession || isSessionOpened || isSessionClosed}
-                          onClick={async () => {
-                            try {
-                              const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-open");
-                              const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                              if (notifyApiFailure(response as ApiResponse<unknown>, "Mở phiên chấm thất bại.")) {
-                                return;
-                              }
-                              setCommittees((prev) =>
-                                prev.map((item) =>
-                                  item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
-                                ),
-                              );
-                              setSessionLocked(false);
-                              pushTrace("open-session", "[UC3.1] Đã mở phiên chấm.");
-                              await refreshScoringData(selectedCommitteeNumericId);
-                              await refreshAllScoringRows();
-                            } catch {
-                              notifyError("Mở phiên chấm thất bại.");
-                            }
-                          }}
-                        >
-                          <CalendarClock size={14} /> Mở phiên
-                        </button>
-
-                        <button
-                          type="button"
-                          className="lec-primary"
-                          disabled={!canLockSession || isCurrentSessionLocked || !isSessionOpened}
-                          onClick={async () => {
-                            try {
-                              const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-lock");
-                              const response = await lecturerApi.lockSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                              if (notifyApiFailure(response as ApiResponse<unknown>, "Đóng phiên chấm thất bại.")) {
-                                return;
-                              }
-                              setSessionLocked(true);
-                              setCommittees((prev) =>
-                                prev.map((item) =>
-                                  item.id === selectedCommitteeId ? { ...item, status: "Đã khóa" } : item,
-                                ),
-                              );
-                              pushTrace("lock-session", "[UC3.5] Đã đóng phiên chấm.");
-                              await refreshScoringData(selectedCommitteeNumericId);
-                              await refreshAllScoringRows();
-                            } catch (error) {
-                              const missingMembers = extractMissingMemberCodes(error);
-                              if (missingMembers.length > 0) {
-                                notifyError(`Thiếu điểm từ thành viên: ${missingMembers.join(", ")}`);
-                                return;
-                              }
-                              notifyError("Đóng phiên chấm thất bại.");
-                            }
-                          }}
-                        >
-                          <Lock size={14} /> Đóng phiên
-                        </button>
-                      </div>
-
-                      {submitted && <div style={{ fontSize: 13, color: "#166534" }}>Đã gửi điểm thành công.</div>}
-                      {chairRequestedReopen && <div style={{ fontSize: 13, color: "#9a3412" }}>Đã gửi yêu cầu mở lại chấm.</div>}
-                    </div>
-                  )}
-
-                  {workspaceTab === "minutes" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ fontSize: 13, color: "#334155" }}>
-                        Form biên bản: SummaryContent, QnaDetails, Strengths, Weaknesses, Recommendations. Chỉ cho phép ghi khi API trả AllowedMinuteActions phù hợp.
-                      </div>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">SummaryContent</span>
-                        <textarea value={summary} onChange={(event) => setSummary(event.target.value)} readOnly={!canEditMinutes} />
-                      </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">QnaDetails</span>
-                        <textarea value={questions} onChange={(event) => setQuestions(event.target.value)} readOnly={!canEditMinutes} />
-                      </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">Strengths</span>
-                        <textarea value={strengths} onChange={(event) => setStrengths(event.target.value)} readOnly={!canEditMinutes} />
-                      </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">Weaknesses</span>
-                        <textarea value={weaknesses} onChange={(event) => setWeaknesses(event.target.value)} readOnly={!canEditMinutes} />
-                      </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">Recommendations</span>
-                        <textarea value={recommendations} onChange={(event) => setRecommendations(event.target.value)} readOnly={!canEditMinutes} />
-                      </label>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ fontSize: 12, color: "#64748b" }}>{lastAutoSave ? `Autosave local: ${lastAutoSave}` : "Autosave local mỗi 30 giây"}</div>
-                        <button
-                          type="button"
-                          className="lec-primary"
-                          disabled={!canEditMinutes || !selectedAssignmentId}
-                          onClick={async () => {
-                            if (!selectedAssignmentId) {
-                              notifyError("Vui lòng chọn assignment để lưu biên bản.");
-                              return;
-                            }
-                            try {
-                              const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-minutes-save");
-                              const response = await lecturerApi.updateCommitteeMinutes(
-                                selectedCommitteeNumericId,
-                                {
-                                  assignmentId: selectedAssignmentId,
-                                  summaryContent: summary,
-                                  reviewerComments: review,
-                                  qnaDetails: questions,
-                                  strengths,
-                                  weaknesses,
-                                  recommendations,
-                                },
-                                idempotencyKey,
-                              );
-                              if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được biên bản.")) {
-                                return;
-                              }
-                              setLastAutoSave(new Date().toLocaleTimeString("vi-VN"));
-                              pushTrace("minutes-upsert", "Đã lưu biên bản họp.");
-                              await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
-                              await refreshAllScoringRows();
-                            } catch {
-                              notifyError("Không lưu được biên bản.");
-                            }
-                          }}
-                        >
-                          <Save size={14} /> Lưu biên bản
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {workspaceTab === "review" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ fontSize: 13, color: "#334155" }}>
-                        UVPB nhập chính phần ReviewerComments; CT/UVTK theo dõi và tổng hợp từ cùng nguồn snapshot.
-                      </div>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span className="lec-kicker">ReviewerComments</span>
-                        <textarea
-                          value={review}
-                          onChange={(event) => setReview(event.target.value)}
-                          readOnly={!canEditReviewerComments}
-                        />
-                      </label>
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="lec-primary"
-                          disabled={!canEditReviewerComments || !selectedAssignmentId}
-                          onClick={async () => {
-                            if (!selectedAssignmentId) {
-                              notifyError("Vui lòng chọn assignment trước khi lưu nhận xét phản biện.");
-                              return;
-                            }
-                            try {
-                              const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-review-save");
-                              const response = await lecturerApi.updateCommitteeMinutes(
-                                selectedCommitteeNumericId,
-                                {
-                                  assignmentId: selectedAssignmentId,
-                                  summaryContent: summary,
-                                  reviewerComments: review,
-                                  qnaDetails: questions,
-                                  strengths,
-                                  weaknesses,
-                                  recommendations,
-                                },
-                                idempotencyKey,
-                              );
-                              if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được nhận xét phản biện.")) {
-                                return;
-                              }
-                              pushTrace("reviewer-comments-upsert", "Đã lưu nhận xét phản biện.");
-                              await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
-                            } catch {
-                              notifyError("Không lưu được nhận xét phản biện.");
-                            }
-                          }}
-                        >
-                          <Save size={14} /> Lưu nhận xét
-                        </button>
-                      </div>
-
-                      <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>Liên thông chỉnh sửa sau bảo vệ</div>
-                        <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          Revision hiện chọn: {selectedRevisionItem.topicTitle || "-"} · {selectedRevisionItem.studentCode || "-"}
-                        </div>
-                        {selectedRevisionItem.revisionFileUrl && (
-                          <a
-                            href={normalizeUrl(selectedRevisionItem.revisionFileUrl)}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f172a" }}
-                          >
-                            <ExternalLink size={13} /> Mở tệp chỉnh sửa
-                          </a>
-                        )}
-                        <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button
-                            type="button"
-                            className="lec-soft"
-                            disabled={!canApproveRevision || !selectedRevisionItem.revisionId}
-                            onClick={async () => {
-                              const revisionId = selectedRevisionItem.revisionId || 0;
-                              if (!revisionId) {
-                                notifyError("Không tìm thấy revision để duyệt.");
-                                return;
-                              }
-                              try {
-                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-approve-revision");
-                                const response = await lecturerApi.approveRevision(revisionId, idempotencyKey);
-                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không duyệt được bản chỉnh sửa.")) {
-                                  return;
-                                }
-                                pushTrace("approve-revision", "[UC4.2] Duyệt bản chỉnh sửa.");
-                                await refreshRevisionQueue();
-                              } catch {
-                                notifyError("Không duyệt được bản chỉnh sửa.");
-                              }
-                            }}
-                          >
-                            <CheckCircle2 size={14} /> Duyệt
-                          </button>
-                          <button
-                            type="button"
-                            className="lec-soft"
-                            disabled={!canRejectRevision || !selectedRevisionItem.revisionId}
-                            onClick={async () => {
-                              if (!reopenReason.trim()) {
-                                notifyError(ucError("UC4.2-REJECT_REASON_REQUIRED"));
-                                return;
-                              }
-                              const revisionId = selectedRevisionItem.revisionId || 0;
-                              if (!revisionId) {
-                                notifyError("Không tìm thấy revision để từ chối.");
-                                return;
-                              }
-                              try {
-                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-reject-revision");
-                                const response = await lecturerApi.rejectRevision(revisionId, reopenReason.trim(), idempotencyKey);
-                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không từ chối được bản chỉnh sửa.")) {
-                                  return;
-                                }
-                                pushTrace("reject-revision", "[UC4.2] Từ chối bản chỉnh sửa.");
-                                await refreshRevisionQueue();
-                              } catch {
-                                notifyError("Không từ chối được bản chỉnh sửa.");
-                              }
-                            }}
-                          >
-                            <XCircle size={14} /> Từ chối
-                          </button>
-                        </div>
-                      </div>
-
-                      <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>Danh sách revision</div>
-                        {revisionQueue.length === 0 && <div style={{ fontSize: 13, color: "#64748b" }}>Không có bản chỉnh sửa chờ duyệt.</div>}
-                        {revisionQueue.map((item) => (
-                          <button
-                            key={`revision-${item.revisionId}-${item.assignmentId ?? "na"}`}
-                            type="button"
-                            className="lec-assign-btn"
-                            style={{ width: "100%", marginBottom: 6 }}
-                            onClick={() => setRevision(item)}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                              <span style={{ fontWeight: 700 }}>{item.topicTitle}</span>
-                              <span style={{ fontSize: 12, color: "#475569" }}>{item.status}</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "#64748b" }}>
-                              {item.studentCode} · Assignment {item.assignmentId ?? "-"} · {formatDateTime(item.lastUpdated)}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              </div>
-            )}
-          </section>
-        )}
       </div>
+
+      
 
       {detailCommittee && (
         <div
@@ -3636,7 +3035,7 @@ const LecturerCommittees: React.FC = () => {
                 </div>
                 <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
                   <div className="lec-kicker">Lịch bảo vệ</div>
-                  <div style={{ fontWeight: 700 }}>{formatDate(detailCommittee.date)} · {formatSession(detailCommittee.session)}</div>
+                  <div style={{ fontWeight: 700 }}>{formatDate(detailCommittee.date)} · Cả ngày</div>
                 </div>
                 <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
                   <div className="lec-kicker">Phòng</div>
@@ -3644,7 +3043,29 @@ const LecturerCommittees: React.FC = () => {
                 </div>
                 <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
                   <div className="lec-kicker">Trạng thái phiên</div>
-                  <div style={{ fontWeight: 700 }}>{detailCommittee.status}</div>
+                  {(() => {
+                    const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
+
+                    return (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          width: "fit-content",
+                          borderRadius: 999,
+                          padding: "5px 10px",
+                          fontSize: 12,
+                          fontWeight: 500,
+                          border: `1px solid ${statusVisual.chipBorder}`,
+                          background: statusVisual.chipBg,
+                          color: statusVisual.chipText,
+                        }}
+                      >
+                        {statusVisual.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
                   <div className="lec-kicker">Số đề tài</div>
@@ -3658,24 +3079,31 @@ const LecturerCommittees: React.FC = () => {
                 {detailCommittee.members.length === 0 && (
                   <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
                 )}
-                {detailCommittee.members.map((member) => (
-                  <div
-                    key={member.memberId}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
-                      gap: 8,
-                      padding: "8px 0",
-                      borderBottom: "1px dashed #e2e8f0",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
-                    <div style={{ fontSize: 13 }}>
-                      {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
-                      {member.lecturerName}
+                {detailCommittee.members.map((member) => {
+                  return (
+                    <div
+                      key={member.memberId}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
+                        gap: 8,
+                        padding: "8px 0",
+                        borderBottom: "1px dashed #e2e8f0",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontSize: 13 }}>
+                          {member.lecturerCode ? `${member.lecturerCode}` : ""}
+                          {member.degree ? ` - ${member.degree}` : ""}
+                          {member.lecturerCode || member.degree ? " - " : ""}
+                          {member.lecturerName}
+                          {member.organization ? ` (${member.organization})` : ""}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -3684,46 +3112,80 @@ const LecturerCommittees: React.FC = () => {
                 {detailCommitteeRows.length === 0 && (
                   <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có assignment trong scoring matrix cho hội đồng này.</div>
                 )}
-                {detailCommitteeRows.map((row) => (
-                  <div
-                    key={`detail-topic-${row.assignmentId}`}
-                    style={{
-                      display: "grid",
-                      gap: 4,
-                      padding: "8px 0",
-                      borderBottom: "1px dashed #e2e8f0",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                    <div style={{ fontSize: 13, color: "#475569" }}>
-                      {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                    </div>
-                    <div style={{ fontSize: 13, color: "#475569" }}>
-                      GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {row.topicTags.length > 0 ? (
-                        row.topicTags.map((tag) => (
+                {detailCommitteeRows.map((row) => {
+                  const isScored = row.finalScore != null && Number(row.finalScore) > 0;
+                  const scoredBgColor = isScored ? "#f0fdf4" : "transparent";
+                  const scoredBorderColor = isScored ? "#86efac" : "transparent";
+                  
+                  return (
+                    <div
+                      key={`detail-topic-${row.assignmentId}`}
+                      style={{
+                        display: "grid",
+                        gap: 4,
+                        padding: "8px 0",
+                        borderBottom: "1px dashed #e2e8f0",
+                        borderLeft: `3px solid ${scoredBorderColor}`,
+                        paddingLeft: "8px",
+                        background: scoredBgColor,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                        {row.topicTitle}
+                        {isScored && (
                           <span
-                            key={`detail-tag-${row.assignmentId}-${tag}`}
                             style={{
-                              border: "1px solid #fdba74",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "2px 8px",
                               borderRadius: 999,
-                              padding: "1px 8px",
                               fontSize: 11,
-                              color: "#9a3412",
-                              background: "#fff7ed",
+                              fontWeight: 600,
+                              background: "#22c55e",
+                              color: "#ffffff",
                             }}
                           >
-                            {tag}
+                            ✓ Đã chấm
                           </span>
-                        ))
-                      ) : (
-                        <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#475569" }}>
+                        {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#475569" }}>
+                        GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
+                      </div>
+                      {isScored && (
+                        <div style={{ fontSize: 13, color: "#166534", fontWeight: 600 }}>
+                          Điểm cuối cùng: <strong>{row.finalScore?.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}</strong>
+                          {row.finalGrade ? ` - ${row.finalGrade}` : ""}
+                        </div>
                       )}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {row.topicTags.length > 0 ? (
+                          row.topicTags.map((tag) => (
+                            <span
+                              key={`detail-tag-${row.assignmentId}-${tag}`}
+                              style={{
+                                border: "1px solid #fdba74",
+                                borderRadius: 999,
+                                padding: "1px 8px",
+                                fontSize: 11,
+                                color: "#9a3412",
+                                background: "#fff7ed",
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -3733,11 +3195,7 @@ const LecturerCommittees: React.FC = () => {
                 type="button"
                 className="lec-primary"
                 onClick={() => {
-                  setJoinedCommitteeId(detailCommittee.id);
-                  setSelectedCommitteeId(detailCommittee.id);
-                  setRoomView("scoring");
-                  setWorkspaceTab("scoring");
-                  setActivePanel("grading");
+                  openRoleWorkspace(detailCommittee);
                   setDetailCommitteeId("");
                 }}
                 disabled={detailCommittee.status !== "Đang họp"}

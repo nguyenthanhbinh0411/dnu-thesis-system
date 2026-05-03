@@ -22,7 +22,7 @@ import {
   getActiveDefensePeriodId,
   setActiveDefensePeriodId,
 } from "../../utils/defensePeriod";
-import { fetchCurrentDefensePeriod } from "../../services/current-defense-period.service";
+import { fetchCurrentLecturerDefenseAccess } from "../../services/current-defense-period.service";
 
 const LecturerLayout: React.FC = () => {
   const auth = useAuth();
@@ -32,6 +32,7 @@ const LecturerLayout: React.FC = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [canViewDefenseMenus, setCanViewDefenseMenus] = useState(false);
   const [headerPeriod, setHeaderPeriod] = useState<{
     label: string;
     tone: "normal" | "warning" | "error";
@@ -107,12 +108,13 @@ const LecturerLayout: React.FC = () => {
     let cancelled = false;
 
     const bootstrapCurrentPeriod = async () => {
-      const result = await fetchCurrentDefensePeriod("lecturer");
+      const result = await fetchCurrentLecturerDefenseAccess();
       if (cancelled) {
         return;
       }
 
       if (result.ok) {
+        setCanViewDefenseMenus(result.hasCommitteeAccess);
         const periodName = result.period.name || `Đợt ${result.period.periodId}`;
         setActiveDefensePeriodId(result.period.periodId);
         setHeaderPeriod({
@@ -122,6 +124,8 @@ const LecturerLayout: React.FC = () => {
         });
         return;
       }
+
+      setCanViewDefenseMenus(false);
 
       if (result.code === "NOT_MAPPED") {
         setActiveDefensePeriodId(null);
@@ -447,6 +451,7 @@ const LecturerLayout: React.FC = () => {
           <LecturerNav
             collapsed={isSidebarCollapsed}
             onNavigate={() => setIsMobileMenuOpen(false)}
+            showDefenseMenus={canViewDefenseMenus}
           />
         </div>
 

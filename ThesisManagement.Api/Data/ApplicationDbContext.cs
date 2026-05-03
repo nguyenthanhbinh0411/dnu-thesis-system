@@ -144,17 +144,18 @@ namespace ThesisManagement.Api.Data
             {
                 b.ToTable("CLASSES");
                 b.HasKey(x => x.ClassID);
-                b.Property(x => x.ClassCode).HasMaxLength(30).IsRequired();
+                b.Property(x => x.ClassID).HasColumnName("CLASSID");
+                b.Property(x => x.ClassCode).HasColumnName("CLASSCODE").HasMaxLength(30).IsRequired();
                 b.HasIndex(x => x.ClassCode).IsUnique();
-                b.Property(x => x.ClassName).HasMaxLength(150).IsRequired();
-                b.Property(x => x.DepartmentCode).HasMaxLength(30);
-                b.Property(x => x.CohortId);
-                b.Property(x => x.CohortCode).HasMaxLength(50);
-                b.Property(x => x.CohortName).HasMaxLength(255);
-                b.Property(x => x.Status).HasMaxLength(30).HasDefaultValue("Đang hoạt động");
+                b.Property(x => x.ClassName).HasColumnName("CLASSNAME").HasMaxLength(150).IsRequired();
+                b.Property(x => x.DepartmentID).HasColumnName("DEPARTMENTID");
+                b.Property(x => x.DepartmentCode).HasColumnName("DEPARTMENTCODE").HasMaxLength(30);
+                b.Property(x => x.CohortCode).HasColumnName("COHORT_CODE").HasMaxLength(50);
+                b.Property(x => x.EnrollmentYear).HasColumnName("ENROLLMENTYEAR");
+                b.Property(x => x.Status).HasColumnName("STATUS").HasMaxLength(30).HasDefaultValue("Đang hoạt động");
+                b.Property(x => x.CreatedAt).HasColumnName("CREATEDAT").HasDefaultValueSql("SYSTIMESTAMP");
+                b.Property(x => x.LastUpdated).HasColumnName("LASTUPDATED");
                 b.HasOne(x => x.Department).WithMany().HasForeignKey(x => x.DepartmentID).OnDelete(DeleteBehavior.Restrict);
-                b.HasOne(x => x.Cohort).WithMany(x => x.Classes).HasForeignKey(x => x.CohortId).OnDelete(DeleteBehavior.SetNull);
-                b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
             });
 
             // LecturerProfiles
@@ -269,14 +270,15 @@ namespace ThesisManagement.Api.Data
             {
                 b.ToTable("COHORTS");
                 b.HasKey(x => x.Id);
-                b.Property(x => x.CohortCode).HasMaxLength(50).IsRequired();
+                b.Property(x => x.Id).HasColumnName("ID");
+                b.Property(x => x.CohortCode).HasColumnName("COHORT_CODE").HasMaxLength(50).IsRequired();
                 b.HasIndex(x => x.CohortCode).IsUnique();
-                b.Property(x => x.CohortName).HasMaxLength(255).IsRequired();
-                b.Property(x => x.StartYear).IsRequired();
-                b.Property(x => x.EndYear).IsRequired();
-                b.Property(x => x.Status).HasDefaultValue(1);
-                b.Property(x => x.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-                b.Property(x => x.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+                b.Property(x => x.CohortName).HasColumnName("COHORT_NAME").HasMaxLength(255).IsRequired();
+                b.Property(x => x.StartYear).HasColumnName("START_YEAR").IsRequired();
+                b.Property(x => x.EndYear).HasColumnName("END_YEAR").IsRequired();
+                b.Property(x => x.Status).HasColumnName("STATUS").HasDefaultValue(1);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATED_AT").HasDefaultValueSql("SYSTIMESTAMP");
+                b.Property(x => x.UpdatedAt).HasColumnName("UPDATED_AT").HasDefaultValueSql("SYSTIMESTAMP");
             });
 
             // ProgressSubmissions
@@ -648,8 +650,8 @@ namespace ThesisManagement.Api.Data
                 b.Property(x => x.AssignmentCode).HasMaxLength(60);
                 b.Property(x => x.MemberLecturerCode).HasMaxLength(30);
                 b.Property(x => x.MemberLecturerUserCode).HasMaxLength(40);
-                b.Property(x => x.Role).HasMaxLength(20);
-                b.Property(x => x.Score).HasColumnType("NUMBER(4,2)");
+                b.Ignore(x => x.Role);
+                b.Property(x => x.Score).HasColumnType("NUMBER(5,2)");
                 b.Property(x => x.IsSubmitted).HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasDefaultValueSql("SYSTIMESTAMP");
@@ -880,12 +882,14 @@ namespace ThesisManagement.Api.Data
             modelBuilder.Entity<ExportFile>(b =>
             {
                 b.ToTable("EXPORTFILES");
-                b.HasKey(x => x.ExportFileId);
-                b.Property(x => x.FileCode).HasMaxLength(40).IsRequired();
+                b.HasKey(x => x.ExportFileId).HasName("EXPORTFILEID");
+                b.Property(x => x.ExportFileId).HasColumnName("EXPORTFILEID");
+                b.Property(x => x.FileCode).HasColumnName("FILECODE").HasMaxLength(40).IsRequired();
                 b.HasIndex(x => x.FileCode).IsUnique();
-                b.Property(x => x.Status).HasMaxLength(30).HasDefaultValue("Running");
-                b.Property(x => x.FileUrl).HasMaxLength(500);
-                b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
+                b.Property(x => x.TermId).HasColumnName("TERMID");
+                b.Property(x => x.Status).HasColumnName("STATUS").HasMaxLength(30).HasDefaultValue("Running");
+                b.Property(x => x.FileUrl).HasColumnName("FILEURL").HasMaxLength(500);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATEDAT").HasDefaultValueSql("SYSTIMESTAMP");
             });
 
             // EvaluationReviews
@@ -1321,7 +1325,10 @@ namespace ThesisManagement.Api.Data
                 "NOTIFICATION_RECIPIENTS",
                 "NOTIFICATION_PREFERENCES",
                 "NOTIFICATION_OUTBOX",
-                "TOPIC_WORKFLOW_AUDITS"
+                "TOPIC_WORKFLOW_AUDITS",
+                "COHORTS",
+                "ROOMS",
+                "CLASSES"
             };
 
             var keepPascalCaseColumns = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)

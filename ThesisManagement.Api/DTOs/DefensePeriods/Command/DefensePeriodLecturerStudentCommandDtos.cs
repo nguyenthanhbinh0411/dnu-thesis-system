@@ -8,7 +8,6 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         [Range(1, int.MaxValue)]
         public int AssignmentId { get; set; }
 
-        [Range(0, 10)]
         public decimal Score { get; set; }
 
         public string? Comment { get; set; }
@@ -40,10 +39,39 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public int AssignmentId { get; set; }
         public string? SummaryContent { get; set; }
         public string? ReviewerComments { get; set; }
+        public string? CommitteeMemberComments { get; set; }
         public string? QnaDetails { get; set; }
+        public List<MinuteQuestionAnswerDto> QuestionAnswers { get; set; } = new();
         public string? Strengths { get; set; }
         public string? Weaknesses { get; set; }
         public string? Recommendations { get; set; }
+        public List<MinuteChapterInputDto> ChapterContents { get; set; } = new();
+        public string? CouncilDiscussionConclusion { get; set; }
+        public string? ChairConclusion { get; set; }
+        public ReviewerStructuredSectionsDto? ReviewerSections { get; set; }
+    }
+
+    public class MinuteChapterInputDto
+    {
+        public string ChapterTitle { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+
+    public class MinuteQuestionAnswerDto
+    {
+        public string Question { get; set; } = string.Empty;
+        public string Answer { get; set; } = string.Empty;
+    }
+
+    public class ReviewerStructuredSectionsDto
+    {
+        public string? Necessity { get; set; }
+        public string? Novelty { get; set; }
+        public string? MethodologyReliability { get; set; }
+        public string? ResultsContent { get; set; }
+        public string? Limitations { get; set; }
+        public string? Suggestions { get; set; }
+        public string? OverallConclusion { get; set; }
     }
 
     public class LecturerMinutesUpsertRequestDto
