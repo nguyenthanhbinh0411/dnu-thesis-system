@@ -22,8 +22,10 @@ import { fetchData } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
 import type { ApiResponse } from "../../types/api";
 import type { MilestoneTemplate } from "../../types/milestoneTemplate";
-import type { StudentDashboardPayload } from "../../types/report-aggregate";
-import type { ReportAggregateTag } from "../../types/report-aggregate";
+import type {
+  ReportAggregateTag,
+  StudentDashboardPayload,
+} from "../../types/report-aggregate";
 import type { StudentProfile } from "../../types/studentProfile";
 import {
   pickCaseInsensitiveValue,
@@ -106,6 +108,21 @@ const formatCountdown = (value: string | null | undefined): string => {
   if (diffDays === 1) return "Còn 1 ngày";
   if (diffDays === 0) return "Hôm nay";
   return `Quá hạn ${Math.abs(diffDays)} ngày`;
+};
+
+const getDeadlineProgressPercent = (value: string | null | undefined): number => {
+  const parsed = parseSafeDate(getString(value, ""));
+  if (!parsed) return 0;
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.ceil((target.getTime() - startOfToday.getTime()) / 86400000);
+  const normalizedDays = Math.max(0, Math.min(30, diffDays));
+  return Math.round(((30 - normalizedDays) / 30) * 100);
 };
 
 const truncateText = (
@@ -512,11 +529,9 @@ const Dashboard: React.FC = () => {
     });
   }, [dashboard?.currentMilestone, sortedMilestones]);
 
-  const progressPercent = useMemo(() => {
-    if (!sortedMilestones.length) return 0;
-    const ordinal = currentMilestoneOrdinal ?? 0;
-    return Math.min(100, Math.round((ordinal / sortedMilestones.length) * 100));
-  }, [currentMilestoneOrdinal, sortedMilestones.length]);
+  const deadlineProgressPercent = useMemo(() => {
+    return getDeadlineProgressPercent(nextMilestone?.deadline || null);
+  }, [nextMilestone?.deadline]);
 
   // Unused hooks for removed cards removed
 
@@ -668,6 +683,12 @@ const Dashboard: React.FC = () => {
           <div className="stu-progress-list">
             {milestoneViews.map((m, idx) => {
               const tone = getMilestoneStatusTone(m.displayState);
+              const nextMilestone = milestoneViews[idx + 1] || null;
+              const lineClass = nextMilestone
+                ? nextMilestone.isCompleted
+                  ? "is-completed"
+                  : "is-pending"
+                : "";
               return (
                 <div key={m.milestoneTemplateID} className="stu-progress-item">
                   <div className="stu-progress-marker">
@@ -683,7 +704,7 @@ const Dashboard: React.FC = () => {
                       {m.isCompleted ? <CheckCircle size={12} /> : idx + 1}
                     </div>
                     {idx < milestoneViews.length - 1 && (
-                      <div className="stu-progress-line" />
+                      <div className={`stu-progress-line ${lineClass}`} />
                     )}
                   </div>
                   <div className="stu-progress-body">
@@ -859,7 +880,7 @@ const Dashboard: React.FC = () => {
             <div className="stu-progress-bar">
               <div
                 className="stu-progress-bar__fill"
-                style={{ width: `${progressPercent}%` }}
+                style={{ width: `${deadlineProgressPercent}%` }}
               />
             </div>
           </div>
@@ -1467,10 +1488,19 @@ const dashboardStyles = `
 
   .stu-progress-line {
     position: absolute;
-    top: 24px;
-    bottom: -10px;
+    top: 14px;
+    bottom: -38px;
     width: 2px;
     background: #e2e8f0;
+    border-radius: 999px;
+  }
+
+  .stu-progress-line.is-completed {
+    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  }
+
+  .stu-progress-line.is-pending {
+    background: linear-gradient(180deg, #f59e0b 0%, #f97316 100%);
   }
 
   .stu-progress-body {

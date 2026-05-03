@@ -81,7 +81,9 @@ namespace ThesisManagement.Api.DTOs.Reports.Query
         ReportSupervisorDto? Supervisor,
         IReadOnlyList<ReportTagDto> SupervisorTags,
         bool CanSubmit,
-        string? BlockReason);
+        string? BlockReason,
+        bool HasCurrentMilestoneSubmission,
+        string? CurrentMilestoneSubmissionStatus);
 
     public record StudentDashboardStudentDetailDto(
         int StudentProfileID,
@@ -114,7 +116,9 @@ namespace ThesisManagement.Api.DTOs.Reports.Query
         ReportSupervisorDto? Supervisor,
         IReadOnlyList<ReportTagDto> SupervisorTags,
         bool CanSubmit,
-        string? BlockReason);
+        string? BlockReason,
+        bool HasCurrentMilestoneSubmission,
+        string? CurrentMilestoneSubmissionStatus);
 
     public record StudentDashboardListDto(
         IReadOnlyList<StudentDashboardListItemDto> Items,
@@ -153,7 +157,9 @@ namespace ThesisManagement.Api.DTOs.Reports.Query
     }
 
     public record StudentProgressHistoryItemDto(
-        ReportSubmissionDto Submission);
+        ReportSubmissionDto Submission,
+        bool IsCurrentMilestoneSubmission,
+        string? CurrentMilestoneSubmissionStatus);
 
     public record StudentProgressHistoryDto(
         IReadOnlyList<StudentProgressHistoryItemDto> Items,

@@ -38,12 +38,22 @@ namespace ThesisManagement.Api.Application.Query.Reports
 
             if (topic == null)
             {
-                var empty = new StudentDashboardDto(null, new List<ReportTagDto>(), null, null, new List<ReportTagDto>(), false, "Sinh vien chua co de tai");
+                var empty = new StudentDashboardDto(
+                    null,
+                    new List<ReportTagDto>(),
+                    null,
+                    null,
+                    new List<ReportTagDto>(),
+                    false,
+                    "Sinh vien chua co de tai",
+                    false,
+                    null);
                 return OperationResult<StudentDashboardDto>.Succeeded(empty);
             }
 
             var topicTags = await GetTopicTagsAsync(topic);
             var currentMilestone = await GetCurrentMilestoneByTopicCodeAsync(topic.TopicCode);
+            var currentMilestoneOrdinal = currentMilestone?.Ordinal;
             var supervisor = await GetSupervisorAsync(topic.SupervisorLecturerCode, topic.SupervisorLecturerProfileID);
             var supervisorTags = await GetSupervisorTagsAsync(topic.SupervisorLecturerCode, topic.SupervisorLecturerProfileID);
 
@@ -68,6 +78,14 @@ namespace ThesisManagement.Api.Application.Query.Reports
                 blockReason = "Bao cao gan nhat chua duoc giang vien xu ly";
             }
 
+            var currentMilestoneSubmission = currentMilestoneOrdinal.HasValue
+                ? await _uow.ProgressSubmissions.Query()
+                    .Where(x => x.StudentUserCode == userCode && x.Ordinal == currentMilestoneOrdinal.Value)
+                    .OrderByDescending(x => x.SubmittedAt)
+                    .ThenByDescending(x => x.SubmissionID)
+                    .FirstOrDefaultAsync()
+                : null;
+
             var dto = new StudentDashboardDto(
                 MapTopic(topic),
                 topicTags,
@@ -75,7 +93,9 @@ namespace ThesisManagement.Api.Application.Query.Reports
                 supervisor,
                 supervisorTags,
                 canSubmit,
-                blockReason);
+                blockReason,
+                currentMilestoneSubmission != null,
+                GetCurrentMilestoneSubmissionStatus(currentMilestoneSubmission));
 
             return OperationResult<StudentDashboardDto>.Succeeded(dto);
         }
@@ -87,6 +107,17 @@ namespace ThesisManagement.Api.Application.Query.Reports
 
             var page = filter.Page <= 0 ? 1 : filter.Page;
             var pageSize = filter.PageSize <= 0 ? 10 : Math.Min(filter.PageSize, 100);
+
+            var topic = await _uow.Topics.Query()
+                .Where(x => x.ProposerUserCode == filter.UserCode)
+                .OrderByDescending(x => x.LastUpdated ?? x.CreatedAt)
+                .ThenByDescending(x => x.TopicID)
+                .FirstOrDefaultAsync();
+
+            var currentMilestone = topic == null
+                ? null
+                : await GetCurrentMilestoneByTopicCodeAsync(topic.TopicCode);
+            var currentMilestoneOrdinal = currentMilestone?.Ordinal;
 
             var query = _uow.ProgressSubmissions.Query().Where(x => x.StudentUserCode == filter.UserCode);
 
@@ -134,7 +165,16 @@ namespace ThesisManagement.Api.Application.Query.Reports
             {
                 fileLookup.TryGetValue(x.SubmissionCode, out var fileItems);
                 fileItems ??= new List<ReportSubmissionFileDto>();
-                return new StudentProgressHistoryItemDto(MapSubmission(x, fileItems));
+
+                var isCurrentMilestoneSubmission = currentMilestoneOrdinal.HasValue && x.Ordinal == currentMilestoneOrdinal.Value;
+                var submissionStatus = isCurrentMilestoneSubmission
+                    ? GetCurrentMilestoneSubmissionStatus(x)
+                    : null;
+
+                return new StudentProgressHistoryItemDto(
+                    MapSubmission(x, fileItems),
+                    isCurrentMilestoneSubmission,
+                    submissionStatus);
             }).ToList();
 
             var dto = new StudentProgressHistoryDto(items, page, pageSize, totalCount);
@@ -272,6 +312,16 @@ namespace ThesisManagement.Api.Application.Query.Reports
 
             var normalized = lecturerState.Trim().ToLowerInvariant();
             return normalized is "pending" or "cho duyet" or "chờ duyệt" or "dang cho" or "đang chờ";
+        }
+
+        private static string GetCurrentMilestoneSubmissionStatus(ProgressSubmission? submission)
+        {
+            if (submission == null)
+                return "Chưa nộp";
+
+            return IsPendingLecturerState(submission.LecturerState)
+                ? "Đã nộp - chờ giảng viên xử lý"
+                : "Đã nộp";
         }
 
         private async Task<List<ReportTagDto>> GetTopicTagsAsync(Topic topic)
