@@ -213,20 +213,24 @@ public class CommitteeRosterExportService : ICommitteeRosterExportService
         sheet.Row(startRow).Style.Font.Bold = true;
         sheet.Row(startRow).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
-        sheet.Row(startRow + 1).Clear();
+        // Put date one row after the summary (remove extra blank row)
+        sheet.Cell(startRow + 1, 8).Value = "Hà Nội, ngày  tháng  năm 202 ";
+        sheet.Range(startRow + 1, 8, startRow + 1, 13).Merge();
+        sheet.Row(startRow + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-        sheet.Cell(startRow + 2, 8).Value = "Hà Nội, ngày 31 tháng 05 năm 2024";
+        // Signatures (bold)
+        sheet.Cell(startRow + 2, 1).Value = "NGƯỜI LẬP BIỂU";
+        sheet.Cell(startRow + 2, 8).Value = "TRƯỞNG KHOA";
+        sheet.Range(startRow + 2, 1, startRow + 2, 6).Merge();
         sheet.Range(startRow + 2, 8, startRow + 2, 13).Merge();
-        sheet.Row(startRow + 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+        sheet.Range(startRow + 2, 1, startRow + 2, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        sheet.Range(startRow + 2, 8, startRow + 2, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        sheet.Range(startRow + 2, 1, startRow + 2, 6).Style.Font.Bold = true;
+        sheet.Range(startRow + 2, 8, startRow + 2, 13).Style.Font.Bold = true;
 
-        sheet.Cell(startRow + 3, 1).Value = "NGƯỜI LẬP BIỂU";
-        sheet.Cell(startRow + 3, 8).Value = "TRƯỞNG KHOA";
-        sheet.Range(startRow + 3, 1, startRow + 3, 6).Merge();
-        sheet.Range(startRow + 3, 8, startRow + 3, 13).Merge();
-        sheet.Row(startRow + 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-        sheet.Row(startRow + 3).Style.Font.Bold = true;
+        // Clear a couple of rows after signatures for spacing
+        sheet.Row(startRow + 3).Clear();
         sheet.Row(startRow + 4).Clear();
-        sheet.Row(startRow + 5).Clear();
     }
 
     private static void ConfigurePrintSettings(IXLWorksheet sheet)

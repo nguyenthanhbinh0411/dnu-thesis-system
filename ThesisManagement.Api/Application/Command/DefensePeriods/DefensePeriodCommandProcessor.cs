@@ -5439,10 +5439,14 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
         {
             if (!score.HasValue) return null;
             var s = score.Value;
-            if (s >= 9) return "A";
-            if (s >= 7) return "B";
-            if (s >= 5.5m) return "C";
-            if (s >= 4) return "D";
+            if (s >= 9.0m && s <= 10.0m) return "A+";
+            if (s >= 8.5m && s < 9.0m) return "A";
+            if (s >= 8.0m && s < 8.5m) return "B+";
+            if (s >= 7.0m && s < 8.0m) return "B";
+            if (s >= 6.5m && s < 7.0m) return "C+";
+            if (s >= 5.5m && s < 6.5m) return "C";
+            if (s >= 5.0m && s < 5.5m) return "D+";
+            if (s >= 4.0m && s < 5.0m) return "D";
             return "F";
         }
 

@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   Archive,
   BarChart3,
+  ChevronDown,
   CheckCircle2,
   Download,
   Eye,
@@ -10,16 +12,17 @@ import {
   FileText,
   Gavel,
   Lock,
+  Maximize2,
   MessageSquare,
   Pencil,
-  Maximize2,
+  PieChart,
   RefreshCw,
   RotateCcw,
   Search,
   Table,
   Trash2,
+  TrendingUp,
   Unlock,
-  ChevronDown,
 } from "lucide-react";
 // `useNavigate` removed (not needed after module button removal)
 import { useToast } from "../../context/useToast";
@@ -39,8 +42,6 @@ import {
   normalizeDefensePeriodId,
   setActiveDefensePeriodId,
 } from "../../utils/defensePeriod";
-import { useSearchParams } from "react-router-dom";
-
 type RevisionStatus = "all" | "pending" | "approved" | "rejected";
 type LifecycleAction = "PUBLISH" | "ROLLBACK" | "ARCHIVE" | "REOPEN";
 type ReportType = "council-summary" | "scoreboard" | "minutes" | "review" | "form-1" | "final-term" | "sync-errors";
@@ -78,6 +79,8 @@ type DistributionOverview = {
   fair?: number;
   weak?: number;
 };
+
+type DistributionViewMode = "grade" | "score";
 
 type MonitoringSnapshot = {
   pipeline?: PipelineOverview & { waitingPublicTopics?: number };
@@ -648,11 +651,101 @@ const getCommitteeCompletionLabel = (scoredTopics: number, totalTopics: number) 
 };
 
 const distributionPalette: Record<string, string> = {
+  "A+": "#16a34a",
   A: "#16a34a",
+  "B+": "#22c55e",
   B: "#0ea5e9",
-  C: "#f59e0b",
-  D: "#ef4444",
+  "C+": "#f59e0b",
+  C: "#f97316",
+  "D+": "#ef4444",
+  D: "#dc2626",
   F: "#991b1b",
+  "9.0 - 10": "#16a34a",
+  "8.5 - < 9.0": "#22c55e",
+  "8.0 - < 8.5": "#84cc16",
+  "7.0 - < 8.0": "#0ea5e9",
+  "6.5 - < 7.0": "#f59e0b",
+  "5.5 - < 6.5": "#f97316",
+  "5.0 - < 5.5": "#ef4444",
+  "4.0 - < 5.0": "#dc2626",
+  "< 4.0": "#991b1b",
+};
+
+const GRADE_BANDS = [
+  { label: "A+", min: 9.0, max: 10.0 },
+  { label: "A", min: 8.5, max: 9.0 },
+  { label: "B+", min: 8.0, max: 8.5 },
+  { label: "B", min: 7.0, max: 8.0 },
+  { label: "C+", min: 6.5, max: 7.0 },
+  { label: "C", min: 5.5, max: 6.5 },
+  { label: "D+", min: 5.0, max: 5.5 },
+  { label: "D", min: 4.0, max: 5.0 },
+  { label: "F", min: Number.NEGATIVE_INFINITY, max: 4.0 },
+] as const;
+
+const SCORE_BANDS = [
+  { label: "9.0 - 10", min: 9.0, max: 10.0, inclusiveMax: true },
+  { label: "8.5 - < 9.0", min: 8.5, max: 9.0 },
+  { label: "8.0 - < 8.5", min: 8.0, max: 8.5 },
+  { label: "7.0 - < 8.0", min: 7.0, max: 8.0 },
+  { label: "6.5 - < 7.0", min: 6.5, max: 7.0 },
+  { label: "5.5 - < 6.5", min: 5.5, max: 6.5 },
+  { label: "5.0 - < 5.5", min: 5.0, max: 5.5 },
+  { label: "4.0 - < 5.0", min: 4.0, max: 5.0 },
+  { label: "< 4.0", min: Number.NEGATIVE_INFINITY, max: 4.0 },
+] as const;
+
+const getGradeFromScore = (score: number) => {
+  if (!Number.isFinite(score)) {
+    return "-";
+  }
+  if (score >= 9) return "A+";
+  if (score >= 8.5) return "A";
+  if (score >= 8) return "B+";
+  if (score >= 7) return "B";
+  if (score >= 6.5) return "C+";
+  if (score >= 5.5) return "C";
+  if (score >= 5) return "D+";
+  if (score >= 4) return "D";
+  return "F";
+};
+
+const getScoreBandLabel = (score: number): string => {
+  if (!Number.isFinite(score)) {
+    return "-";
+  }
+
+  if (score >= 9) return "9.0 - 10";
+  if (score >= 8.5) return "8.5 - < 9.0";
+  if (score >= 8) return "8.0 - < 8.5";
+  if (score >= 7) return "7.0 - < 8.0";
+  if (score >= 6.5) return "6.5 - < 7.0";
+  if (score >= 5.5) return "5.5 - < 6.5";
+  if (score >= 5) return "5.0 - < 5.5";
+  if (score >= 4) return "4.0 - < 5.0";
+  return "< 4.0";
+};
+
+const buildDistributionRows = (
+  rows: ScoringMatrixRow[],
+  mode: DistributionViewMode,
+) => {
+  const buckets = mode === "grade" ? GRADE_BANDS.map((band) => ({ label: band.label, value: 0 })) : SCORE_BANDS.map((band) => ({ label: band.label, value: 0 }));
+
+  rows.forEach((row) => {
+    const score = Number(row.finalScore ?? row.currentScore ?? NaN);
+    if (!Number.isFinite(score)) {
+      return;
+    }
+
+    const label = mode === "grade" ? getGradeFromScore(score) : getScoreBandLabel(score);
+    const bucket = buckets.find((item) => item.label === label);
+    if (bucket) {
+      bucket.value += 1;
+    }
+  });
+
+  return buckets;
 };
 
 const CommitteeOperationsManagement: React.FC = () => {
@@ -693,7 +786,10 @@ const CommitteeOperationsManagement: React.FC = () => {
   const [analyticsTopics, setAnalyticsTopics] = useState<ScoringMatrixRow[]>([]);
   const [analyticsDistribution, setAnalyticsDistribution] = useState<DistributionOverview | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [distributionViewMode, setDistributionViewMode] = useState<DistributionViewMode>("grade");
   const [distributionChartType, setDistributionChartType] = useState<"pie" | "bar" | "line">("pie");
+  const [distributionChartMenuOpen, setDistributionChartMenuOpen] = useState(false);
+  const distributionChartMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Council / scoring UI state
   const [scoringModalOpen, setScoringModalOpen] = useState(false);
@@ -852,6 +948,24 @@ const CommitteeOperationsManagement: React.FC = () => {
     const timer = window.setInterval(() => setCurrentTimestamp(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        distributionChartMenuRef.current &&
+        !distributionChartMenuRef.current.contains(event.target as Node)
+      ) {
+        setDistributionChartMenuOpen(false);
+      }
+    };
+
+    if (distributionChartMenuOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => document.removeEventListener("mousedown", handleOutsideClick);
+    }
+
+    return undefined;
+  }, [distributionChartMenuOpen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1285,22 +1399,15 @@ const CommitteeOperationsManagement: React.FC = () => {
   const scoresPublished = Boolean(getRecordValue(periodState, "ScoresPublished") ?? getRecordValue(periodState, "scoresPublished"));
   const councilSourceRecords = snapshot?.councils?.items ?? [];
 
-  const distributionRows = useMemo(() => {
-    const distribution = analyticsDistribution ?? analytics?.distribution;
-    const totalStudents = Number(analytics?.overview?.totalStudents ?? 0);
-    const excellent = Number(distribution?.excellent ?? 0);
-    const good = Number(distribution?.good ?? 0);
-    const fair = Number(distribution?.fair ?? 0);
-    const weak = Number(distribution?.weak ?? 0);
-    const fallbackF = Math.max(0, totalStudents - (excellent + good + fair + weak));
-    return [
-      { label: "A", value: excellent },
-      { label: "B", value: good },
-      { label: "C", value: fair },
-      { label: "D", value: weak },
-      { label: "F", value: fallbackF },
-    ];
-  }, [analytics?.distribution, analytics?.overview?.totalStudents, analyticsDistribution]);
+  const scoredRowsForDistribution = useMemo(
+    () => scoringMatrix.filter((row) => Number.isFinite(Number(row.finalScore ?? row.currentScore ?? NaN))),
+    [scoringMatrix],
+  );
+
+  const distributionRows = useMemo(
+    () => buildDistributionRows(scoredRowsForDistribution, distributionViewMode),
+    [distributionViewMode, scoredRowsForDistribution],
+  );
 
   const distributionTotal = useMemo(
     () => distributionRows.reduce((sum, item) => sum + item.value, 0),
@@ -1687,15 +1794,6 @@ const CommitteeOperationsManagement: React.FC = () => {
 
   const topHigh10 = useMemo(() => (scoresPublished ? (publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows).slice().sort((a, b) => Number(b.finalScore ?? b.currentScore ?? 0) - Number(a.finalScore ?? a.currentScore ?? 0)).slice(0, 10) : []), [publishedAnalyticsTopics, publishedScoringRows, scoresPublished]);
   const topLow10 = useMemo(() => (scoresPublished ? (publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows).slice().sort((a, b) => Number(a.finalScore ?? a.currentScore ?? 0) - Number(b.finalScore ?? b.currentScore ?? 0)).slice(0, 10) : []), [publishedAnalyticsTopics, publishedScoringRows, scoresPublished]);
-
-  const getGradeFromScore = (score: number) => {
-    if (!Number.isFinite(score)) return "-";
-    if (score >= 8.5) return "A";
-    if (score >= 7) return "B";
-    if (score >= 5) return "C";
-    if (score >= 3) return "D";
-    return "F";
-  };
 
   const getTopicScoreDisplay = (row: ScoringMatrixRow) => {
     const hasAnyScore = row.finalScore != null || row.currentScore != null;
@@ -2483,91 +2581,210 @@ const CommitteeOperationsManagement: React.FC = () => {
             </section>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)", gap: 12, alignItems: "start" }}>
             {/* Grade Distribution */}
-            <section style={cardStyle}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Phân bổ xếp loại</div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {(["pie", "bar", "line"] as const).map((type) => (
+            <section style={{ ...cardStyle, display: "grid", gap: 16, minHeight: 560 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em", color: "#0f172a" }}>Phân bổ xếp loại</div>
+                  <div style={{ fontSize: 13, color: "#475569", marginTop: 6, maxWidth: 520 }}>
+                    {distributionViewMode === "grade"
+                      ? "Theo thang điểm chữ A+/A/B+/B/C+/C/D+/D/F"
+                      : "Theo các khoảng điểm hệ 10 tương ứng"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {([
+                    { value: "grade" as const, label: "Điểm chữ" },
+                    { value: "score" as const, label: "Điểm số" },
+                  ]).map((mode) => (
                     <button
-                      key={type}
-                      onClick={() => setDistributionChartType(type)}
+                      key={mode.value}
+                      type="button"
+                      onClick={() => setDistributionViewMode(mode.value)}
                       style={{
-                        padding: "4px 8px",
-                        fontSize: 10,
-                        fontWeight: 700,
-                        borderRadius: 6,
-                        border: `1px solid ${distributionChartType === type ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`,
-                        background: distributionChartType === type ? DEEP_BLUE_PRIMARY : "#ffffff",
-                        color: distributionChartType === type ? "#ffffff" : "#0f172a",
+                        padding: "6px 10px",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        border: `1px solid ${distributionViewMode === mode.value ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`,
+                        background: distributionViewMode === mode.value ? DEEP_BLUE_PRIMARY : "#ffffff",
+                        color: distributionViewMode === mode.value ? "#ffffff" : "#0f172a",
                         cursor: "pointer",
-                        textTransform: "uppercase"
+                        textTransform: "uppercase",
                       }}
                     >
-                      {type === "pie" ? "Tròn" : type === "bar" ? "Cột" : "Đường"}
+                      {mode.label}
                     </button>
                   ))}
+                  <div ref={distributionChartMenuRef} style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      onClick={() => setDistributionChartMenuOpen((value) => !value)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 12px",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        borderRadius: 10,
+                        border: "1px solid #cbd5e1",
+                        background: "#ffffff",
+                        color: "#0f172a",
+                        cursor: "pointer",
+                        boxShadow: "0 8px 20px rgba(15, 23, 42, 0.04)",
+                      }}
+                    >
+                      {distributionChartType === "pie" ? <PieChart size={15} /> : distributionChartType === "bar" ? <BarChart3 size={15} /> : <TrendingUp size={15} />}
+                      {distributionChartType === "pie" ? "Biểu đồ tròn" : distributionChartType === "bar" ? "Biểu đồ cột" : "Biểu đồ đường"}
+                      <ChevronDown size={14} style={{ transform: distributionChartMenuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.18s ease" }} />
+                    </button>
+
+                    {distributionChartMenuOpen && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 8px)",
+                          right: 0,
+                          minWidth: 220,
+                          background: "#ffffff",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: 14,
+                          boxShadow: "0 14px 30px rgba(15, 23, 42, 0.12)",
+                          zIndex: 30,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {([
+                          { value: "pie" as const, label: "Biểu đồ tròn", icon: PieChart, detail: "Nhìn nhanh tỷ trọng" },
+                          { value: "bar" as const, label: "Biểu đồ cột", icon: BarChart3, detail: "So sánh trực quan" },
+                          { value: "line" as const, label: "Biểu đồ đường", icon: TrendingUp, detail: "Theo xu hướng" },
+                        ]).map((option) => {
+                          const Icon = option.icon;
+                          const active = distributionChartType === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setDistributionChartType(option.value);
+                                setDistributionChartMenuOpen(false);
+                              }}
+                              style={{
+                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                padding: "12px 14px",
+                                border: "none",
+                                background: active ? "#eff6ff" : "#ffffff",
+                                color: active ? DEEP_BLUE_PRIMARY : "#0f172a",
+                                cursor: "pointer",
+                                textAlign: "left",
+                              }}
+                            >
+                              <span style={{ width: 32, height: 32, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", background: active ? "#dbeafe" : "#f8fafc", color: active ? DEEP_BLUE_PRIMARY : "#475569", flexShrink: 0 }}>
+                                <Icon size={15} />
+                              </span>
+                              <span style={{ display: "grid", gap: 2 }}>
+                                <span style={{ fontSize: 13, fontWeight: 800 }}>{option.label}</span>
+                                <span style={{ fontSize: 11, color: "#64748b" }}>{option.detail}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div style={{ minHeight: 180, display: "grid", placeItems: "center", padding: 12 }}>
-                {distributionChartType === "pie" && (
-                  <div style={{ width: 140, height: 140, borderRadius: "50%", background: `conic-gradient(${distributionStops.map((stop) => `${stop.color} ${stop.start}% ${stop.end}%`).join(", ")})`, position: "relative" }}>
-                    <div style={{ position: "absolute", inset: 16, borderRadius: "50%", background: "#ffffff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
-                      {formatNumber(distributionTotal)}
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1.15fr) minmax(320px, 0.85fr)", gap: 18, alignItems: "stretch" }}>
+                <div style={{ display: "grid", placeItems: "center", minHeight: 320, padding: 12, borderRadius: 18, background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #e2e8f0" }}>
+                  {distributionChartType === "pie" ? (
+                    <div
+                      style={{
+                        width: 230,
+                        height: 230,
+                        borderRadius: "50%",
+                        background: distributionTotal > 0
+                          ? `conic-gradient(${distributionStops.map((stop) => `${stop.color} ${stop.start}% ${stop.end}%`).join(", ")})`
+                          : "#e2e8f0",
+                        position: "relative",
+                        boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.35), 0 18px 40px rgba(15, 23, 42, 0.08)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 24,
+                          borderRadius: "50%",
+                          background: "#ffffff",
+                          display: "grid",
+                          placeItems: "center",
+                          textAlign: "center",
+                          gap: 4,
+                          boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
+                        }}
+                      >
+                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "TỔNG XẾP LOẠI" : "TỔNG ĐIỂM"}</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>{formatNumber(distributionTotal)}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "Sinh viên" : "Mẫu"}</div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : distributionChartType === "bar" ? (
+                    <div style={{ width: "100%", height: 320, display: "flex", alignItems: "flex-end", gap: 10, padding: "16px 4px 6px" }}>
+                      {distributionRows.map((item) => (
+                        <div key={item.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <div style={{ width: "100%", height: `${Math.max(8, (item.value / distributionPeak) * 220)}px`, borderRadius: "12px 12px 0 0", background: distributionPalette[item.label] ?? "#cbd5e1", transition: "height 0.25s ease", boxShadow: item.value > 0 ? "0 8px 16px rgba(15, 23, 42, 0.1)" : "none" }} />
+                          <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ width: "100%", height: 320, padding: "8px 0" }}>
+                      <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                        <path
+                          d={`M ${distributionRows.map((item, idx) => `${(distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100)},${40 - (item.value / distributionPeak) * 34}`).join(" L ")}`}
+                          fill="none"
+                          stroke={DEEP_BLUE_PRIMARY}
+                          strokeWidth="2.5"
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                        />
+                        {distributionRows.map((item, idx) => (
+                          <circle
+                            key={item.label}
+                            cx={distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100}
+                            cy={40 - (item.value / distributionPeak) * 34}
+                            r="1.8"
+                            fill={distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY}
+                          />
+                        ))}
+                      </svg>
+                    </div>
+                  )}
+                </div>
 
-                {distributionChartType === "bar" && (
-                  <div style={{ width: "100%", height: 140, display: "flex", alignItems: "flex-end", gap: 12, paddingBottom: 20 }}>
+                <div style={{ display: "grid", gap: 10, alignSelf: "stretch", alignContent: "start" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
                     {distributionRows.map((item) => (
-                      <div key={item.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                        <div style={{ width: "100%", height: `${(item.value / distributionPeak) * 100}%`, background: distributionPalette[item.label] ?? "#cbd5e1", borderRadius: "4px 4px 0 0", minHeight: item.value > 0 ? 4 : 0, transition: "height 0.3s ease" }} />
-                        <span style={{ fontSize: 10, fontWeight: 700 }}>{item.label}</span>
+                      <div key={item.label} style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 12, background: "#ffffff", display: "grid", gap: 6, minHeight: 84, boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 999, background: distributionPalette[item.label] ?? "#cbd5e1", flexShrink: 0 }} />
+                          <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, lineHeight: 1.2 }}>{item.label}</div>
+                        </div>
+                        <div style={{ fontSize: 24, fontWeight: 900, color: distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY, lineHeight: 1 }}>{item.value}</div>
                       </div>
                     ))}
                   </div>
-                )}
-
-                {distributionChartType === "line" && (
-                  <div style={{ width: "100%", height: 140, padding: "10px 0" }}>
-                    <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
-                      <path
-                        d={`M ${distributionRows.map((item, idx) => `${(idx / (distributionRows.length - 1)) * 100},${40 - (item.value / distributionPeak) * 35}`).join(" L ")}`}
-                        fill="none"
-                        stroke={DEEP_BLUE_PRIMARY}
-                        strokeWidth="2"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                      />
-                      {distributionRows.map((item, idx) => (
-                        <circle
-                          key={idx}
-                          cx={(idx / (distributionRows.length - 1)) * 100}
-                          cy={40 - (item.value / distributionPeak) * 35}
-                          r="1.5"
-                          fill={distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY}
-                        />
-                      ))}
-                    </svg>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                      {distributionRows.map(item => (
-                        <span key={item.label} style={{ fontSize: 10, fontWeight: 700 }}>{item.label}</span>
-                      ))}
-                    </div>
+                  <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                    {distributionViewMode === "grade"
+                      ? "Phân bổ tính theo kết quả cuối cùng của từng đề tài, quy đổi đúng A+/A/B+/B/C+/C/D+/D/F."
+                      : "Phân bổ tính theo điểm hệ 10 và chia đúng theo các khoảng chuẩn tương ứng."}
                   </div>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginTop: 12 }}>
-                {distributionRows.map((item) => (
-                  <div key={item.label} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>{item.label}</div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: distributionPalette[item.label] }}>{item.value}</div>
-                  </div>
-                ))}
+                </div>
               </div>
             </section>
 
@@ -2703,7 +2920,13 @@ const CommitteeOperationsManagement: React.FC = () => {
                           {row.finalScore != null ? row.finalScore : row.currentScore != null ? row.currentScore : (row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount) ? "..." : "-"}
                         </div>
                         <div>
-                          {row.finalGrade ? row.finalGrade : (row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount && !row.isLocked) ? <span style={{ color: "#b45309", fontWeight: 700 }}>Chờ công bố</span> : row.finalScore != null ? getGradeFromScore(Number(row.finalScore)) : "-"}
+                          {(row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount && !row.isLocked)
+                            ? <span style={{ color: "#b45309", fontWeight: 700 }}>Chờ công bố</span>
+                            : row.finalScore != null
+                              ? getGradeFromScore(Number(row.finalScore))
+                              : row.currentScore != null
+                                ? getGradeFromScore(Number(row.currentScore))
+                                : "-"}
                         </div>
                       </div>
                     ))}

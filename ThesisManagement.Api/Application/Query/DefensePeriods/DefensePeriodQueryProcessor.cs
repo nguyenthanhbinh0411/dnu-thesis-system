@@ -112,6 +112,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             public int CommitteeId { get; set; }
             public string? MemberLecturerCode { get; set; }
             public string? Role { get; set; }
+            public bool? IsOnline { get; set; }
         }
 
         private sealed class LecturerNameSnapshotRow
@@ -902,13 +903,15 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 ? new List<CommitteeMemberSnapshotRow>()
                 : (await _db.CommitteeMembers.AsNoTracking()
                     .Where(x => x.CommitteeID.HasValue && committeeIds.Contains(x.CommitteeID.Value))
+                    .ToListAsync(cancellationToken))
                     .Select(x => new CommitteeMemberSnapshotRow
                     {
                         CommitteeId = x.CommitteeID!.Value,
                         MemberLecturerCode = x.MemberLecturerCode,
-                        Role = x.Role
+                        Role = x.Role,
+                        IsOnline = ReadCommitteeMemberOnlineFlag(x)
                     })
-                    .ToListAsync(cancellationToken)).ToList();
+                    .ToList();
 
             var memberLecturerCodes = committeeMembers
                 .Where(x => !string.IsNullOrWhiteSpace(x.MemberLecturerCode))
@@ -960,7 +963,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                                 ? organization
                                 : null,
                             Role = member.Role ?? string.Empty,
-                            RoleCode = NormalizeCommitteeRole(member.Role)
+                            RoleCode = NormalizeCommitteeRole(member.Role),
+                            IsOnline = member.IsOnline,
+                            OnlineStatus = ToMemberOnlineStatus(member.IsOnline)
                         };
                     }).Cast<object>().ToList());
 
@@ -3301,6 +3306,33 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             if (upper.Contains("UVPB") || upper.Contains("PHAN") || upper == "PB" || upper.Contains("REVIEWER")) return "UVPB";
             if (upper == "UV" || upper.Contains("UY VIEN") || upper == "MEMBER") return "UV";
             return upper;
+        }
+
+        private static bool? ReadCommitteeMemberOnlineFlag(ThesisManagement.Api.Models.CommitteeMember member)
+        {
+            var property = member.GetType().GetProperty("IsOnline");
+            if (property == null)
+            {
+                return null;
+            }
+
+            var value = property.GetValue(member);
+            if (value is bool boolValue)
+            {
+                return boolValue;
+            }
+
+            return null;
+        }
+
+        private static string ToMemberOnlineStatus(bool? isOnline)
+        {
+            if (!isOnline.HasValue)
+            {
+                return "UNKNOWN";
+            }
+
+            return isOnline.Value ? "ONLINE" : "OFFLINE";
         }
 
         private static string ToCouncilLockStatus(bool councilListLocked)

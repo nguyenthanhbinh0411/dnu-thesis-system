@@ -331,43 +331,6 @@ const AdminLayout: React.FC = () => {
                   <PanelLeftClose size={18} />
                 )}
               </button>
-
-              <img
-                src="/logo-ios.png"
-                alt="Đại học Đại Nam"
-                style={{
-                  display: "block",
-                  height: "36px",
-                  width: "auto",
-                  filter: "brightness(0) invert(1)",
-                }}
-              />
-
-              {/* Mobile Logo - Only visible on mobile */}
-              <img
-                src="/logo-ios.png"
-                alt="Đại học Đại Nam"
-                className="admin-mobile-logo"
-                style={{
-                  display: "none",
-                  height: "32px",
-                  width: "auto",
-                  filter: "brightness(0) invert(1)",
-                }}
-              />
-
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 20,
-                  fontWeight: 600,
-                  color: "#FFFFFF",
-                  letterSpacing: "0.5px",
-                  textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                }}
-              >
-                Quản trị hệ thống đồ án tốt nghiệp
-              </h2>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
               {/* Notification Icon with Badge */}

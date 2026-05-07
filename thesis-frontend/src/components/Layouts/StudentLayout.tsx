@@ -519,27 +519,6 @@ const StudentLayout: React.FC = () => {
                 <PanelLeftClose size={18} />
               )}
             </button>
-
-            <img
-              src="/logo-ios.png"
-              alt="Đại học Đại Nam"
-              className="student-mobile-logo"
-              style={{
-                display: "none",
-                height: "48px",
-                width: "auto",
-              }}
-            />
-
-            <img
-              src="/logo-ios.png"
-              alt="Đại học Đại Nam"
-              style={{
-                height: "50px",
-                width: "auto",
-                objectFit: "contain",
-              }}
-            />
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>

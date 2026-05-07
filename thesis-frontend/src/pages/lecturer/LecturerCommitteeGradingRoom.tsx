@@ -82,6 +82,8 @@ type Committee = {
 
 type CommitteeRoleCode = "CT" | "UVTK" | "UVPB" | "UNKNOWN";
 
+type MemberOnlineStatus = "ONLINE" | "OFFLINE" | "UNKNOWN";
+
 type CommitteeMemberView = {
     memberId: string;
     lecturerCode: string;
@@ -91,6 +93,8 @@ type CommitteeMemberView = {
     roleRaw: string;
     roleCode: CommitteeRoleCode;
     roleLabel: string;
+    isOnline?: boolean;
+    onlineStatus: MemberOnlineStatus;
 };
 
 type RevisionRequest = {
@@ -281,6 +285,41 @@ const toRecord = (value: unknown): Record<string, unknown> | null => {
     return value as Record<string, unknown>;
 };
 
+const unwrapCompactPayload = (raw: unknown): unknown => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return raw;
+    }
+
+    const source = raw as Record<string, unknown>;
+    const inner = pickCaseInsensitiveValue<unknown>(source, ["data", "Data"], undefined);
+
+    return inner !== undefined && inner !== null ? inner : raw;
+};
+
+const extractCompactRows = (raw: unknown, objectKeys: string[]): Array<Record<string, unknown>> => {
+    const payload = unwrapCompactPayload(raw);
+
+    if (Array.isArray(payload)) {
+        return payload.filter(
+            (item): item is Record<string, unknown> => Boolean(item && typeof item === "object"),
+        );
+    }
+
+    if (payload && typeof payload === "object") {
+        const source = payload as Record<string, unknown>;
+        for (const key of objectKeys) {
+            const rows = pickCaseInsensitiveValue<unknown>(source, [key], undefined);
+            if (Array.isArray(rows)) {
+                return rows.filter(
+                    (item): item is Record<string, unknown> => Boolean(item && typeof item === "object"),
+                );
+            }
+        }
+    }
+
+    return [];
+};
+
 const toStringOrNull = (value: unknown): string | null => {
     const text = String(value ?? "").trim();
     return text ? text : null;
@@ -325,6 +364,104 @@ const toIsoDateOrNull = (value: unknown): string | null => {
 const toNumberOrNull = (value: unknown): number | null => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeLecturerCode = (value: unknown): string => String(value ?? "").trim().toUpperCase();
+
+const toMemberOnlineStatus = (value: unknown): MemberOnlineStatus => {
+    const raw = String(value ?? "").trim().toUpperCase();
+    if (raw === "ONLINE" || raw === "ON" || raw === "TRUE" || raw === "1") {
+        return "ONLINE";
+    }
+    if (raw === "OFFLINE" || raw === "OFF" || raw === "FALSE" || raw === "0") {
+        return "OFFLINE";
+    }
+    return "UNKNOWN";
+};
+
+const readCommitteeMemberOnlineFlag = (record: Record<string, unknown>): boolean | null => {
+    const status = toMemberOnlineStatus(
+        pickCaseInsensitiveValue<unknown>(record, ["onlineStatus", "OnlineStatus"], null),
+    );
+    if (status === "ONLINE") {
+        return true;
+    }
+    if (status === "OFFLINE") {
+        return false;
+    }
+
+    const candidates = [
+        pickCaseInsensitiveValue<unknown>(record, ["isOnline", "IsOnline"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["online", "Online"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["isConnected", "IsConnected"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["connected", "Connected"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["isInRoom", "IsInRoom"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["inRoom", "InRoom"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["joined", "Joined"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["isPresent", "IsPresent"], null),
+        pickCaseInsensitiveValue<unknown>(record, ["present", "Present"], null),
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === "boolean") {
+            return candidate;
+        }
+
+        if (typeof candidate === "number" && Number.isFinite(candidate)) {
+            return candidate !== 0;
+        }
+
+        if (typeof candidate === "string") {
+            const normalized = candidate.trim().toLowerCase();
+            if (["true", "1", "yes", "y", "online", "connected", "inroom", "joined", "present", "active"].includes(normalized)) {
+                return true;
+            }
+            if (["false", "0", "no", "n", "offline", "disconnected", "left", "absent", "inactive"].includes(normalized)) {
+                return false;
+            }
+        }
+    }
+
+    return null;
+};
+
+const extractRuntimeLecturerCodes = (raw: unknown): string[] => {
+    const rows = extractCompactRows(raw, ["lecturers", "Lecturers", "items", "Items"]);
+    const codes = rows
+        .filter((record) => readCommitteeMemberOnlineFlag(record) !== false)
+        .map((record) =>
+            normalizeLecturerCode(
+                pickCaseInsensitiveValue<unknown>(
+                    record,
+                    ["lecturerCode", "LecturerCode", "userCode", "UserCode", "code", "Code"],
+                    "",
+                ),
+            ),
+        )
+        .filter(Boolean);
+
+    return Array.from(new Set(codes));
+};
+
+const formatLetterGrade = (score: number | null, rawGrade?: unknown): string => {
+    const rawText = String(rawGrade ?? "").trim().toUpperCase();
+    if (/^(A\+|A|B\+|B|C\+|C|D\+|D|F)$/.test(rawText)) {
+        return rawText;
+    }
+
+    if (score == null || !Number.isFinite(score)) {
+        return rawText;
+    }
+
+    if (score >= 9) return "A+";
+    if (score >= 8.5) return "A";
+    if (score >= 8) return "B+";
+    if (score >= 7) return "B";
+    if (score >= 6.5) return "C+";
+    if (score >= 5.5) return "C";
+    if (score >= 5) return "D+";
+    if (score >= 4) return "D";
+    return "F";
 };
 
 const toRomanNumeral = (value: number): string => {
@@ -525,39 +662,20 @@ const getRoleLabel = (roleCode: CommitteeRoleCode): string => {
 
 const getCommitteeMemberParticipation = (
     member: CommitteeMemberView,
-    scoringRows: ScoringMatrixRow[],
     context?: {
         isCurrentUser: boolean;
         hasJoinedCurrentCommittee: boolean;
         isCommitteeLive: boolean;
+        isOnline?: boolean;
     },
 ) => {
-    const onlineByScore = scoringRows.some((row) => {
-        if (member.roleCode === "CT") {
-            return row.scoreCt != null;
-        }
-
-        if (member.roleCode === "UVTK") {
-            return row.scoreTk != null;
-        }
-
-        if (member.roleCode === "UVPB") {
-            return row.scorePb != null;
-        }
-
-        return false;
-    });
-
-    const onlineByPresence = Boolean(
-        context?.isCurrentUser && context?.hasJoinedCurrentCommittee && context?.isCommitteeLive,
-    );
-
-    const online = onlineByPresence || onlineByScore;
+    const online = context?.isOnline ?? member.isOnline ?? member.onlineStatus === "ONLINE";
+    const unknown = !online && member.onlineStatus === "UNKNOWN" && context?.isOnline == null && member.isOnline == null;
 
     return {
         online,
-        emoji: online ? "🟢" : "⚫",
-        label: online ? "Online" : "Offline",
+        emoji: online ? "🟢" : unknown ? "⚪" : "⚪",
+        label: online ? "Online" : unknown ? "Chưa rõ" : "Offline",
         bg: online ? "#ecfdf5" : "#f8fafc",
         border: online ? "#22c55e" : "#cbd5e1",
         text: online ? "#166534" : "#475569",
@@ -1588,6 +1706,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                     roleRaw,
                     roleCode,
                     roleLabel: getRoleLabel(roleCode),
+                    onlineStatus: toMemberOnlineStatus(
+                        pickSnapshotSection<unknown>(record, ["onlineStatus", "OnlineStatus"], "UNKNOWN"),
+                    ),
+                    ...(readCommitteeMemberOnlineFlag(record) != null
+                        ? { isOnline: readCommitteeMemberOnlineFlag(record) ?? false }
+                        : {}),
                 };
             })
             .filter((member): member is CommitteeMemberView => Boolean(member));
@@ -1799,11 +1923,23 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 commentPb: toStringOrNull(
                     pickSnapshotSection<unknown>(item, ["commentPb", "CommentPb"], null),
                 ) ?? null,
-                finalScore: toNumberOrNull(pickSnapshotSection<unknown>(item, ["finalScore", "FinalScore"], null)),
-                finalGrade:
-                    toStringOrNull(
-                        pickSnapshotSection<unknown>(item, ["finalGrade", "FinalGrade", "finalLetter", "FinalLetter"], null),
-                    ) ?? null,
+                finalScore: (() => {
+                    const finalScore = toNumberOrNull(
+                        pickSnapshotSection<unknown>(item, ["finalScore", "FinalScore"], null),
+                    );
+                    return finalScore;
+                })(),
+                finalGrade: (() => {
+                    const finalScore = toNumberOrNull(
+                        pickSnapshotSection<unknown>(item, ["finalScore", "FinalScore"], null),
+                    );
+                    const rawGrade = pickSnapshotSection<unknown>(
+                        item,
+                        ["finalGrade", "FinalGrade", "finalLetter", "FinalLetter"],
+                        null,
+                    );
+                    return formatLetterGrade(finalScore, rawGrade) || null;
+                })(),
                 variance: toNumberOrNull(pickSnapshotSection<unknown>(item, ["variance", "Variance"], null)),
                 isLocked: Boolean(pickSnapshotSection<unknown>(item, ["isLocked", "IsLocked"], false)),
                 status: String(pickSnapshotSection<unknown>(item, ["status", "Status"], "PENDING")),
@@ -2877,6 +3013,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                     if (roleCode === "CT") updated.scoreCt = submittedScoreValue;
                     else if (roleCode === "UVTK") updated.scoreTk = submittedScoreValue;
                     else if (roleCode === "UVPB") updated.scorePb = submittedScoreValue;
+                    updated.finalGrade = formatLetterGrade(updated.finalScore, updated.finalGrade);
                     return updated;
                 }),
             );
@@ -3693,7 +3830,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                             fontWeight: 600,
                                                             whiteSpace: "nowrap",
                                                         }}>
-                                                            {formatScore(row.finalScore)}{row.finalGrade ? ` - ${row.finalGrade}` : ""}
+                                                            {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
                                                         </div>
                                                     )}
                                                 </div>
@@ -3761,7 +3898,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                             fontWeight: 600,
                                                             whiteSpace: "nowrap",
                                                         }}>
-                                                            {formatScore(row.finalScore)}{row.finalGrade ? ` - ${row.finalGrade}` : ""}
+                                                            {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
                                                         </div>
                                                     )}
                                                 </div>
@@ -3923,7 +4060,16 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                             gap: 6,
                                                         }}
                                                     >
-                                                        <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
+                                                        <div
+                                                            style={{
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                justifyContent: "space-between",
+                                                                gap: 8,
+                                                            }}
+                                                        >
+                                                            <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
+                                                        </div>
                                                         <div style={{ fontSize: 13, color: "#334155" }}>
                                                             {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
                                                             {member.degree ? `${member.degree} ` : ""}
@@ -4874,7 +5020,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             <tr>
                                                 <td colSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>Điểm trung bình</td>
                                                 <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatScore(selectedMatrixRow?.finalScore ?? null)}</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{selectedMatrixRow?.finalGrade ?? ""}</td>
+                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</td>
                                                 <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
                                             </tr>
                                         </tbody>
@@ -4885,7 +5031,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                     <strong>VI. Kết luận của Chủ tịch Hội đồng đánh giá tốt nghiệp</strong><br />
                                     - Hội đồng thống nhất đánh giá đồ án với kết quả:<br />
                                     + Bằng số: <strong>{formatScore(selectedMatrixRow?.finalScore ?? null)}</strong> (điểm)<br />
-                                    + Bằng chữ: <strong>{selectedMatrixRow?.finalGrade ?? ""}</strong> (điểm)<br />
+                                    + Bằng chữ: <strong>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</strong> (điểm)<br />
                                     Hội đồng đánh giá tốt nghiệp kết thúc vào hồi ........phút.........cùng ngày./.
                                 </div>
 
@@ -5159,30 +5305,6 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             <div style={{ fontSize: 12, color: "#475569" }}>
                                                 {member.organization || "Chưa cập nhật nơi công tác"}
                                             </div>
-                                            {(() => {
-                                                const participation = getCommitteeMemberParticipation(member, detailCommitteeRows);
-
-                                                return (
-                                                    <span
-                                                        style={{
-                                                            display: "inline-flex",
-                                                            alignItems: "center",
-                                                            justifyContent: "center",
-                                                            width: "fit-content",
-                                                            borderRadius: 999,
-                                                            padding: "5px 10px",
-                                                            fontSize: 12,
-                                                            fontWeight: 500,
-                                                            gap: 6,
-                                                            border: `1px solid ${participation.border}`,
-                                                            background: participation.bg,
-                                                            color: participation.text,
-                                                        }}
-                                                    >
-                                                        {participation.label}
-                                                    </span>
-                                                );
-                                            })()}
                                         </div>
                                     </div>
                                 ))}
