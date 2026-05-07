@@ -678,7 +678,7 @@ const Progress: React.FC = () => {
           >
             {milestones.map((milestone, index) => (
               <div
-                key={milestone.id}
+                key={`${milestone.id}-${index}`}
                 style={{
                   display: "flex",
                   gap: "24px",

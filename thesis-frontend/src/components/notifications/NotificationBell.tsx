@@ -654,19 +654,25 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ theme }) => {
     });
     connection.onclose(() => setConnectionState("disconnected"));
 
+    let isMounted = true;
     const start = async () => {
       try {
         await connection.start();
-        setConnectionState("connected");
+        if (isMounted) {
+          setConnectionState("connected");
+        }
       } catch (error) {
-        console.error("Notification hub connect failed:", error);
-        setConnectionState("disconnected");
+        if (isMounted) {
+          console.error("Notification hub connect failed:", error);
+          setConnectionState("disconnected");
+        }
       }
     };
 
     void start();
 
     return () => {
+      isMounted = false;
       void (async () => {
         try {
           if (

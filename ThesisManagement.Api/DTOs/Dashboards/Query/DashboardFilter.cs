@@ -4,6 +4,7 @@ namespace ThesisManagement.Api.DTOs.Dashboards.Query
     {
         public string? LecturerCode { get; set; }
         public int Limit { get; set; } = 100;
+        public int? Days { get; set; } = 30;
     }
 
     public class StudentServiceDashboardFilter

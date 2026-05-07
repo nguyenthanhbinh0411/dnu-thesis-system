@@ -64,6 +64,9 @@ namespace ThesisManagement.Api.Services
             NotificationRecipients = new GenericRepository<NotificationRecipient>(_db);
             NotificationPreferences = new GenericRepository<NotificationPreference>(_db);
             NotificationOutbox = new GenericRepository<NotificationOutbox>(_db);
+            
+            ChatSessions = new GenericRepository<ChatSession>(_db);
+            ChatMessages = new GenericRepository<ChatMessage>(_db);
         }
 
         public IGenericRepository<Department> Departments { get; }
@@ -118,6 +121,9 @@ namespace ThesisManagement.Api.Services
         public IGenericRepository<NotificationRecipient> NotificationRecipients { get; }
         public IGenericRepository<NotificationPreference> NotificationPreferences { get; }
         public IGenericRepository<NotificationOutbox> NotificationOutbox { get; }
+        
+        public IGenericRepository<ChatSession> ChatSessions { get; }
+        public IGenericRepository<ChatMessage> ChatMessages { get; }
 
         public async Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         {

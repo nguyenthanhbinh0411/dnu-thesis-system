@@ -81,6 +81,10 @@ namespace ThesisManagement.Api.Data
         public DbSet<NotificationOutbox> NotificationOutbox => Set<NotificationOutbox>();
         public DbSet<LecturerDashboardView> LecturerDashboardView => Set<LecturerDashboardView>();
         
+        // AI Chatbot tables
+        public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+        public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+        
         // System Activity Logs
         public DbSet<SystemActivityLog> SystemActivityLogs => Set<SystemActivityLog>();
 
@@ -791,6 +795,44 @@ namespace ThesisManagement.Api.Data
                 b.HasOne(x => x.ReviewedByUser).WithMany().HasForeignKey(x => x.ReviewedByUserId).OnDelete(DeleteBehavior.SetNull);
             });
 
+            // ChatSessions
+            modelBuilder.Entity<ChatSession>(b =>
+            {
+                b.ToTable("CHAT_SESSIONS", tb => 
+                {
+                    tb.HasTrigger("TR_ChatSessions_BI");
+                });
+                b.HasKey(x => x.ChatSessionID);
+                b.Property(x => x.ChatSessionID).HasColumnName("CHAT_SESSION_ID");
+                b.Property(x => x.UserID).HasColumnName("USER_ID").IsRequired();
+                b.Property(x => x.Title).HasColumnName("TITLE").HasMaxLength(255);
+                b.Property(x => x.ModelName).HasColumnName("MODEL_NAME").HasMaxLength(50);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATED_AT").HasDefaultValueSql("SYSDATE");
+                b.Property(x => x.IsArchived).HasColumnName("IS_ARCHIVED").HasDefaultValue(0);
+
+                b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserID).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ChatMessages
+            modelBuilder.Entity<ChatMessage>(b =>
+            {
+                b.ToTable("CHAT_MESSAGES", tb =>
+                {
+                    tb.HasTrigger("TR_ChatMessages_BI");
+                });
+                b.HasKey(x => x.ChatMessageID);
+                b.Property(x => x.ChatMessageID).HasColumnName("CHAT_MESSAGE_ID");
+                b.Property(x => x.ChatSessionID).HasColumnName("CHAT_SESSION_ID").IsRequired();
+                b.Property(x => x.Role).HasColumnName("ROLE").HasMaxLength(20).IsRequired();
+                b.Property(x => x.Content).HasColumnName("CONTENT").HasColumnType("CLOB").IsRequired();
+                b.Property(x => x.Feedback).HasColumnName("FEEDBACK").HasDefaultValue(0);
+                b.Property(x => x.PromptTokens).HasColumnName("PROMPT_TOKENS").HasDefaultValue(0);
+                b.Property(x => x.CompletionTokens).HasColumnName("COMPLETION_TOKENS").HasDefaultValue(0);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATED_AT").HasDefaultValueSql("SYSDATE");
+
+                b.HasOne(x => x.Session).WithMany(x => x.Messages).HasForeignKey(x => x.ChatSessionID).OnDelete(DeleteBehavior.Cascade);
+            });
+
             // TopicRenameRequestFiles
             modelBuilder.Entity<TopicRenameRequestFile>(b =>
             {
@@ -1243,6 +1285,38 @@ namespace ThesisManagement.Api.Data
                 b.Property(x => x.CurrentGuidingCount).HasColumnName("CURRENTGUIDINGCOUNT");
             });
 
+            // AI Chatbot - Sessions
+            modelBuilder.Entity<ChatSession>(b =>
+            {
+                b.ToTable("CHAT_SESSIONS", tb => { tb.HasTrigger("TRG_CHAT_SESSIONS_BI"); });
+                b.HasKey(x => x.ChatSessionID);
+                b.Property(x => x.ChatSessionID).HasColumnName("CHAT_SESSION_ID");
+                b.Property(x => x.UserID).HasColumnName("USER_ID");
+                b.Property(x => x.Title).HasColumnName("TITLE").HasMaxLength(200);
+                b.Property(x => x.ModelName).HasColumnName("MODEL_NAME").HasMaxLength(50);
+                b.Property(x => x.IsArchived).HasColumnName("IS_ARCHIVED").HasDefaultValue(0);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATED_AT").HasDefaultValueSql("SYSTIMESTAMP");
+
+                b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserID).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // AI Chatbot - Messages
+            modelBuilder.Entity<ChatMessage>(b =>
+            {
+                b.ToTable("CHAT_MESSAGES", tb => { tb.HasTrigger("TRG_CHAT_MESSAGES_BI"); });
+                b.HasKey(x => x.ChatMessageID);
+                b.Property(x => x.ChatMessageID).HasColumnName("CHAT_MESSAGE_ID");
+                b.Property(x => x.ChatSessionID).HasColumnName("CHAT_SESSION_ID");
+                b.Property(x => x.Role).HasColumnName("ROLE").HasMaxLength(20).IsRequired();
+                b.Property(x => x.Content).HasColumnName("CONTENT").IsRequired();
+                b.Property(x => x.Feedback).HasColumnName("FEEDBACK").HasDefaultValue(0);
+                b.Property(x => x.PromptTokens).HasColumnName("PROMPT_TOKENS").HasDefaultValue(0);
+                b.Property(x => x.CompletionTokens).HasColumnName("COMPLETION_TOKENS").HasDefaultValue(0);
+                b.Property(x => x.CreatedAt).HasColumnName("CREATED_AT").HasDefaultValueSql("SYSTIMESTAMP");
+
+                b.HasOne(x => x.Session).WithMany(x => x.Messages).HasForeignKey(x => x.ChatSessionID).OnDelete(DeleteBehavior.Cascade);
+            });
+
             // TopicWorkflowAudit
             modelBuilder.Entity<TopicWorkflowAudit>(b =>
             {
@@ -1328,7 +1402,9 @@ namespace ThesisManagement.Api.Data
                 "TOPIC_WORKFLOW_AUDITS",
                 "COHORTS",
                 "ROOMS",
-                "CLASSES"
+                "CLASSES",
+                "CHAT_SESSIONS",
+                "CHAT_MESSAGES"
             };
 
             var keepPascalCaseColumns = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)

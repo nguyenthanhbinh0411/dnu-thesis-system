@@ -42,6 +42,36 @@ namespace ThesisManagement.Api.Controllers
         public Task<IActionResult> GetLecturerDeadlineRisk([FromQuery] LecturerDashboardFilter filter)
             => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerDeadlineRiskAsync(filter.LecturerCode, filter.Limit));
 
+        [HttpGet("lecturer/defense-schedule")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerDefenseSchedule([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerDefenseScheduleAsync(filter.LecturerCode, filter.Limit));
+
+        [HttpGet("lecturer/committees")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerCommittees([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerCommitteesAsync(filter.LecturerCode, filter.Limit));
+
+        [HttpGet("lecturer/progress-status-breakdown")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerProgressStatusBreakdown([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerProgressStatusBreakdownAsync(filter.LecturerCode));
+
+        [HttpGet("lecturer/overdue-trend")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerOverdueTrend([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerOverdueTrendAsync(filter.LecturerCode, filter.Days ?? 30));
+
+        [HttpGet("lecturer/topic-type-breakdown")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerTopicTypeBreakdown([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerTopicTypeBreakdownAsync(filter.LecturerCode));
+
+        [HttpGet("lecturer/review-status-breakdown")]
+        [Authorize(Roles = "Lecturer,Head,Admin")]
+        public Task<IActionResult> GetLecturerReviewStatusBreakdown([FromQuery] LecturerDashboardFilter filter)
+            => ExecuteAsync(() => _dashboardQueryProcessor.GetLecturerReviewStatusBreakdownAsync(filter.LecturerCode));
+
         [HttpGet("student-service/overview")]
         [Authorize(Roles = "StudentService,Secretary,Head,Admin")]
         public Task<IActionResult> GetStudentServiceOverview()
