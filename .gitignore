@@ -256,3 +256,5 @@ $RECYCLE.BIN/
 *.vshistory/
 .history/
 MigrationBackup/
+
+.appsettings.json
