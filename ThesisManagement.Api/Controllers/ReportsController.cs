@@ -193,7 +193,9 @@ namespace ThesisManagement.Api.Controllers
                         dashboard.Supervisor,
                         dashboard.SupervisorTags,
                         dashboard.CanSubmit,
-                        dashboard.BlockReason));
+                        dashboard.BlockReason,
+                        dashboard.HasCurrentMilestoneSubmission,
+                        dashboard.CurrentMilestoneSubmissionStatus));
                 }
             }
 

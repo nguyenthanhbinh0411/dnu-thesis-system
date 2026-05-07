@@ -9,6 +9,8 @@ import {
   AlertCircle,
   MessageSquare,
   X,
+  Search,
+  Filter,
 } from "lucide-react";
 import { fetchData, normalizeUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
@@ -174,6 +176,7 @@ const LecturerReports: React.FC = () => {
   const [selectedReportForComment, setSelectedReportForComment] =
     useState<ProgressSubmission | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("pending");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [studentProfiles, setStudentProfiles] = useState<{
     [key: string]: StudentProfile;
   }>({});
@@ -294,18 +297,28 @@ const LecturerReports: React.FC = () => {
     }
   }, [activeLecturerCode, loadReports]);
 
-  const filteredReports =
-    filterStatus === "all"
-      ? reports
-      : reports.filter((report) => {
-          const normalized = normalizeLecturerState(report.lecturerState);
-          if (filterStatus === "pending") return normalized === "PENDING";
-          if (filterStatus === "reviewed") return normalized !== "PENDING";
-          if (filterStatus === "approved") return normalized === "APPROVED";
-          if (filterStatus === "rejected")
-            return normalized === "REVISION_REQUIRED";
-          return true;
-        });
+  const filteredReports = reports.filter((report) => {
+    const studentProfile = studentProfiles[report.studentUserCode];
+    const topic = topics[report.studentUserCode];
+    const normalized = normalizeLecturerState(report.lecturerState);
+
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "pending" && normalized === "PENDING") ||
+      (filterStatus === "reviewed" && normalized !== "PENDING") ||
+      (filterStatus === "approved" && normalized === "APPROVED") ||
+      (filterStatus === "rejected" && normalized === "REVISION_REQUIRED");
+
+    const matchesSearch =
+      !searchTerm ||
+      studentProfile?.fullName
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      report.studentUserCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      topic?.title?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    return matchesStatus && matchesSearch;
+  });
 
   const getStatusIcon = (lecturerState: string | null) => {
     switch (normalizeLecturerState(lecturerState)) {
@@ -435,7 +448,54 @@ const LecturerReports: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="dashboard-root" style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+      <style>{`
+        :root {
+          --primary: #F37021;
+          --primary-light: #fff7ed;
+          --secondary: #1e3a8a;
+          --text-main: #0f172a;
+          --text-muted: #64748b;
+          --bg-card: #ffffff;
+          --radius-lg: 24px;
+          --radius-md: 16px;
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+          --shadow-md: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05);
+          --shadow-lg: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+
+        .premium-card {
+          background: var(--bg-card);
+          border-radius: var(--radius-md);
+          padding: 24px;
+          border: 1px solid rgba(226, 232, 240, 0.8);
+          box-shadow: var(--shadow-md);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          position: relative;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          min-height: 160px;
+        }
+
+        .premium-card:hover {
+          transform: translateY(-4px);
+          box-shadow: var(--shadow-lg);
+          border-color: var(--primary);
+        }
+
+        .stat-icon-wrapper {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 16px;
+        }
+      `}</style>
+
       {/* Header */}
       <div style={{ marginBottom: "32px" }}>
         <h1
@@ -488,175 +548,167 @@ const LecturerReports: React.FC = () => {
 
       {!loading && !error && (
         <>
-          {/* Stats Cards */}
+          {/* Toolbar */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "20px",
-              marginBottom: "32px",
+              background: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              marginBottom: "24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+              border: "1px solid #E5E7EB",
             }}
           >
             <div
               style={{
-                background: "linear-gradient(135deg, #FFF5F0 0%, #FFE8DC 100%)",
-                border: "1px solid #F37021",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
+                display: "flex",
+                gap: "16px",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
               }}
             >
-              <FileText
-                size={24}
-                color="#F37021"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#F37021",
-                  marginBottom: "4px",
-                }}
-              >
-                {reports.length}
+              {/* Search Box */}
+              <div style={{ flex: "1 1 400px", position: "relative" }}>
+                <Search
+                  size={18}
+                  color="#9CA3AF"
+                  style={{
+                    position: "absolute",
+                    left: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm sinh viên, mã SV, đề tài..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px 10px 40px",
+                    border: "1px solid #D1D5DB",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    outline: "none",
+                    transition: "all 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "#F37021";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 0 3px rgba(243, 112, 33, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "#D1D5DB";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                />
               </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Tổng báo cáo
-              </div>
-            </div>
 
-            <div
-              style={{
-                background: "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
-                border: "1px solid #F59E0B",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <Clock
-                size={24}
-                color="#F59E0B"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#F59E0B",
-                  marginBottom: "4px",
-                }}
-              >
-                {
-                  reports.filter(
-                    (r) =>
-                      normalizeLecturerState(r.lecturerState) === "PENDING",
-                  ).length
-                }
-              </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Chờ nhận xét
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)",
-                border: "1px solid #22C55E",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <CheckCircle
-                size={24}
-                color="#22C55E"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#22C55E",
-                  marginBottom: "4px",
-                }}
-              >
-                {
-                  reports.filter(
-                    (r) =>
-                      normalizeLecturerState(r.lecturerState) === "APPROVED",
-                  ).length
-                }
-              </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>Đã duyệt</div>
-            </div>
-
-            <div
-              style={{
-                background: "linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)",
-                border: "1px solid #EF4444",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <AlertCircle
-                size={24}
-                color="#EF4444"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#EF4444",
-                  marginBottom: "4px",
-                }}
-              >
-                {
-                  reports.filter(
-                    (r) =>
-                      normalizeLecturerState(r.lecturerState) ===
-                      "REVISION_REQUIRED",
-                  ).length
-                }
-              </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Yêu cầu sửa đổi
+              {/* Filter Section */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Filter size={16} color="#6B7280" />
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => {
+                      setFilterStatus(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      padding: "8px 12px",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      outline: "none",
+                      background: "white",
+                      minWidth: "180px",
+                    }}
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="pending">Chờ duyệt</option>
+                    <option value="reviewed">Đang xem xét</option>
+                    <option value="approved">Đã duyệt</option>
+                    <option value="rejected">Yêu cầu sửa đổi</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Filter */}
-          <div style={{ marginBottom: "24px" }}>
-            <label
-              style={{
-                fontSize: "14px",
-                fontWeight: "600",
-                color: "#666",
-                marginRight: "12px",
-              }}
-            >
-              Lọc theo trạng thái:
-            </label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                border: "1px solid #D1D5DB",
-                borderRadius: "6px",
-                fontSize: "14px",
-                background: "white",
-              }}
-            >
-              <option value="all">Tất cả</option>
-              <option value="pending">Chờ duyệt</option>
-              <option value="reviewed">Đang xem xét</option>
-              <option value="approved">Đã duyệt</option>
-              <option value="rejected">Yêu cầu sửa đổi</option>
-            </select>
+          {/* Stats Cards */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: "24px",
+              marginBottom: "32px",
+            }}
+          >
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(243, 112, 33, 0.1)" }}>
+                  <FileText size={24} color="#F37021" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Tổng báo cáo
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {reports.length}
+                </div>
+              </div>
+              <div style={{ height: "4px", background: "#F37021", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+            </div>
+
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(245, 158, 11, 0.1)" }}>
+                  <Clock size={24} color="#F59E0B" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Chờ nhận xét
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {reports.filter((r) => normalizeLecturerState(r.lecturerState) === "PENDING").length}
+                </div>
+              </div>
+              <div style={{ height: "4px", background: "#F59E0B", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+            </div>
+
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(34, 197, 94, 0.1)" }}>
+                  <CheckCircle size={24} color="#22C55E" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Đã duyệt
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {reports.filter((r) => normalizeLecturerState(r.lecturerState) === "APPROVED").length}
+                </div>
+              </div>
+              <div style={{ height: "4px", background: "#22C55E", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+            </div>
+
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(239, 68, 68, 0.1)" }}>
+                  <AlertCircle size={24} color="#EF4444" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Yêu cầu sửa đổi
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {reports.filter((r) => normalizeLecturerState(r.lecturerState) === "REVISION_REQUIRED").length}
+                </div>
+              </div>
+              <div style={{ height: "4px", background: "#EF4444", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+            </div>
           </div>
 
           {/* Reports Table */}

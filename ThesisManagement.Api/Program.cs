@@ -217,6 +217,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ICodeGenerator, CodeGeneratorService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IChatProvisionService, ChatProvisionService>();
+builder.Services.AddHttpClient<IGroqService, GroqService>();
 builder.Services.AddScoped<IDefensePeriodCommandProcessor, DefensePeriodCommandProcessor>();
 builder.Services.AddScoped<IDefensePeriodQueryProcessor, DefensePeriodQueryProcessor>();
 builder.Services.AddScoped<IGetDefenseTermsListQuery, GetDefenseTermsListQuery>();

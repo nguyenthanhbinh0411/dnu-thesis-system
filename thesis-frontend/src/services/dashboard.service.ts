@@ -47,6 +47,25 @@ export interface DashboardResponseEnvelope<TRecord = DashboardRecord> {
   traceId?: string;
 }
 
+export interface DefenseScheduleRecord {
+  committeename: string;
+  defensedate: string;
+  roomcode: string;
+  topictitle: string;
+  studentfullname: string;
+  lecturerrole: string;
+}
+
+export interface CommitteeRecord {
+  committeeid: number;
+  committeecode: string;
+  committeename: string;
+  departmentcode: string;
+  defensedate: string;
+  roomcode: string;
+  state: string;
+}
+
 const ARRAY_CONTAINER_KEYS = [
   "items",
   "rows",
@@ -403,6 +422,70 @@ export async function getLecturerDeadlineRisk<TRecord = DashboardRecord>(
   return await fetchDashboardEndpoint<
     DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
   >("/Dashboards/lecturer/deadline-risk", params);
+}
+
+export async function getLecturerDefenseSchedule<TRecord = DashboardRecord>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/defense-schedule", params);
+}
+
+export async function getLecturerProgressStatusBreakdown<
+  TRecord = DashboardRecord,
+>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/progress-status-breakdown", params);
+}
+
+export async function getLecturerOverdueTrend<TRecord = DashboardRecord>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/overdue-trend", params);
+}
+
+export async function getLecturerTopicTypeBreakdown<TRecord = DashboardRecord>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/topic-type-breakdown", params);
+}
+
+export async function getLecturerReviewStatusBreakdown<
+  TRecord = DashboardRecord,
+>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/review-status-breakdown", params);
+}
+
+export async function getLecturerCommittees<TRecord = DashboardRecord>(
+  params: DashboardQueryParams = {},
+): Promise<
+  ApiResponse<DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord>
+> {
+  return await fetchDashboardEndpoint<
+    DashboardResponseEnvelope<TRecord> | TRecord[] | TRecord
+  >("/Dashboards/lecturer/committees", params);
 }
 
 export async function getLecturerWorkloadSnapshot<TRecord = DashboardRecord>(

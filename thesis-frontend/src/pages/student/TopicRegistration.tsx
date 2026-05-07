@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import /* useNavigate */ "react-router-dom";
-import { fetchData, FetchDataError } from "../../api/fetchData";
+import { fetchData, FetchDataError, getAvatarUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
 import type { ApiResponse } from "../../types/api";
 import type { LecturerProfile } from "../../types/lecturer-profile";
@@ -17,7 +17,19 @@ import {
   Users,
   CheckCircle,
   Edit,
+  RotateCcw,
+  Search,
+  LayoutGrid,
+  Info,
+  AlertCircle,
+  Calendar,
+  Check,
+  ChevronRight,
+  X,
+  List,
+  Grid2X2,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import TopicRenameRequestModal from "../../components/workflow/TopicRenameRequestModal";
 import {
   type DefensePeriodId,
@@ -30,9 +42,10 @@ import {
   getDefenseTermList,
   getTopicWorkflowDetail,
   resubmitTopicWorkflow,
-  rollbackTopicWorkflowMyTestData,
   submitTopicWorkflow,
 } from "../../services/topic-workflow.service";
+import ChatbotPopup from "../../components/ChatbotPopup";
+
 
 type TopicRenameRequestModalProps = {
   isOpen: boolean;
@@ -160,7 +173,19 @@ const TopicRegistration: React.FC = () => {
   const [existingTopic, setExistingTopic] = useState<Topic | null>(null);
   const [, setWorkflowDetail] = useState<WorkflowDetailResponse | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
+  const [catalogTagFilter, setCatalogTagFilter] = useState<string | null>(null);
+  const [catalogViewMode, setCatalogViewMode] = useState<"card" | "table">("card");
   const [isTopicRenameModalOpen, setIsTopicRenameModalOpen] = useState(false);
+  
+  const filteredCatalogTopics = useMemo(() => {
+    return catalogTopics.filter(t => 
+      (t.title.toLowerCase().includes(catalogSearchQuery.toLowerCase()) || 
+       t.catalogTopicCode.toLowerCase().includes(catalogSearchQuery.toLowerCase())) &&
+      (!catalogTagFilter || (t.tags && t.tags.some(tag => tag.tagCode === catalogTagFilter)))
+    );
+  }, [catalogTopics, catalogSearchQuery, catalogTagFilter]);
   const [editFormData, setEditFormData] = useState<TopicFormData>({
     topicCode: "",
     title: "",
@@ -203,6 +228,7 @@ const TopicRegistration: React.FC = () => {
 
       setCatalogTopics(catalogRes || []);
       setLecturers((lecturerRes as ApiResponse<LecturerProfile[]>)?.data || []);
+      setFilteredLecturers([]);
 
       // Departments list — prefer the logged-in student's department as the default
       const departmentsList =
@@ -246,14 +272,12 @@ const TopicRegistration: React.FC = () => {
 
       setTags((tagRes as ApiResponse<Tag[]>)?.data || []);
       setDefenseTerms(defenseTermRes || []);
-      setSelectedDefenseTermId((prev) =>
-        prev &&
-        defenseTermRes.some(
-          (term) => String(term.defenseTermId) === String(prev),
-        )
-          ? prev
-          : null,
-      );
+      if (defenseTermRes && defenseTermRes.length > 0) {
+        setSelectedDefenseTermId((prev) => {
+          const exists = prev && defenseTermRes.some(t => String(t.defenseTermId) === String(prev));
+          return exists ? prev : defenseTermRes[0].defenseTermId;
+        });
+      }
 
       // Fetch topic code template
       try {
@@ -562,6 +586,39 @@ const TopicRegistration: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const handleRollback = async () => {
+    if (!existingTopic?.topicCode) return;
+
+    if (
+      !window.confirm(
+        "Bạn có chắc chắn muốn rollback dữ liệu test của đề tài này? Hành động này sẽ xóa dữ liệu hiện tại và cho phép bạn đăng ký lại.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await fetchData(
+        `/workflows/topics/rollback-my-test-data?topicCode=${existingTopic.topicCode}`,
+        {
+          method: "POST",
+        },
+      );
+      alert("Rollback thành công! Trang sẽ được tải lại.");
+      window.location.reload();
+    } catch (error) {
+      console.error("Rollback error:", error);
+      alert(
+        "Rollback thất bại: " +
+          (error instanceof Error ? error.message : "Lỗi không xác định"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
 
   useEffect(() => {
     void loadInitialData();
@@ -1053,67 +1110,6 @@ const TopicRegistration: React.FC = () => {
         getWorkflowFriendlyError(error, "Có lỗi xảy ra khi cập nhật đề tài"),
       );
       console.error("Error updating topic:", error);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRollbackCurrentTopic = async () => {
-    if (!existingTopic?.topicCode) {
-      setError("Không có topicCode hiện tại để rollback.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Bạn có chắc muốn rollback dữ liệu test cho đề tài ${existingTopic.topicCode}?`,
-    );
-    if (!confirmed) return;
-
-    try {
-      setSubmitting(true);
-      const result = await rollbackTopicWorkflowMyTestData(
-        existingTopic.topicCode,
-      );
-      setSuccess(result.message || "Rollback theo topic thành công.");
-      setExistingTopic(null);
-      setWorkflowDetail(null);
-      setIsEditing(false);
-      await loadInitialData();
-    } catch (error) {
-      if (error instanceof FetchDataError && error.status === 404) {
-        setError("Topic không thuộc user hiện tại hoặc không tồn tại.");
-      } else {
-        setError(
-          error instanceof Error
-            ? error.message
-            : "Không thể rollback theo topic.",
-        );
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRollbackAllMyTestData = async () => {
-    const confirmed = window.confirm(
-      "Bạn có chắc muốn rollback toàn bộ dữ liệu test workflow của tài khoản hiện tại?",
-    );
-    if (!confirmed) return;
-
-    try {
-      setSubmitting(true);
-      const result = await rollbackTopicWorkflowMyTestData();
-      setSuccess(result.message || "Rollback toàn bộ dữ liệu test thành công.");
-      setExistingTopic(null);
-      setWorkflowDetail(null);
-      setIsEditing(false);
-      await loadInitialData();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Không thể rollback toàn bộ dữ liệu test.",
-      );
     } finally {
       setSubmitting(false);
     }
@@ -2227,48 +2223,42 @@ const TopicRegistration: React.FC = () => {
               Đơn xin đổi đề tài
             </button>
 
-            <div
+            <button
+              type="button"
+              onClick={handleRollback}
+              disabled={submitting}
               style={{
                 marginTop: "16px",
-                display: "flex",
-                gap: "10px",
-                justifyContent: "center",
-                flexWrap: "wrap",
+                marginLeft: "12px",
+                backgroundColor: "#fff",
+                color: "#dc3545",
+                border: "1px solid #dc3545",
+                padding: "10px 20px",
+                borderRadius: "6px",
+                fontSize: "14px",
+                fontWeight: "500",
+                cursor: submitting ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.2s",
+                opacity: submitting ? 0.7 : 1,
+              }}
+              onMouseOver={(e) => {
+                if (!submitting) {
+                  e.currentTarget.style.backgroundColor = "#fff5f5";
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!submitting) {
+                  e.currentTarget.style.backgroundColor = "#fff";
+                }
               }}
             >
-              <button
-                type="button"
-                onClick={() => void handleRollbackCurrentTopic()}
-                disabled={submitting || !existingTopic.topicCode}
-                style={{
-                  border: "1px solid #fecaca",
-                  background: "#fff",
-                  color: "#b91c1c",
-                  borderRadius: "8px",
-                  padding: "8px 12px",
-                  fontWeight: 600,
-                  cursor: submitting ? "not-allowed" : "pointer",
-                }}
-              >
-                Rollback đề tài hiện tại
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleRollbackAllMyTestData()}
-                disabled={submitting}
-                style={{
-                  border: "1px solid #fca5a5",
-                  background: "#fff5f5",
-                  color: "#991b1b",
-                  borderRadius: "8px",
-                  padding: "8px 12px",
-                  fontWeight: 600,
-                  cursor: submitting ? "not-allowed" : "pointer",
-                }}
-              >
-                Rollback toàn bộ dữ liệu test
-              </button>
-            </div>
+              <RotateCcw size={16} />
+              Rollback dữ liệu test
+            </button>
+
           </div>
         </div>
         <TopicRenameRequestModalView
@@ -2286,943 +2276,588 @@ const TopicRegistration: React.FC = () => {
     );
   }
 
+
   return (
-    <div
-      style={{
-        padding: "24px",
-        maxWidth: "900px",
-        margin: "0 auto",
-        backgroundColor: "#fff",
-        minHeight: "100vh",
-      }}
-    >
+    <div className="min-h-screen bg-[#F8FAFC] p-4 lg:p-10 font-sans text-slate-900">
       <style>
         {`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
+          @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
+          
+          .font-vietnam { font-family: 'Be Vietnam Pro', sans-serif; }
+          
+          @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes shine { from { left: -100%; } to { left: 200%; } }
+          .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #CBD5E1; }
         `}
       </style>
 
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: "32px",
-          textAlign: "center",
-        }}
-      >
-        <h1
-          style={{
-            color: "#f37021",
-            fontSize: "28px",
-            fontWeight: "bold",
-            margin: "0 0 8px 0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "12px",
-          }}
-        >
-          <BookOpen size={32} />
-          Đăng ký đề tài
-        </h1>
-        <p
-          style={{
-            color: "#666",
-            fontSize: "16px",
-            margin: 0,
-          }}
-        >
-          Chọn loại đăng ký và điền thông tin đề tài của bạn
-        </p>
+      <div className="max-w-[1550px] mx-auto animate-[fadeIn_0.5s_ease-out] font-vietnam">
+        <header className="mb-12 text-center">
+            <h1 className="text-5xl font-extrabold text-[#002855] tracking-tight mb-3 font-jakarta">Đăng ký Đề tài Tốt nghiệp</h1>
+            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.4em]">Thesis Registration Workspace</p>
+        </header>
+
+        <form onSubmit={isEditing ? handleEditSubmit : handleSubmit} className="bg-white rounded-[48px] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.08)] border border-slate-200 overflow-hidden flex flex-col xl:flex-row min-h-[800px] items-stretch">
+          
+          {/* SECTION 1: Parameters (32%) */}
+          <div className="xl:w-[32%] bg-slate-50/50 p-12 border-r border-slate-200 flex flex-col">
+            <div className="flex items-center gap-4 mb-12">
+                <div className="w-12 h-12 bg-[#002855] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-100">
+                    <LayoutGrid size={22} />
+                </div>
+                <div>
+                    <span className="font-black text-slate-900 uppercase tracking-widest text-[11px] block font-jakarta">Cấu hình Đề tài</span>
+                    <span className="text-slate-500 text-[10px] font-extrabold">Lựa chọn loại hình đăng ký</span>
+                </div>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="bg-slate-200/40 p-1.5 rounded-3xl mb-12 flex">
+                <button
+                    type="button"
+                    onClick={() => handleRegistrationTypeChange("catalog")}
+                    className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "catalog" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
+                >
+                    Danh mục
+                </button>
+                <button
+                    type="button"
+                    onClick={() => handleRegistrationTypeChange("self")}
+                    className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "self" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
+                >
+                    Tự đề xuất
+                </button>
+            </div>
+
+            <div className="space-y-10 flex-1">
+                <div>
+                    <div className="flex items-center justify-between mb-4">
+                        <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tiêu đề đề tài</label>
+                    </div>
+                    <div className="relative group">
+                        <input
+                            type="text"
+                            value={isEditing ? editFormData.title : formData.title}
+                            onChange={(e) => {
+                                if (registrationType === "self") {
+                                    isEditing ? setEditFormData({ ...editFormData, title: e.target.value }) : setFormData({ ...formData, title: e.target.value })
+                                }
+                            }}
+                            readOnly={registrationType === "catalog"}
+                            placeholder={registrationType === "catalog" ? "Nhấp vào đây hoặc kính lúp để chọn đề tài..." : "Nhập tên đề tài của bạn..."}
+                            className={`w-full px-6 py-5 border-2 rounded-[24px] text-[15px] transition-all duration-300 font-bold font-jakarta ${
+                                registrationType === "catalog" 
+                                    ? "bg-slate-50 border-slate-300 text-slate-600 cursor-pointer pr-16" 
+                                    : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
+                            }`}
+                            onClick={() => { if (registrationType === "catalog") setIsCatalogModalOpen(true); }}
+                        />
+                        {registrationType === "catalog" && (
+                            <button
+                                type="button"
+                                onClick={() => setIsCatalogModalOpen(true)}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-orange-50 text-[#F37021] rounded-xl hover:bg-[#F37021] hover:text-white transition-all shadow-sm z-10"
+                            >
+                                <Search size={18} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-4 tracking-widest ml-1">Tóm tắt nội dung</label>
+                    <textarea
+                        value={isEditing ? editFormData.summary : formData.summary}
+                        onChange={(e) => {
+                            if (registrationType === "self") {
+                                isEditing ? setEditFormData({ ...editFormData, summary: e.target.value }) : setFormData({ ...formData, summary: e.target.value })
+                            }
+                        }}
+                        readOnly={registrationType === "catalog"}
+                        rows={11}
+                        placeholder={registrationType === "catalog" ? "Nội dung tóm tắt sẽ hiển thị sau khi chọn đề tài." : "Mô tả mục tiêu, công nghệ và phạm vi..."}
+                        className={`w-full px-6 py-5 border-2 rounded-[24px] text-[15px] transition-all duration-300 resize-none font-bold leading-relaxed font-jakarta ${
+                            registrationType === "catalog" 
+                                ? "bg-slate-50 border-slate-300 text-slate-500 cursor-default" 
+                                : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
+                        }`}
+                    />
+                </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: Customization (43%) */}
+          <div className="xl:w-[43%] pt-12 px-12 pb-4 flex flex-col">
+            <div className="flex items-center gap-4 mb-12">
+                <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-[#F37021]">
+                    <GraduationCap size={24} />
+                </div>
+                <div>
+                    <span className="font-black text-slate-800 uppercase tracking-widest text-[11px] block font-jakarta">Lĩnh vực & Giảng viên</span>
+                    <span className="text-slate-400 text-[10px] font-bold">Phân loại và chọn người hướng dẫn</span>
+                </div>
+            </div>
+
+            <div className="space-y-12 flex-1">
+                <div>
+                    <div className="flex items-center justify-between mb-5">
+                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tags nhận diện</label>
+                        <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-3 py-1 rounded-full">Chọn ít nhất 1</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2.5 max-h-[160px] overflow-y-auto custom-scrollbar pr-2 py-1">
+                        {tags.map((tag) => (
+                            <button
+                                key={tag.tagID}
+                                type="button"
+                                onClick={() => {
+                                    const tagID = tag.tagID;
+                                    if (selectedTagIDs.includes(tagID)) {
+                                        setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
+                                    } else {
+                                        setSelectedTagIDs([...selectedTagIDs, tagID]);
+                                    }
+                                }}
+                                className={`px-5 py-3 rounded-2xl text-xs font-black transition-all duration-300 border-2 font-jakarta ${
+                                    selectedTagIDs.includes(tag.tagID)
+                                        ? "bg-[#F37021] border-[#F37021] text-white shadow-lg shadow-orange-100 scale-105"
+                                        : "bg-white border-slate-300 text-slate-500 hover:border-orange-200 hover:text-orange-500"
+                                }`}
+                            >
+                                {tag.tagName}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex-1 flex flex-col min-h-0">
+                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-5 tracking-widest ml-1">Giảng viên hướng dẫn</label>
+                    <div className="overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: "380px" }}>
+                        <table className="w-full border-separate border-spacing-y-3">
+                            <thead>
+                                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <th className="text-left px-6 pb-2">Giảng viên</th>
+                                    <th className="text-center pb-2">Hạn ngạch</th>
+                                    <th className="text-right px-6 pb-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredLecturers.length === 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="px-6 py-10 text-center text-slate-400 text-xs font-bold italic bg-slate-50/50 rounded-[24px] border-2 border-dashed border-slate-200">
+                                            Vui lòng chọn lĩnh vực hoặc đề tài để xem danh sách giảng viên phù hợp
+                                        </td>
+                                    </tr>
+                                )}
+                                {filteredLecturers.slice(0, 3).map((lecturer) => {
+                                    const isSelected = (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID) === lecturer.lecturerProfileID;
+                                    return (
+                                        <tr 
+                                            key={lecturer.lecturerProfileID}
+                                            onClick={() => isEditing 
+                                                ? setEditFormData({ ...editFormData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
+                                                : setFormData({ ...formData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
+                                            }
+                                            className={`group cursor-pointer transition-all duration-300 ${
+                                                isSelected ? "bg-orange-50/50" : "hover:bg-slate-50"
+                                            }`}
+                                        >
+                                            <td className={`px-6 py-4 rounded-l-[24px] border-y-2 border-l-2 transition-all ${
+                                                isSelected ? "border-[#F37021]" : "border-slate-300"
+                                            }`}>
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-sm transition-colors overflow-hidden shrink-0 ${
+                                                        isSelected ? "bg-[#F37021] text-white" : "bg-white text-slate-400 shadow-sm border border-slate-100"
+                                                    }`}>
+                                                        {lecturer.profileImage ? (
+                                                            <img 
+                                                                src={getAvatarUrl(lecturer.profileImage)} 
+                                                                alt={lecturer.fullName}
+                                                                className="w-full h-full object-cover"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                                    (e.target as HTMLImageElement).parentElement!.innerText = lecturer.fullName?.charAt(0) || "?";
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            lecturer.fullName?.charAt(0)
+                                                        )}
+                                                    </div>
+                                                    <div className="overflow-hidden">
+                                                        <p className="text-[14px] font-black text-slate-800 truncate font-jakarta">{lecturer.fullName}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{lecturer.degree}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className={`py-4 border-y-2 transition-all ${
+                                                isSelected ? "border-[#F37021]" : "border-slate-300"
+                                            }`}>
+                                                <div className="flex flex-col items-center gap-1.5 min-w-[100px]">
+                                                    <span className={`text-[11px] font-black ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "text-red-500" : "text-[#F37021]"}`}>
+                                                        {lecturer.currentGuidingCount} / {lecturer.guideQuota}
+                                                    </span>
+                                                    <div className="h-1.5 w-20 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div 
+                                                            className={`h-full transition-all duration-1000 ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "bg-red-500" : "bg-[#F37021]"}`}
+                                                            style={{ width: `${Math.min(100, (lecturer.currentGuidingCount / lecturer.guideQuota) * 100)}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className={`px-6 py-4 rounded-r-[24px] border-y-2 border-r-2 transition-all ${
+                                                isSelected ? "border-[#F37021]" : "border-slate-300"
+                                            }`}>
+                                                <div className="flex justify-end">
+                                                    {isSelected ? (
+                                                        <div className="w-6 h-6 rounded-full bg-[#F37021] text-white flex items-center justify-center shadow-lg shadow-orange-200">
+                                                            <Check size={14} strokeWidth={4} />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-6 h-6 rounded-full border-2 border-slate-100 group-hover:border-orange-200 transition-colors" />
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          {/* SECTION 3: Summary (25%) */}
+          <div className="xl:w-[25%] bg-[#F37021] p-12 text-white flex flex-col relative overflow-hidden">
+            <div className="relative z-10 flex flex-col h-full">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-xl border border-white/20">
+                        <FileText size={24} />
+                    </div>
+                    <div>
+                        <span className="font-black uppercase tracking-[0.2em] text-[11px] block font-jakarta">Tổng kết</span>
+                        <span className="text-white/60 text-[10px] font-bold">Xem lại trước khi gửi</span>
+                    </div>
+                </div>
+
+                <div className="space-y-10 flex-1">
+                    <div className="p-8 bg-white/10 rounded-[40px] border border-white/20 backdrop-blur-sm shadow-2xl">
+                        <label className="block text-[10px] font-black text-orange-100 uppercase mb-4 tracking-[0.2em] font-jakarta">Đợt bảo vệ dự kiến</label>
+                        <div className="relative">
+                            <div className="text-xl font-black text-white font-jakarta">
+                                {defenseTerms.find(term => String(term.defenseTermId) === String(selectedDefenseTermId))?.defenseTermName || "--"}
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-orange-100/60 mt-3 font-bold italic tracking-tight">Hệ thống lọc theo khóa học của bạn</p>
+                    </div>
+
+                    <div className="space-y-8 px-4">
+                        <div className="group">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Tên đề tài</span>
+                            <p className="text-[15px] font-bold leading-relaxed text-white line-clamp-4 font-jakarta">
+                                {(isEditing ? editFormData.title : formData.title) || "Chưa xác định"}
+                            </p>
+                        </div>
+                        <div className="group">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-3 font-jakarta">Hướng dẫn</span>
+                            {(() => {
+                                const selectedLecturer = lecturers.find(l => l.lecturerProfileID === (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID));
+                                if (!selectedLecturer) return <p className="text-[15px] font-bold text-white font-jakarta">Chưa chọn</p>;
+                                return (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-white/20 overflow-hidden border border-white/20 shadow-lg">
+                                            {selectedLecturer.profileImage ? (
+                                                <img 
+                                                    src={getAvatarUrl(selectedLecturer.profileImage)} 
+                                                    alt={selectedLecturer.fullName}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center font-black text-sm text-white/60 bg-white/10">
+                                                    {selectedLecturer.fullName?.charAt(0)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="overflow-hidden">
+                                            <p className="text-[15px] font-bold text-white truncate font-jakarta">{selectedLecturer.fullName}</p>
+                                            <p className="text-[10px] text-white/50 font-bold uppercase tracking-tight">{selectedLecturer.degree}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                        <div className="group">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Quản lý</span>
+                            <p className="text-[15px] font-bold text-white font-jakarta">{defaultDepartment?.name || "Khoa CNTT"}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-16 space-y-5">
+                    {error && (
+                        <div className="p-4 bg-red-600/20 border border-red-500/30 rounded-2xl flex items-center gap-3">
+                            <AlertCircle size={20} className="shrink-0 text-white" />
+                            <span className="text-[11px] font-bold text-white leading-tight">{error}</span>
+                        </div>
+                    )}
+                    
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className={`w-full py-4 rounded-[20px] font-black transition-all duration-300 flex items-center justify-between px-8 shadow-lg relative overflow-hidden group ${
+                            submitting
+                                ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                                : "bg-[#002855] text-white hover:bg-[#003D82] hover:shadow-blue-200/40"
+                        }`}
+                    >
+                        {submitting ? (
+                            <div className="flex items-center gap-3 w-full justify-center">
+                                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                <span className="text-[12px] uppercase tracking-widest opacity-70">Đang xử lý...</span>
+                            </div>
+                        ) : (
+                            <>
+                                <span className="text-[14px] uppercase tracking-wider relative z-10">
+                                    {isEditing ? "Cập nhật đề tài" : "Đăng ký ngay"}
+                                </span>
+                                
+                                <div className="relative z-10 w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center group-hover:bg-white group-hover:text-[#F37021] transition-all duration-300">
+                                    <ChevronRight size={18} strokeWidth={3} />
+                                </div>
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* Decorative Elements */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-white/10 rounded-full blur-[100px] -mr-40 -mt-40" />
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-black/5 rounded-full blur-[80px] -ml-32 -mb-32" />
+            <FileText size={400} className="absolute -right-24 -bottom-24 text-white/5 -rotate-12 pointer-events-none" />
+          </div>
+        </form>
+
+        {/* Footer Actions */}
+        <div className="mt-12 flex items-center justify-between px-8 text-slate-400 text-sm font-medium">
+             <p className="flex items-center gap-2">
+                 <Info size={16} className="text-orange-500" />
+                 Mọi thay đổi sẽ được lưu vết trong lịch sử hệ thống
+             </p>
+             <div className="flex items-center gap-6">
+                {isEditing && (
+                    <button 
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="flex items-center gap-2 hover:text-slate-600 transition-colors"
+                    >
+                        <RotateCcw size={16} />
+                        Hủy chỉnh sửa
+                    </button>
+                )}
+                {existingTopic && (
+                    <button
+                        type="button"
+                        onClick={handleRollback}
+                        className="flex items-center gap-2 text-red-400 hover:text-red-600 transition-colors bg-red-50 px-4 py-2 rounded-2xl"
+                    >
+                        <RotateCcw size={16} />
+                        Rollback dữ liệu test
+                    </button>
+                )}
+             </div>
+        </div>
       </div>
 
-      {/* Registration Type Selection */}
-      <div
-        style={{
-          marginBottom: "32px",
-          display: "flex",
-          gap: "16px",
-          justifyContent: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => handleRegistrationTypeChange("catalog")}
-          style={{
-            padding: "12px 24px",
-            border: `2px solid ${
-              registrationType === "catalog" ? "#f37021" : "#ddd"
-            }`,
-            borderRadius: "8px",
-            backgroundColor:
-              registrationType === "catalog" ? "#f37021" : "#fff",
-            color: registrationType === "catalog" ? "#fff" : "#333",
-            fontSize: "16px",
-            fontWeight: "500",
-            cursor: "pointer",
-            transition: "all 0.3s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <FileText size={18} />
-          Chọn đề tài có sẵn
-        </button>
-        <button
-          type="button"
-          onClick={() => handleRegistrationTypeChange("self")}
-          style={{
-            padding: "12px 24px",
-            border: `2px solid ${
-              registrationType === "self" ? "#f37021" : "#ddd"
-            }`,
-            borderRadius: "8px",
-            backgroundColor: registrationType === "self" ? "#f37021" : "#fff",
-            color: registrationType === "self" ? "#fff" : "#333",
-            fontSize: "16px",
-            fontWeight: "500",
-            cursor: "pointer",
-            transition: "all 0.3s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <PersonIcon size={18} />
-          Tự đề xuất đề tài
-        </button>
-      </div>
-
-      {/* Error/Success Messages */}
-      {error && (
-        <div
-          style={{
-            backgroundColor: "#ffebee",
-            border: "1px solid #f44336",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "24px",
-            color: "#d32f2f",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div
-          style={{
-            backgroundColor: "#e8f5e8",
-            border: "1px solid #4caf50",
-            borderRadius: "8px",
-            padding: "12px 16px",
-            marginBottom: "24px",
-            color: "#2e7d32",
-          }}
-        >
-          {success}
-        </div>
-      )}
-
-      {/* Form */}
-      <form
-        onSubmit={isEditing ? handleEditSubmit : handleSubmit}
-        style={{
-          backgroundColor: "#fafafa",
-          padding: "32px",
-          borderRadius: "12px",
-          border: "1px solid #eee",
-        }}
-      >
-        {/* Catalog Topic Selection (Only for catalog type) */}
-        {registrationType === "catalog" && (
-          <div style={{ marginBottom: "24px" }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontWeight: "600",
-                color: "#333",
-                fontSize: "16px",
-              }}
+      {/* Catalog Topic Selector Modal */}
+      <AnimatePresence>
+        {isCatalogModalOpen && (
+          <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 sm:p-8">
+            <motion.div
+              onClick={() => setIsCatalogModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/80 backdrop-blur-md"
+            />
+            <motion.div
+              className="relative w-full max-w-6xl bg-white rounded-[56px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-white/20 font-vietnam"
             >
-              <FileText
-                size={16}
-                style={{ marginRight: "8px", verticalAlign: "middle" }}
-              />
-              Chọn đề tài có sẵn
-            </label>
-            <select
-              value={
-                isEditing
-                  ? editFormData.catalogTopicID || ""
-                  : formData.catalogTopicID || ""
-              }
-              onChange={(e) => handleCatalogTopicChange(Number(e.target.value))}
-              required
-              style={{
-                width: "100%",
-                padding: "12px 16px",
-                border: "2px solid #ddd",
-                borderRadius: "8px",
-                fontSize: "16px",
-                backgroundColor: "#fff",
-                transition: "border-color 0.3s ease",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-              onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-            >
-              <option value="">-- Chọn đề tài --</option>
-              {catalogTopics.map((topic) => (
-                <option key={topic.catalogTopicID} value={topic.catalogTopicID}>
-                  {topic.title}
-                </option>
-              ))}
-            </select>
+              <div className="p-10 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white">
+                <div className="flex items-center gap-6">
+                    <div className="w-14 h-14 bg-[#F37021] rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-orange-200">
+                        <BookOpen size={28} />
+                    </div>
+                    <div>
+                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Kho đề tài Niên luận / Đồ án</h2>
+                        <p className="text-slate-400 text-[11px] font-bold uppercase tracking-[0.2em] mt-1">Lựa chọn đề tài định hướng từ khoa</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center shadow-inner">
+                        <button 
+                            onClick={() => setCatalogViewMode("card")}
+                            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "card" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                        >
+                            <Grid2X2 size={16} />
+                            Lưới
+                        </button>
+                        <button 
+                            onClick={() => setCatalogViewMode("table")}
+                            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "table" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                        >
+                            <List size={16} />
+                            Bảng
+                        </button>
+                    </div>
+                    <button onClick={() => setIsCatalogModalOpen(false)} className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-all border border-slate-200/50">
+                      <X size={24} />
+                    </button>
+                </div>
+              </div>
+              <div className="px-10 py-6 bg-white/80 border-b border-slate-100 flex flex-col md:flex-row gap-6 items-center">
+                <div className="relative flex-1 w-full group">
+                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <input 
+                        type="text" 
+                        placeholder="Tìm kiếm mã hoặc tên đề tài..." 
+                        value={catalogSearchQuery}
+                        onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                        className="w-full pl-14 pr-6 py-5 bg-slate-50/50 border-2 border-slate-100 rounded-3xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all font-bold"
+                    />
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <select 
+                        value={catalogTagFilter || ""} 
+                        onChange={(e) => setCatalogTagFilter(e.target.value || null)}
+                        className="w-full md:w-64 px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl text-xs font-black uppercase tracking-widest focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+                    >
+                        <option value="">Lọc theo lĩnh vực</option>
+                        {tags.map(tag => (
+                            <option key={tag.tagID} value={tag.tagCode}>{tag.tagName}</option>
+                        ))}
+                    </select>
+                </div>
+              </div>
+              <div className="p-10 overflow-y-auto custom-scrollbar flex-1 bg-[#FDFCFB]">
+                {catalogViewMode === "card" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {filteredCatalogTopics
+                      .map((topic) => (
+                        <div
+                          key={topic.catalogTopicID}
+                          onClick={() => {
+                            handleCatalogTopicChange(topic.catalogTopicID);
+                            setIsCatalogModalOpen(false);
+                          }}
+                          className={`p-8 rounded-[48px] border-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col min-h-[280px] bg-white ${
+                            (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID
+                              ? "border-orange-500 shadow-xl shadow-orange-100"
+                              : "border-slate-50 hover:border-orange-200"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-6">
+                            <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${
+                              (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                            }`}>
+                              {topic.catalogTopicCode}
+                            </span>
+                            {(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID && (
+                              <div className="text-orange-500 bg-orange-50 p-1.5 rounded-full animate-bounce">
+                                <Check size={18} />
+                              </div>
+                            )}
+                          </div>
+                          <h3 className="text-lg font-bold text-slate-800 mb-4 group-hover:text-orange-500 transition-colors line-clamp-2">{topic.title}</h3>
+                          <p className="text-[12px] text-slate-400 mb-8 flex-1 line-clamp-3">{topic.summary}</p>
+                          <div className="flex flex-wrap gap-2 mb-6">
+                            {topic.tags?.slice(0, 3).map(tag => (
+                                <span key={tag.tagID} className="text-[9px] font-bold bg-orange-50/50 text-orange-600 px-3 py-1 rounded-lg uppercase">
+                                    {tag.tagName}
+                                </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 border-t border-slate-50 pt-5 mt-auto">
+                            <Building size={14} />
+                            <span>{topic.departmentCode || "CNTT"}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-100 rounded-[48px] overflow-hidden shadow-sm">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/50 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                <th className="px-8 py-6">Mã Đề tài</th>
+                                <th className="px-8 py-6">Tên Đề tài</th>
+                                <th className="px-8 py-6">Lĩnh vực</th>
+                                <th className="px-8 py-6 text-center">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {filteredCatalogTopics
+                              .map((topic) => (
+                                <tr key={topic.catalogTopicID} onClick={() => { handleCatalogTopicChange(topic.catalogTopicID); setIsCatalogModalOpen(false); }} className={`group cursor-pointer hover:bg-orange-50/10 ${ (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-50/20" : "" }`}>
+                                    <td className="px-8 py-6"><span className="text-xs font-black text-orange-500">{topic.catalogTopicCode}</span></td>
+                                    <td className="px-8 py-6"><p className="text-[14px] font-bold text-slate-700">{topic.title}</p></td>
+                                    <td className="px-8 py-6">
+                                        <div className="flex gap-1.5 flex-wrap">
+                                            {topic.tags?.slice(0, 2).map(tag => ( <span key={tag.tagID} className="text-[10px] font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-lg">{tag.tagName}</span> ))}
+                                        </div>
+                                    </td>
+                                    <td className="px-8 py-6 text-center">
+                                        <button className={`px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${ (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white shadow-lg shadow-orange-100" : "bg-slate-50 text-slate-400 group-hover:bg-orange-500 group-hover:text-white" }`}>
+                                            { (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "Đã chọn" : "Lựa chọn" }
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              <div className="p-8 bg-white border-t border-slate-100 flex justify-between items-center px-12">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Hiển thị {catalogTopics.length} đề tài</p>
+                <button className="w-10 h-10 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-sm font-bold">1</button>
+              </div>
+            </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
-        {/* Topic Code */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <FileText
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Mã đề tài
-          </label>
-          <input
-            type="text"
-            value={
-              isEditing
-                ? editFormData.topicCode || ""
-                : formData.topicCode || ""
-            }
-            readOnly
-            placeholder="Mã đề tài sẽ được tạo tự động"
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor: "#f5f5f5",
-              color: "#666",
-              cursor: "not-allowed",
-            }}
-          />
-        </div>
+      <TopicRenameRequestModalView
+        isOpen={isTopicRenameModalOpen}
+        onClose={() => setIsTopicRenameModalOpen(false)}
+        currentTopic={existingTopic ? {
+          topicID: (existingTopic as any).topicID,
+          topicCode: (existingTopic as any).topicCode || null,
+          title: (existingTopic as any).title || null,
+          proposerUserCode: (existingTopic as any).proposerUserCode || null,
+          supervisorUserCode: (existingTopic as any).supervisorUserCode || null,
+        } : null}
+      />
 
-        {/* Title */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <BookOpen
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Tên đề tài *
-          </label>
-          <input
-            type="text"
-            value={isEditing ? editFormData.title : formData.title}
-            onChange={(e) =>
-              isEditing
-                ? setEditFormData({ ...editFormData, title: e.target.value })
-                : setFormData({ ...formData, title: e.target.value })
-            }
-            required
-            disabled={
-              registrationType === "catalog" && !formData.catalogTopicID
-            }
-            placeholder="Nhập tên đề tài"
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor:
-                registrationType === "catalog" && !formData.catalogTopicID
-                  ? "#f5f5f5"
-                  : "#fff",
-              transition: "border-color 0.3s ease",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-            onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-          />
-        </div>
-
-        {/* Summary */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <FileText
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Tóm tắt đề tài *
-          </label>
-          <textarea
-            value={isEditing ? editFormData.summary : formData.summary}
-            onChange={(e) =>
-              isEditing
-                ? setEditFormData({ ...editFormData, summary: e.target.value })
-                : setFormData({ ...formData, summary: e.target.value })
-            }
-            required
-            disabled={
-              registrationType === "catalog" && !formData.catalogTopicID
-            }
-            placeholder="Mô tả chi tiết về đề tài"
-            rows={4}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor:
-                registrationType === "catalog" && !formData.catalogTopicID
-                  ? "#f5f5f5"
-                  : "#fff",
-              transition: "border-color 0.3s ease",
-              resize: "vertical",
-              fontFamily: "inherit",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-            onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-          />
-        </div>
-
-        {/* Specialty */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <GraduationCap
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Tags *
-          </label>
-          {registrationType === "catalog" && selectedTagIDs.length > 0 ? (
-            <div
-              style={{
-                padding: "12px 16px",
-                border: "2px solid #f37021",
-                borderRadius: "8px",
-                backgroundColor: "#fff8f3",
-                fontSize: "16px",
-              }}
-            >
-              {tags
-                .filter((tag) => selectedTagIDs.includes(tag.tagID))
-                .map((tag) => (
-                  <div key={tag.tagID} style={{ marginBottom: 8 }}>
-                    <div
-                      style={{
-                        fontWeight: "600",
-                        color: "#f37021",
-                        marginBottom: "2px",
-                      }}
-                    >
-                      {tag.tagName}
-                    </div>
-                    <div style={{ color: "#666", fontSize: "14px" }}>
-                      {tag.description}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <div
-              style={{
-                border: "2px solid #ddd",
-                borderRadius: "8px",
-                padding: "16px",
-                backgroundColor:
-                  registrationType === "catalog" ? "#f5f5f5" : "#fff",
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: "12px",
-                  fontSize: "14px",
-                  color: "#666",
-                }}
-              >
-                Chọn một hoặc nhiều Tags:
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl flex items-center justify-center z-[4000] p-6">
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 50 }} className="bg-white rounded-[56px] p-12 max-w-xl w-full shadow-2xl text-center relative overflow-hidden border border-white/20 font-vietnam" >
+              <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-orange-500 to-orange-300" />
+              <div className="w-32 h-32 bg-orange-50 rounded-[40px] flex items-center justify-center mx-auto mb-10 text-orange-500 relative">
+                <div className="absolute inset-0 bg-orange-200/30 rounded-[40px] animate-ping" />
+                <CheckCircle size={64} className="relative z-10" />
               </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                  gap: "8px",
-                }}
-              >
-                {tags.map((tag) => (
-                  <label
-                    key={tag.tagID}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "8px 12px",
-                      border: "1px solid #ddd",
-                      borderRadius: "6px",
-                      backgroundColor: selectedTagIDs.includes(tag.tagID)
-                        ? "#fff3cd"
-                        : "#fff",
-                      cursor:
-                        registrationType === "catalog"
-                          ? "not-allowed"
-                          : "pointer",
-                      opacity: registrationType === "catalog" ? 0.6 : 1,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedTagIDs.includes(tag.tagID)}
-                      onChange={(e) => {
-                        if (registrationType === "catalog") return;
-
-                        const tagID = tag.tagID;
-                        if (e.target.checked) {
-                          setSelectedTagIDs((prev) => [...prev, tagID]);
-                        } else {
-                          setSelectedTagIDs((prev) =>
-                            prev.filter((id) => id !== tagID),
-                          );
-                        }
-                      }}
-                      disabled={registrationType === "catalog"}
-                      style={{ marginRight: "8px" }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: "500", fontSize: "14px" }}>
-                        {tag.tagName}
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>
-                        {tag.description}
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              {selectedTagIDs.length === 0 && registrationType === "self" && (
-                <div
-                  style={{
-                    marginTop: "8px",
-                    fontSize: "12px",
-                    color: "#f44336",
-                  }}
-                >
-                  Vui lòng chọn ít nhất một Tag
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Supervisor */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <Users
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Giảng viên hướng dẫn *
-          </label>
-          <select
-            value={
-              isEditing
-                ? editFormData.supervisorLecturerProfileID || ""
-                : formData.supervisorLecturerProfileID || ""
-            }
-            onChange={(e) =>
-              isEditing
-                ? setEditFormData({
-                    ...editFormData,
-                    supervisorLecturerProfileID: Number(e.target.value),
-                  })
-                : setFormData({
-                    ...formData,
-                    supervisorLecturerProfileID: Number(e.target.value),
-                  })
-            }
-            required
-            disabled={
-              registrationType === "self" && selectedTagIDs.length === 0
-            }
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor:
-                registrationType === "self" && selectedTagIDs.length === 0
-                  ? "#f5f5f5"
-                  : "#fff",
-              transition: "border-color 0.3s ease",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-            onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-          >
-            <option value="">
-              {registrationType === "catalog"
-                ? "-- Chọn đề tài để xem giảng viên --"
-                : selectedTagIDs.length > 0
-                  ? "-- Chọn giảng viên hướng dẫn --"
-                  : "-- Chọn thẻ trước để lọc giảng viên --"}
-            </option>
-            {(registrationType === "catalog" ||
-            (registrationType === "self" && filteredLecturers.length > 0)
-              ? filteredLecturers
-              : lecturers
-            ).map((lecturer) => (
-              <option
-                key={lecturer.lecturerProfileID}
-                value={lecturer.lecturerProfileID}
-              >
-                {lecturer.fullName || lecturer.lecturerCode} - {lecturer.degree}{" "}
-                ({lecturer.currentGuidingCount}/{lecturer.guideQuota})
-              </option>
-            ))}
-          </select>
-
-          {/* Quota Info for Main Form */}
-          {formData.supervisorLecturerProfileID && (
-            <div
-              style={{
-                marginTop: "12px",
-                padding: "12px",
-                backgroundColor: "#f0f7ff",
-                border: "1px solid #2196f3",
-                borderRadius: "6px",
-                fontSize: "13px",
-                color: "#1565c0",
-              }}
-            >
-              {(() => {
-                const displayLecturers =
-                  registrationType === "catalog" ||
-                  (registrationType === "self" && filteredLecturers.length > 0)
-                    ? filteredLecturers
-                    : lecturers;
-                const lecturer = displayLecturers.find(
-                  (l) =>
-                    l.lecturerProfileID ===
-                    formData.supervisorLecturerProfileID,
-                );
-                if (!lecturer) return null;
-                const available =
-                  lecturer.guideQuota - lecturer.currentGuidingCount;
-                return (
-                  <>
-                    <strong>{lecturer.fullName}</strong> - {lecturer.degree}
-                    <br />
-                    Sinh viên hướng dẫn: {lecturer.currentGuidingCount}/
-                    {lecturer.guideQuota}
-                    {available > 0 ? ` (Còn ${available} slot)` : " (Hạn chế)"}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-
-        {/* Department */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <Building
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Khoa *
-          </label>
-          <input
-            type="text"
-            value={defaultDepartment?.name || "Công nghệ thông tin"}
-            readOnly
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor: "#f5f5f5",
-              color: "#666",
-              cursor: "not-allowed",
-            }}
-          />
-        </div>
-
-        {/* Defense Term */}
-        <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "16px",
-            }}
-          >
-            <FileText
-              size={16}
-              style={{ marginRight: "8px", verticalAlign: "middle" }}
-            />
-            Đợt bảo vệ *
-          </label>
-          <select
-            value={selectedDefenseTermId ?? ""}
-            onChange={(e) => {
-              const picked = defenseTerms.find(
-                (term) => String(term.defenseTermId) === e.target.value,
-              );
-              setSelectedDefenseTermId(picked ? picked.defenseTermId : null);
-            }}
-            required
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              border: "2px solid #ddd",
-              borderRadius: "8px",
-              fontSize: "16px",
-              backgroundColor: "#fff",
-              transition: "border-color 0.3s ease",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#f37021")}
-            onBlur={(e) => (e.target.style.borderColor = "#ddd")}
-          >
-            <option value="">-- Chọn đợt bảo vệ --</option>
-            {defenseTerms.map((term) => (
-              <option key={term.defenseTermId} value={term.defenseTermId}>
-                {term.defenseTermCode} - {term.defenseTermName}
-              </option>
-            ))}
-          </select>
-          {defenseTerms.length === 0 && (
-            <div
-              style={{
-                marginTop: "8px",
-                fontSize: "12px",
-                color: "#f44336",
-              }}
-            >
-              Hiện chưa có đợt bảo vệ khả dụng, vui lòng thử lại sau.
-            </div>
-          )}
-        </div>
-
-        {/* Submit Button */}
-        <div style={{ textAlign: "center" }}>
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              padding: "16px 40px",
-              backgroundColor: submitting ? "#ccc" : "#f37021",
-              color: "#fff",
-              border: "none",
-              borderRadius: "8px",
-              fontSize: "18px",
-              fontWeight: "600",
-              cursor: submitting ? "not-allowed" : "pointer",
-              transition: "background-color 0.3s ease",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              margin: "0 auto",
-            }}
-          >
-            {submitting ? (
-              <>
-                <div
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    border: "2px solid #fff",
-                    borderTop: "2px solid transparent",
-                    borderRadius: "50%",
-                    animation: "spin 1s linear infinite",
-                  }}
-                ></div>
-                Đang xử lý...
-              </>
-            ) : (
-              <>
-                <BookOpen size={20} />
-                {isEditing ? "Cập nhật đề tài" : "Đăng ký đề tài"}
-              </>
-            )}
-          </button>
-
-          <div
-            style={{
-              marginTop: "14px",
-              display: "flex",
-              gap: "10px",
-              justifyContent: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => void handleRollbackCurrentTopic()}
-              disabled
-              style={{
-                border: "1px solid #fecaca",
-                background: "#fff",
-                color: "#b91c1c",
-                borderRadius: "8px",
-                padding: "8px 12px",
-                fontWeight: 600,
-                cursor: "not-allowed",
-              }}
-            >
-              Rollback theo topic hiện tại
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleRollbackAllMyTestData()}
-              disabled={submitting}
-              style={{
-                border: "1px solid #fca5a5",
-                background: "#fff5f5",
-                color: "#991b1b",
-                borderRadius: "8px",
-                padding: "8px 12px",
-                fontWeight: 600,
-                cursor: submitting ? "not-allowed" : "pointer",
-              }}
-            >
-              Rollback toàn bộ dữ liệu test
-            </button>
+              <h2 className="text-4xl font-black text-slate-900 mb-6 tracking-tight">Đã gửi yêu cầu!</h2>
+              <p className="text-slate-500 mb-12 leading-relaxed font-medium text-lg px-4">Tuyệt vời! Đề tài của bạn đã được chuyển đến bộ phận quản lý.</p>
+              <button onClick={handleContinueAfterSuccess} className="w-full py-6 bg-slate-900 text-white rounded-[32px] font-black uppercase tracking-[0.2em] text-xs hover:bg-orange-500 transition-all shadow-2xl active:scale-[0.98]" > Trở về trang quản lý </button>
+            </motion.div>
           </div>
-        </div>
-      </form>
+        )}
+      </AnimatePresence>
 
-      {/* Success Modal */}
-      {showSuccessModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-            animation: "modalFadeIn 0.3s ease-out",
-          }}
-        >
-          <style>
-            {`
-              @keyframes modalFadeIn {
-                from {
-                  opacity: 0;
-                  transform: scale(0.8);
-                }
-                to {
-                  opacity: 1;
-                  transform: scale(1);
-                }
-              }
-            `}
-          </style>
-          <div
-            style={{
-              width: 520,
-              background: "#fff",
-              borderRadius: 12,
-              padding: 24,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.2)",
-              textAlign: "center",
-              animation: "modalContentSlideIn 0.4s ease-out",
-            }}
-          >
-            <style>
-              {`
-                @keyframes modalContentSlideIn {
-                  from {
-                    opacity: 0;
-                    transform: translateY(-20px);
-                  }
-                  to {
-                    opacity: 1;
-                    transform: translateY(0);
-                  }
-                }
-                @keyframes iconBounce {
-                  0% {
-                    transform: scale(0.3);
-                    opacity: 0;
-                  }
-                  50% {
-                    transform: scale(1.05);
-                  }
-                  70% {
-                    transform: scale(0.9);
-                  }
-                  100% {
-                    transform: scale(1);
-                    opacity: 1;
-                  }
-                }
-                @keyframes iconGlow {
-                  from {
-                    filter: drop-shadow(0 0 0 rgba(76, 175, 80, 0));
-                  }
-                  to {
-                    filter: drop-shadow(0 0 10px rgba(76, 175, 80, 0.5));
-                  }
-                }
-                @keyframes textFadeIn {
-                  from {
-                    opacity: 0;
-                    transform: translateY(10px);
-                  }
-                  to {
-                    opacity: 1;
-                    transform: translateY(0);
-                  }
-                }
-                @keyframes titleGradient {
-                  0% {
-                    background-position: 0% 50%;
-                  }
-                  50% { 
-                    background-position: 100% 50%;
-                  }
-                  100% {
-                    background-position: 0% 50%;
-                  }
-                }
-              `}
-            </style>
-            <div
-              style={{
-                marginBottom: 16,
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                animation:
-                  "iconBounce 0.6s ease-out, iconGlow 2s ease-in-out infinite alternate",
-              }}
-            >
-              <CheckCircle size={64} color="#4caf50" />
-            </div>
-            <h2
-              style={{
-                margin: "0 0 12px 0",
-                background: "linear-gradient(45deg, #4caf50, #66bb6a)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                fontSize: "24px",
-                fontWeight: "bold",
-                textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                animation:
-                  "textFadeIn 0.5s ease-out 0.2s both, titleGradient 3s ease-in-out infinite",
-              }}
-            >
-              Đăng ký thành công!
-            </h2>
-            <p
-              style={{
-                color: "#475569",
-                marginTop: 0,
-                lineHeight: 1.5,
-                animation: "textFadeIn 0.5s ease-out 0.4s both",
-              }}
-            >
-              Đề tài của bạn đã được gửi thành công! Bạn sẽ nhận được thông báo
-              qua email khi đề tài được duyệt hoặc có cập nhật.
-            </p>
-            <div
-              style={{
-                marginTop: 24,
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <button
-                onClick={handleContinueAfterSuccess}
-                style={{
-                  padding: "12px 24px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#f37021",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  fontWeight: "600",
-                  transition: "background-color 0.3s ease",
-                }}
-                onMouseOver={(e) =>
-                  ((e.target as HTMLElement).style.backgroundColor = "#e55a1b")
-                }
-                onMouseOut={(e) =>
-                  ((e.target as HTMLElement).style.backgroundColor = "#f37021")
-                }
-              >
-                Tiếp tục
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChatbotPopup />
     </div>
   );
 };
+
 
 export default TopicRegistration;

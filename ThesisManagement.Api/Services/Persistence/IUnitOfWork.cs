@@ -60,6 +60,10 @@ namespace ThesisManagement.Api.Services
         IGenericRepository<NotificationPreference> NotificationPreferences { get; }
         IGenericRepository<NotificationOutbox> NotificationOutbox { get; }
         
+        // AI Chatbot
+        IGenericRepository<ChatSession> ChatSessions { get; }
+        IGenericRepository<ChatMessage> ChatMessages { get; }
+        
         Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
         Task<int> SaveChangesAsync();
     }

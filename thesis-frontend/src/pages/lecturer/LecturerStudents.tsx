@@ -305,7 +305,54 @@ const LecturerStudents: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="dashboard-root" style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+      <style>{`
+        :root {
+          --primary: #F37021;
+          --primary-light: #fff7ed;
+          --secondary: #1e3a8a;
+          --text-main: #0f172a;
+          --text-muted: #64748b;
+          --bg-card: #ffffff;
+          --radius-lg: 24px;
+          --radius-md: 16px;
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+          --shadow-md: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05);
+          --shadow-lg: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+
+        .premium-card {
+          background: var(--bg-card);
+          border-radius: var(--radius-md);
+          padding: 24px;
+          border: 1px solid rgba(226, 232, 240, 0.8);
+          box-shadow: var(--shadow-md);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          position: relative;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          min-height: 160px;
+        }
+
+        .premium-card:hover {
+          transform: translateY(-4px);
+          box-shadow: var(--shadow-lg);
+          border-color: var(--primary);
+        }
+
+        .stat-icon-wrapper {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 16px;
+        }
+      `}</style>
+
       {/* Header */}
       <div style={{ marginBottom: "32px" }}>
         <h1
@@ -529,155 +576,69 @@ const LecturerStudents: React.FC = () => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "20px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: "24px",
               marginBottom: "32px",
             }}
           >
-            <div
-              style={{
-                background: "linear-gradient(135deg, #FFF5F0 0%, #FFE8DC 100%)",
-                border: "1px solid #F37021",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <Users
-                size={24}
-                color="#F37021"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#F37021",
-                  marginBottom: "4px",
-                }}
-              >
-                {students.length}
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(243, 112, 33, 0.1)" }}>
+                  <Users size={24} color="#F37021" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Tổng sinh viên
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {students.length}
+                </div>
               </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Tổng sinh viên
-              </div>
+              <div style={{ height: "4px", background: "#F37021", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
 
-            <div
-              style={{
-                background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)",
-                border: "1px solid #22C55E",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <CheckCircle
-                size={24}
-                color="#22C55E"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#22C55E",
-                  marginBottom: "4px",
-                }}
-              >
-                {students.filter((s) => s.status === "approved").length}
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(34, 197, 94, 0.1)" }}>
+                  <CheckCircle size={24} color="#22C55E" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Đã duyệt đề tài
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {students.filter((s) => s.status === "approved").length}
+                </div>
               </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Đã duyệt đề tài
-              </div>
+              <div style={{ height: "4px", background: "#22C55E", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
 
-            <div
-              style={{
-                background: "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
-                border: "1px solid #F59E0B",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <Clock
-                size={24}
-                color="#F59E0B"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#F59E0B",
-                  marginBottom: "4px",
-                }}
-              >
-                {students.filter((s) => s.status === "pending").length}
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(245, 158, 11, 0.1)" }}>
+                  <Clock size={24} color="#F59E0B" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Chờ duyệt
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {students.filter((s) => s.status === "pending").length}
+                </div>
               </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>Chờ duyệt</div>
+              <div style={{ height: "4px", background: "#F59E0B", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
 
-            <div
-              style={{
-                background: "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)",
-                border: "1px solid #10B981",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <CheckCircle
-                size={24}
-                color="#10B981"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#10B981",
-                  marginBottom: "4px",
-                }}
-              >
-                {students.filter((s) => s.status === "defense-ready").length}
+            <div className="premium-card">
+              <div>
+                <div className="stat-icon-wrapper" style={{ background: "rgba(59, 130, 246, 0.1)" }}>
+                  <BookOpen size={24} color="#3B82F6" />
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+                  Đã phân hội đồng
+                </div>
+                <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
+                  {students.filter((s) => s.status === "committee-assigned").length}
+                </div>
               </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Đủ điều kiện bảo vệ
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)",
-                border: "1px solid #3B82F6",
-                borderRadius: "12px",
-                padding: "20px",
-                textAlign: "center",
-              }}
-            >
-              <BookOpen
-                size={24}
-                color="#3B82F6"
-                style={{ marginBottom: "8px" }}
-              />
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "700",
-                  color: "#3B82F6",
-                  marginBottom: "4px",
-                }}
-              >
-                {
-                  students.filter((s) => s.status === "committee-assigned")
-                    .length
-                }
-              </div>
-              <div style={{ fontSize: "12px", color: "#666" }}>
-                Đã phân hội đồng
-              </div>
+              <div style={{ height: "4px", background: "#3B82F6", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
           </div>
 
