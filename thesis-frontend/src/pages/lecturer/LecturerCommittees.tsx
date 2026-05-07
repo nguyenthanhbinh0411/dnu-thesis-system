@@ -65,7 +65,7 @@ type Committee = {
   date: string | null;
   slot: string | null;
   studentCount: number;
-  status: "Sắp diễn ra" | "Đang họp" | "Đã khóa";
+  status: "Sắp diễn ra" | "Đang họp" | "Đã chốt" | "Đã đóng";
   normalizedRole: CommitteeRoleCode;
   roleCode: CommitteeRoleCode;
   roleLabel: string;
@@ -556,14 +556,24 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
         chipBorder: "#f97316",
         chipText: "#c2410c",
       };
-    case "Đã khóa":
+    case "Đã chốt":
       return {
-        emoji: "⚫",
-        label: "Đã khóa",
+        emoji: "🔒",
+        label: "Đã chốt điểm",
         cardBorder: "#cbd5e1",
         cardGlow: "rgba(148, 163, 184, 0.18)",
         chipBg: "#f8fafc",
         chipBorder: "#cbd5e1",
+        chipText: "#475569",
+      };
+    case "Đã đóng":
+      return {
+        emoji: "🏁",
+        label: "Đã đóng phiên",
+        cardBorder: "#64748b",
+        cardGlow: "rgba(100, 116, 139, 0.1)",
+        chipBg: "#f1f5f9",
+        chipBorder: "#94a3b8",
         chipText: "#475569",
       };
     default:
@@ -589,8 +599,11 @@ const getCommitteeScheduleLabel = (committee: Committee): string => {
 
 const mapCommitteeStatus = (value: unknown): Committee["status"] => {
   const raw = String(value ?? "").trim().toUpperCase();
-  if (raw === "LOCKED" || raw === "COMPLETED" || raw === "FINALIZED") {
-    return "Đã khóa";
+  if (raw === "FINALIZED") {
+    return "Đã đóng";
+  }
+  if (raw === "LOCKED" || raw === "COMPLETED") {
+    return "Đã chốt";
   }
   if (raw === "LIVE" || raw === "ONGOING") {
     return "Đang họp";
@@ -1871,7 +1884,7 @@ const LecturerCommittees: React.FC = () => {
   const committeeStats = useMemo(() => {
     const live = committees.filter((item) => item.status === "Đang họp").length;
     const upcoming = committees.filter((item) => item.status === "Sắp diễn ra").length;
-    const locked = committees.filter((item) => item.status === "Đã khóa").length;
+    const locked = committees.filter((item) => item.status === "Đã chốt" || item.status === "Đã đóng").length;
     const pendingRevision = revisionQueue.filter((item) => item.status === "pending").length;
     return { live, upcoming, locked, pendingRevision };
   }, [committees, revisionQueue]);
@@ -2074,7 +2087,7 @@ const LecturerCommittees: React.FC = () => {
   );
 
   const isSessionOpened = selectedCommittee?.status === "Đang họp";
-  const isSessionClosed = selectedCommittee?.status === "Đã khóa";
+  const isSessionClosed = selectedCommittee?.status === "Đã đóng" || selectedCommittee?.status === "Đã chốt";
 
   const permissionSourceMissing =
     !hasScoringPermissionSource && !hasMinutePermissionSource && !hasRevisionPermissionSource;
@@ -2141,8 +2154,9 @@ const LecturerCommittees: React.FC = () => {
   };
 
   const openRoleWorkspace = (committee: Committee) => {
-    if (committee.status !== "Đang họp") {
-      notifyInfo("Phòng chấm chỉ mở khi hội đồng đang họp.");
+    const isChair = committee.normalizedRole === "CT";
+    if (!isChair && committee.status !== "Đang họp") {
+      notifyInfo("Phòng chấm chỉ mở khi Chủ tịch đã mở phiên.");
       return;
     }
     setJoinedCommitteeId(committee.id);
@@ -2168,8 +2182,8 @@ const LecturerCommittees: React.FC = () => {
       notifyInfo("Phiên của hội đồng này đang mở sẵn.");
       return;
     }
-    if (committee.status === "Đã khóa") {
-      notifyInfo("Phiên đã khóa, không thể mở lại từ danh sách này.");
+    if (committee.status === "Đã chốt" || committee.status === "Đã đóng") {
+      notifyInfo("Phiên đã chốt/đóng, không thể mở lại từ danh sách này.");
       return;
     }
 
@@ -2210,7 +2224,7 @@ const LecturerCommittees: React.FC = () => {
         return;
       }
 
-      syncCommitteeSessionStatus(committee.id, "Đã khóa");
+      syncCommitteeSessionStatus(committee.id, "Đã chốt");
       pushTrace("lock-session", `[Chair] Đóng phiên hội đồng ${committee.id}.`);
 
       if (selectedCommitteeId === committee.id) {
@@ -2798,7 +2812,7 @@ const LecturerCommittees: React.FC = () => {
                 <div className="lec-value">{committeeStats.upcoming}</div>
               </div>
               <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
-                <div className="lec-kicker">Đã khóa</div>
+                <div className="lec-kicker">Đã chốt</div>
                 <div className="lec-value">{committeeStats.locked}</div>
               </div>
               <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 12 }}>
@@ -2922,27 +2936,13 @@ const LecturerCommittees: React.FC = () => {
                       <aside className="lec-committee-side">
                         <div className="lec-side-title">Thao tác</div>
                         <div className="lec-committee-actions">
-                          {isChairCommittee && committee.status !== "Đã khóa" && (
-                            <button
-                              type="button"
-                              className="lec-primary"
-                              onClick={() => {
-                                void (committee.status === "Đang họp"
-                                  ? handleChairCloseSession(committee)
-                                  : handleChairOpenSession(committee));
-                              }}
-                            >
-                              {committee.status === "Đang họp" ? <Lock size={14} /> : <CalendarClock size={14} />}
-                              {committee.status === "Đang họp" ? "Đóng phiên" : "Mở phiên"}
-                            </button>
-                          )}
                           <button
                             type="button"
                             className="lec-ghost"
                             onClick={() => {
-                                setDetailCommitteeId(committee.id);
-                                setSelectedCommitteeId(committee.id);
-                                setDetailTab("topics");
+                              setDetailCommitteeId(committee.id);
+                              setSelectedCommitteeId(committee.id);
+                              setDetailTab("topics");
                             }}
                           >
                             <Eye size={14} /> Xem chi tiết
@@ -2951,10 +2951,10 @@ const LecturerCommittees: React.FC = () => {
                             type="button"
                             className="lec-primary"
                             onClick={() => openRoleWorkspace(committee)}
-                            disabled={!canJoin}
-                            title={!canJoin ? "Nút Tham gia chỉ mở khi Chủ tịch đã mở phiên (Đang họp)." : undefined}
+                            disabled={!canJoin && !isChairCommittee}
+                            title={!canJoin && !isChairCommittee ? "Nút Tham gia chỉ mở khi Chủ tịch đã mở phiên (Đang họp)." : undefined}
                           >
-                            <ArrowRight size={14} /> Tham gia phòng chấm
+                            <ArrowRight size={14} /> {isChairCommittee ? "Vào phòng điều hành" : "Tham gia hội đồng"}
                           </button>
                         </div>
                       </aside>

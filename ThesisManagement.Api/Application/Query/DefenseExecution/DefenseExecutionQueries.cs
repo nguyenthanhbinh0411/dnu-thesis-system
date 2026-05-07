@@ -51,7 +51,7 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
 
     public interface IGetScoringMatrixQuery
     {
-        Task<ApiResponse<List<ScoringMatrixRowDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
+        Task<ApiResponse<List<ScoringMatrixRowDto>>> ExecuteAsync(int periodId, int? committeeId = null, bool isForLecturer = false, CancellationToken cancellationToken = default);
     }
 
     public interface IGetScoringProgressQuery
@@ -160,8 +160,8 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
     {
         private readonly IDefensePeriodQueryProcessor _processor;
         public GetScoringMatrixQuery(IDefensePeriodQueryProcessor processor) => _processor = processor;
-        public Task<ApiResponse<List<ScoringMatrixRowDto>>> ExecuteAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
-            => _processor.GetScoringMatrixAsync(periodId, committeeId, cancellationToken);
+        public Task<ApiResponse<List<ScoringMatrixRowDto>>> ExecuteAsync(int periodId, int? committeeId = null, bool isForLecturer = false, CancellationToken cancellationToken = default)
+            => _processor.GetScoringMatrixAsync(periodId, committeeId, isForLecturer, cancellationToken);
     }
 
     public class GetScoringProgressQuery : IGetScoringProgressQuery

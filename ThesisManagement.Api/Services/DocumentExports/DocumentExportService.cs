@@ -1,7 +1,10 @@
 using System.Reflection;
 using Aspose.Words;
 using ThesisManagement.Api.DTOs.DocumentExports;
-using Xceed.Words.NET;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
+using OpenXmlParagraph = DocumentFormat.OpenXml.Wordprocessing.Paragraph;
 using AsposeWordDocument = Aspose.Words.Document;
 
 namespace ThesisManagement.Api.Services.DocumentExports;
@@ -25,17 +28,14 @@ public sealed class DocumentExportService : IDocumentExportService
     public async Task<ExportFileResult> ExportWordAsync(DocumentExportType type, ReportData reportData, CancellationToken cancellationToken = default)
     {
         var templatePath = GetTemplatePath(type);
-
-        using var templateStream = File.OpenRead(templatePath);
-        using var document = DocX.Load(templateStream);
-
+        var templateBytes = await ReadTemplateBytesWithRetryAsync(templatePath, cancellationToken);
         var tokens = BuildTokenMap(reportData);
-        ApplyTokenReplacements(document, tokens);
+        var resultBytes = ReplaceTokensInDocx(templateBytes, tokens);
 
-        var output = new MemoryStream();
-        document.SaveAs(output);
-
-        return await Task.FromResult(new ExportFileResult(output.ToArray(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", BuildFileName(type, "docx")));
+        return new ExportFileResult(
+            resultBytes,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            BuildFileName(type, "docx"));
     }
 
     public async Task<ExportFileResult> ExportPdfAsync(DocumentExportType type, ReportData reportData, CancellationToken cancellationToken = default)
@@ -44,17 +44,131 @@ public sealed class DocumentExportService : IDocumentExportService
 
         using var input = new MemoryStream(wordExport.Content);
         var wordDocument = new AsposeWordDocument(input);
-        var output = new MemoryStream();
+        using var output = new MemoryStream();
         wordDocument.Save(output, SaveFormat.Pdf);
 
         return new ExportFileResult(output.ToArray(), "application/pdf", BuildFileName(type, "pdf"));
     }
 
-    private static void ApplyTokenReplacements(DocX document, IReadOnlyDictionary<string, string?> tokenMap)
+    private static async Task<byte[]> ReadTemplateBytesWithRetryAsync(string templatePath, CancellationToken cancellationToken)
     {
-        foreach (var token in tokenMap)
+        const int maxAttempts = 5;
+        IOException? lastIOException = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            document.ReplaceText(token.Key, token.Value ?? string.Empty);
+            try
+            {
+                await using var stream = new FileStream(
+                    templatePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 64 * 1024,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory, cancellationToken);
+                return memory.ToArray();
+            }
+            catch (IOException ex) when (attempt < maxAttempts)
+            {
+                lastIOException = ex;
+                await Task.Delay(120 * attempt, cancellationToken);
+            }
+            catch (IOException ex)
+            {
+                lastIOException = ex;
+                break;
+            }
+        }
+
+        throw new IOException(
+            $"Không thể đọc file template: {Path.GetFileName(templatePath)}. Vui lòng đóng file Word đang mở và thử lại.",
+            lastIOException);
+    }
+
+    private static byte[] ReplaceTokensInDocx(byte[] templateBytes, IReadOnlyDictionary<string, string?> tokenMap)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(templateBytes, 0, templateBytes.Length);
+        stream.Position = 0;
+
+        using (var wordDoc = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = wordDoc.MainDocumentPart;
+            if (mainPart == null)
+            {
+                return templateBytes;
+            }
+
+            ReplaceTokensInPart(mainPart, tokenMap);
+
+            foreach (var headerPart in mainPart.HeaderParts)
+            {
+                ReplaceTokensInPart(headerPart, tokenMap);
+            }
+
+            foreach (var footerPart in mainPart.FooterParts)
+            {
+                ReplaceTokensInPart(footerPart, tokenMap);
+            }
+
+            if (mainPart.FootnotesPart != null)
+            {
+                ReplaceTokensInPart(mainPart.FootnotesPart, tokenMap);
+            }
+
+            if (mainPart.EndnotesPart != null)
+            {
+                ReplaceTokensInPart(mainPart.EndnotesPart, tokenMap);
+            }
+
+            mainPart.Document?.Save();
+        }
+
+        stream.Position = 0;
+        using var outMs = new MemoryStream();
+        stream.CopyTo(outMs);
+        return outMs.ToArray();
+    }
+
+    private static void ReplaceTokensInPart(OpenXmlPart? part, IReadOnlyDictionary<string, string?> tokenMap)
+    {
+        if (part?.RootElement == null)
+        {
+            return;
+        }
+
+        foreach (var paragraph in part.RootElement.Descendants<OpenXmlParagraph>())
+        {
+            var texts = paragraph.Descendants<Text>().ToList();
+            if (texts.Count == 0)
+            {
+                continue;
+            }
+
+            var original = string.Concat(texts.Select(x => x.Text));
+            var modified = original;
+
+            foreach (var kv in tokenMap)
+            {
+                // Replace all tokens, even if value is empty string or whitespace
+                // This ensures tokens are removed or replaced with empty content
+                if (modified.Contains(kv.Key, StringComparison.OrdinalIgnoreCase))
+                {
+                    modified = modified.Replace(kv.Key, kv.Value ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (!string.Equals(original, modified, StringComparison.Ordinal))
+            {
+                texts[0].Text = modified;
+                for (var i = 1; i < texts.Count; i++)
+                {
+                    texts[i].Text = string.Empty;
+                }
+            }
         }
     }
 
@@ -62,6 +176,8 @@ public sealed class DocumentExportService : IDocumentExportService
     {
         var tokens = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
+        // Include ALL string properties from ReportData, even if empty
+        // This ensures score fields and other important tokens are always present
         foreach (var property in typeof(ReportData).GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (property.PropertyType != typeof(string))
@@ -70,10 +186,8 @@ public sealed class DocumentExportService : IDocumentExportService
             }
 
             var value = property.GetValue(reportData) as string;
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                tokens[$"{{{{{property.Name}}}}}"] = value;
-            }
+            // Always include the token, even if value is empty (will replace with empty string)
+            tokens[$"{{{{{property.Name}}}}}"] = value ?? string.Empty;
         }
 
         SetIfMissing(tokens, "StudentCode", reportData.Student?.StudentCode);

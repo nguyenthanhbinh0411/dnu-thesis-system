@@ -5,18 +5,23 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
+using Aspose.Words;
+using Paragraph = DocumentFormat.OpenXml.Wordprocessing.Paragraph;
 using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
 using ThesisManagement.Api.Models;
+using ThesisManagement.Api.Services.DocumentExports;
+using ExportCommitteeMember = ThesisManagement.Api.DTOs.DocumentExports.CommitteeMember;
+using ExportReportData = ThesisManagement.Api.DTOs.DocumentExports.ReportData;
+using ExportStudent = ThesisManagement.Api.DTOs.DocumentExports.Student;
+using ExportType = ThesisManagement.Api.DTOs.DocumentExports.DocumentExportType;
 
 namespace ThesisManagement.Api.Services.DefenseDocuments
 {
     public sealed class DefenseTemplateExportService : IDefenseTemplateExportService
     {
         private const string FixedMajorName = "Công nghệ thông tin";
+        private const string FixedMajorCode = "CNTT";
         private const string MeetingTemplateFileName = "BIÊN BẢN HỌP.docx";
         private const string ReviewerTemplateFileName = "NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN.docx";
         private const string DocxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -25,11 +30,16 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
 
         private readonly IUnitOfWork _uow;
         private readonly IWebHostEnvironment _environment;
+        private readonly IDocumentExportService _documentExportService;
 
-        public DefenseTemplateExportService(IUnitOfWork uow, IWebHostEnvironment environment)
+        public DefenseTemplateExportService(
+            IUnitOfWork uow,
+            IWebHostEnvironment environment,
+            IDocumentExportService documentExportService)
         {
             _uow = uow;
             _environment = environment;
+            _documentExportService = documentExportService;
         }
 
         public async Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExportMeetingMinutesAsync(
@@ -47,39 +57,12 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             }
 
             var data = context.Data!;
-            var parsedMinute = ParseMinutePayload(data.Minute?.ReviewerComments);
-            var memberRows = BuildMemberRows(data.Members, data.MemberProfiles);
-            var defenseDate = data.Committee?.DefenseDate ?? data.Assignment?.ScheduledAt;
-            var meetingContent = BuildMeetingContent(data, parsedMinute);
-
-            var replacements = new Dictionary<string, string?>
-            {
-                ["{{Action}}"] = string.Empty,
-                ["{{Date}}"] = FormatDate(defenseDate),
-                ["{{Decision}}"] = FirstNonEmpty(
-                    data.Result?.FinalScoreText,
-                    parsedMinute.ChairConclusion,
-                    data.Minute?.Recommendations),
-                ["{{ClassName}}"] = data.StudentClass?.ClassName ?? data.StudentClass?.ClassCode,
-                ["{{Major}}"] = FixedMajorName,
-                ["{{Cohort}}"] = FirstNonEmpty(data.StudentCohort?.CohortName, data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
-                ["{{CohortCode}}"] = FirstNonEmpty(data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
-                ["{{Department}}"] = FirstNonEmpty(
-                    data.TopicDepartment?.Name,
-                    data.StudentDepartment?.Name,
-                    data.Topic?.DepartmentCode),
-                ["{{Location}}"] = FirstNonEmpty(data.Committee?.Room, "Trường Đại học Đại Nam"),
-                ["{{MeetingContent}}"] = meetingContent,
-                ["{{MeetingName}}"] = FirstNonEmpty(data.Committee?.Name, data.Assignment?.CommitteeCode),
-                ["{{ParticipantCount}}"] = memberRows.Count.ToString(),
-                ["{{Participants}}"] = string.Join(Environment.NewLine, memberRows),
-                ["{{Secretary}}"] = ResolveSecretaryDisplay(data.Members, data.MemberProfiles),
-                ["{{Time}}"] = FormatTime(data.Assignment?.StartTime, data.Assignment?.EndTime, data.Assignment?.ScheduledAt)
-            };
-
-            var content = await BuildDocumentFromTemplateAsync(MeetingTemplateFileName, replacements, cancellationToken);
-            var fileName = $"bien-ban-hop-{SanitizeFileToken(FirstNonEmpty(data.Assignment?.CommitteeCode, data.Committee?.CommitteeCode, assignmentId.ToString()))}.docx";
-            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((content, fileName, DocxMime));
+            var reportData = BuildReportData(data, ParseMinutePayload(data.Minute?.ReviewerComments));
+            var export = await _documentExportService.ExportWordAsync(ExportType.BienBan, reportData, cancellationToken);
+            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                export.Content,
+                export.FileName,
+                export.ContentType));
         }
 
         public async Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExportReviewerCommentsAsync(
@@ -97,34 +80,12 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             }
 
             var data = context.Data!;
-            var parsedMinute = ParseMinutePayload(data.Minute?.ReviewerComments);
-            var reviewer = ResolveReviewer(data.Members, data.MemberProfiles);
-
-            var replacements = new Dictionary<string, string?>
-            {
-                ["{{AcademicDegree}}"] = reviewer?.Degree,
-                ["{{Comments}}"] = parsedMinute.PlainReviewerComments,
-                ["{{Conclusion}}"] = FirstNonEmpty(parsedMinute.ReviewerSections?.OverallConclusion, parsedMinute.PlainReviewerComments),
-                ["{{EvaluationCriteria1}}"] = parsedMinute.ReviewerSections?.Necessity,
-                ["{{EvaluationCriteria2}}"] = parsedMinute.ReviewerSections?.Novelty,
-                ["{{EvaluationCriteria3}}"] = parsedMinute.ReviewerSections?.MethodologyReliability,
-                ["{{EvaluationCriteria4}}"] = parsedMinute.ReviewerSections?.ResultsContent,
-                ["{{EvaluationCriteria5}}"] = parsedMinute.ReviewerSections?.Limitations,
-                ["{{CohortCode}}"] = FirstNonEmpty(data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
-                ["{{Cohort}}"] = FirstNonEmpty(data.StudentCohort?.CohortName, data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
-                ["{{ClassName}}"] = data.StudentClass?.ClassName ?? data.StudentClass?.ClassCode,
-                ["{{Major}}"] = FixedMajorName,
-                ["{{FullName}}"] = FirstNonEmpty(data.Student?.FullName, data.Student?.StudentCode),
-                ["{{ReviewerName}}"] = FirstNonEmpty(reviewer?.FullName, reviewer?.LecturerCode),
-                ["{{ReviewerUnit}}"] = ResolveDepartmentName(reviewer, data.TopicDepartment, data.StudentDepartment),
-                ["{{ThesisSubject}}"] = data.Topic?.Title,
-                ["{{Organization}}"] = FirstNonEmpty(reviewer?.Organization, ResolveDepartmentName(reviewer, data.TopicDepartment, data.StudentDepartment)),
-                ["{{Workplace}}"] = FirstNonEmpty(reviewer?.Organization, ResolveDepartmentName(reviewer, data.TopicDepartment, data.StudentDepartment))
-            };
-
-            var content = await BuildDocumentFromTemplateAsync(ReviewerTemplateFileName, replacements, cancellationToken);
-            var fileName = $"nhan-xet-phan-bien-{SanitizeFileToken(FirstNonEmpty(reviewer?.LecturerCode, data.Assignment?.CommitteeCode, data.Committee?.CommitteeCode, assignmentId.ToString()))}.docx";
-            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((content, fileName, DocxMime));
+            var reportData = BuildReportData(data, ParseMinutePayload(data.Minute?.ReviewerComments));
+            var export = await _documentExportService.ExportWordAsync(ExportType.NhanXet, reportData, cancellationToken);
+            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                export.Content,
+                export.FileName,
+                export.ContentType));
         }
 
         public async Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExportMeetingMinutesPdfAsync(
@@ -142,51 +103,12 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             }
 
             var data = context.Data!;
-            var parsedMinute = ParseMinutePayload(data.Minute?.ReviewerComments);
-            var memberRows = BuildMemberRows(data.Members, data.MemberProfiles);
-            var meetingContent = BuildMeetingContent(data, parsedMinute);
-
-            QuestPDF.Settings.License = LicenseType.Community;
-            var content = QuestPDF.Fluent.Document.Create(container =>
-            {
-                container.Page(page =>
-                {
-                    page.Margin(26);
-                    page.Size(PageSizes.A4);
-                    page.DefaultTextStyle(x => x.FontSize(10));
-
-                    page.Header().Column(column =>
-                    {
-                        column.Item().Text("BIEN BAN HOP HOI DONG CHAM LUAN DO AN").Bold().FontSize(14);
-                        column.Item().Text($"Hoi dong: {FirstNonEmpty(data.Committee?.Name, data.Assignment?.CommitteeCode)}");
-                        column.Item().Text($"Sinh vien: {FirstNonEmpty(data.Student?.FullName, data.Student?.StudentCode)} - MSV: {FirstNonEmpty(data.Student?.StudentCode)}");
-                        column.Item().Text($"Khoa: {FirstNonEmpty(data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode)}");
-                        column.Item().Text($"De tai: {FirstNonEmpty(data.Topic?.Title, data.Assignment?.TopicCode)}");
-                    });
-
-                    page.Content().PaddingTop(10).Column(column =>
-                    {
-                        column.Spacing(6);
-                        column.Item().Text($"Ngay hop: {FormatDate(data.Committee?.DefenseDate ?? data.Assignment?.ScheduledAt)}");
-                        column.Item().Text($"Dia diem: {FirstNonEmpty(data.Committee?.Room, "Truong Dai hoc Dai Nam")}");
-                        column.Item().Text($"So thanh vien co mat: {memberRows.Count}");
-                        column.Item().Text("Thanh vien hoi dong:");
-                        foreach (var member in memberRows)
-                        {
-                            column.Item().Text($"- {member}");
-                        }
-
-                        column.Item().PaddingTop(8).Text("NOI DUNG HOP").Bold();
-                        foreach (var line in meetingContent.Split('\n'))
-                        {
-                            column.Item().Text(line);
-                        }
-                    });
-                });
-            }).GeneratePdf();
-
-            var fileName = $"bien-ban-hop-{SanitizeFileToken(FirstNonEmpty(data.Assignment?.CommitteeCode, data.Committee?.CommitteeCode, assignmentId.ToString()))}.pdf";
-            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((content, fileName, PdfMime));
+            var reportData = BuildReportData(data, ParseMinutePayload(data.Minute?.ReviewerComments));
+            var export = await _documentExportService.ExportPdfAsync(ExportType.BienBan, reportData, cancellationToken);
+            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                export.Content,
+                export.FileName,
+                export.ContentType));
         }
 
         public async Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExportReviewerCommentsPdfAsync(
@@ -204,49 +126,131 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             }
 
             var data = context.Data!;
-            var parsedMinute = ParseMinutePayload(data.Minute?.ReviewerComments);
+            var reportData = BuildReportData(data, ParseMinutePayload(data.Minute?.ReviewerComments));
+            var export = await _documentExportService.ExportPdfAsync(ExportType.NhanXet, reportData, cancellationToken);
+            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                export.Content,
+                export.FileName,
+                export.ContentType));
+        }
+
+        private static ExportReportData BuildReportData(ExportContextData data, ParsedMinutePayload parsedMinute)
+        {
+            var defenseDate = data.Committee?.DefenseDate ?? data.Assignment?.ScheduledAt;
             var reviewer = ResolveReviewer(data.Members, data.MemberProfiles);
+            var chair = ResolveMemberByRole(data.Members, data.MemberProfiles, "CT");
+            var secretary = ResolveMemberByRole(data.Members, data.MemberProfiles, "UVTK");
+            var reviewerMember = ResolveMemberByRole(data.Members, data.MemberProfiles, "UVPB");
+            var committeeComments = FirstNonEmpty(parsedMinute.CommitteeMemberComments);
 
-            QuestPDF.Settings.License = LicenseType.Community;
-            var content = QuestPDF.Fluent.Document.Create(container =>
+            var reviewerQuestions = parsedMinute.QuestionAnswers
+                .Where(x => GetQuestionSource(x.Question) == "II.1")
+                .Select((x, idx) => $"{idx + 1}. {StripQuestionSource(x.Question)}")
+                .ToList();
+
+            var studentAnswers = parsedMinute.QuestionAnswers
+                .Where(x => !string.IsNullOrWhiteSpace(x.Answer))
+                .Select((x, idx) => $"{idx + 1}. {x.Answer!.Trim()}")
+                .ToList();
+
+            var reportData = new ExportReportData
             {
-                container.Page(page =>
+                CommitteeCode = FirstNonEmpty(data.Assignment?.CommitteeCode, data.Committee?.CommitteeCode, data.Committee?.Name),
+                DefenseDate = FormatDate(defenseDate),
+                DefenseDay = defenseDate?.Day.ToString("00"),
+                DefenseMonth = defenseDate?.Month.ToString("00"),
+                DefenseYear = defenseDate?.Year.ToString(),
+                MajorCode = FixedMajorCode,
+                MajorName = FixedMajorName,
+                TopicTitle = data.Topic?.Title,
+                FinalScoreNumber = FormatScore(data.Result?.FinalScoreNumeric),
+                FinalScoreText = data.Result?.FinalScoreText,
+                MeetingEndTime = FormatTime(null, data.Assignment?.EndTime, data.Assignment?.ScheduledAt),
+                PresentMemberCount = data.Members.Count.ToString(),
+                AbsentMemberCount = "0",
+                ReviewerQuestions = reviewerQuestions.Count > 0 ? string.Join(Environment.NewLine, reviewerQuestions) : committeeComments,
+                StudentAnswers = studentAnswers.Count > 0 ? string.Join(Environment.NewLine, studentAnswers) : string.Empty,
+                Strengths = data.Minute?.Strengths,
+                Weaknesses = data.Minute?.Weaknesses,
+                Recommendations = data.Minute?.Recommendations,
+                ScoreCTNote = string.Empty,
+                ScoreCTNumber = FormatScore(data.Result?.ScoreCt),
+                ScoreCTText = data.Result?.FinalScoreText,
+                ScorePBNote = string.Empty,
+                ScorePBNumber = FormatScore(data.Result?.ScoreUvpb),
+                ScorePBText = data.Result?.FinalScoreText,
+                ScoreTKNote = string.Empty,
+                ScoreTKNumber = FormatScore(data.Result?.ScoreUvtk),
+                ScoreTKText = data.Result?.FinalScoreText,
+                ReviewerLimitations = parsedMinute.ReviewerSections?.Limitations,
+                ReviewerMethodologyReliability = parsedMinute.ReviewerSections?.MethodologyReliability,
+                ReviewerNovelty = parsedMinute.ReviewerSections?.Novelty,
+                ReviewerOverallConclusion = parsedMinute.ReviewerSections?.OverallConclusion,
+                ReviewerResultsContent = parsedMinute.ReviewerSections?.ResultsContent,
+                ReviewerWorkplace = FirstNonEmpty(reviewer?.Organization, ResolveDepartmentName(reviewer, data.TopicDepartment, data.StudentDepartment)),
+                SecretarySignature = ResolveSecretaryDisplay(data.Members, data.MemberProfiles),
+                StudentCode = data.Student?.StudentCode,
+                StudentFullName = data.Student?.FullName,
+                ClassName = FirstNonEmpty(data.StudentClass?.ClassName, data.StudentClass?.ClassCode),
+                CourseName = FirstNonEmpty(data.StudentCohort?.CohortName, data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
+                ChairMemberDisplay = chair?.GetDisplayName(),
+                ReviewerMemberDisplay = reviewerMember?.GetDisplayName(),
+                SecretaryMemberDisplay = secretary?.GetDisplayName(),
+                SupervisorDisplay = BuildLecturerDisplayName(data.SupervisorProfile, data.Topic?.SupervisorLecturerCode, data.Topic?.SupervisorUserCode),
+                ReviewerDisplay = reviewerMember?.GetDisplayName(),
+                Chapter1Content = parsedMinute.ChapterContents.ElementAtOrDefault(0)?.Content,
+                Chapter2Content = parsedMinute.ChapterContents.ElementAtOrDefault(1)?.Content,
+                Chapter3Content = parsedMinute.ChapterContents.ElementAtOrDefault(2)?.Content,
+                ChapterNContent = parsedMinute.ChapterContents.Count > 3
+                    ? string.Join(Environment.NewLine, parsedMinute.ChapterContents.Skip(3).Select(x => x.Content))
+                    : null
+            };
+
+            reportData.Student = new ExportStudent
+            {
+                StudentCode = data.Student?.StudentCode,
+                FullName = data.Student?.FullName,
+                ClassName = FirstNonEmpty(data.StudentClass?.ClassName, data.StudentClass?.ClassCode),
+                CourseName = FirstNonEmpty(data.StudentCohort?.CohortName, data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode),
+                TopicTitle = data.Topic?.Title,
+                MajorName = reportData.MajorName
+            };
+
+            reportData.ChairMember = chair;
+            reportData.ReviewerMember = reviewerMember;
+            reportData.SecretaryMember = secretary;
+            reportData.Supervisor = ResolveSupervisorMember(data.SupervisorProfile, data.Topic?.SupervisorLecturerCode, data.Topic?.SupervisorUserCode);
+
+            foreach (var chapter in parsedMinute.ChapterContents)
+            {
+                if (!string.IsNullOrWhiteSpace(chapter.Content))
                 {
-                    page.Margin(26);
-                    page.Size(PageSizes.A4);
-                    page.DefaultTextStyle(x => x.FontSize(10));
- 
-                    page.Header().Column(column =>
-                    {
-                        column.Item().Text("NHAN XET CUA NGUOI PHAN BIEN DO AN").Bold().FontSize(14);
-                        column.Item().Text($"Nganh {FixedMajorName}");
-                    });
- 
-                    page.Content().PaddingTop(10).Column(column =>
-                    {
-                        column.Spacing(6);
-                        column.Item().Text($"Sinh vien: {FirstNonEmpty(data.Student?.FullName, data.Student?.StudentCode)} - MSV: {FirstNonEmpty(data.Student?.StudentCode)}");
-                        column.Item().Text($"Lop: {data.StudentClass?.ClassName ?? data.StudentClass?.ClassCode}");
-                        column.Item().Text($"Khoa: {FirstNonEmpty(data.StudentCohort?.CohortCode, data.StudentClass?.CohortCode)}");
-                        column.Item().Text($"Ten de tai: {FirstNonEmpty(data.Topic?.Title, data.Assignment?.TopicCode)}");
-                        column.Item().Text($"Nguoi phan bien: {FirstNonEmpty(reviewer?.FullName, reviewer?.LecturerCode)}");
-                        column.Item().Text($"Hoc vi: {FirstNonEmpty(reviewer?.Degree)}");
-                        column.Item().Text($"Don vi cong tac: {FirstNonEmpty(reviewer?.Organization, ResolveDepartmentName(reviewer, data.TopicDepartment, data.StudentDepartment))}");
+                    reportData.ChapterContents.Add(chapter.Content.Trim());
+                }
+            }
 
-                        column.Item().PaddingTop(8).Text("NOI DUNG NHAN XET").Bold();
-                        column.Item().Text($"1. Tinh cap thiet cua de tai: {FirstNonEmpty(parsedMinute.ReviewerSections?.Necessity)}");
-                        column.Item().Text($"2. Tinh trung va tinh moi: {FirstNonEmpty(parsedMinute.ReviewerSections?.Novelty)}");
-                        column.Item().Text($"3. Muc do hop ly va do tin cay: {FirstNonEmpty(parsedMinute.ReviewerSections?.MethodologyReliability)}");
-                        column.Item().Text($"4. Noi dung va ket qua dat duoc: {FirstNonEmpty(parsedMinute.ReviewerSections?.ResultsContent)}");
-                        column.Item().Text($"5. Han che: {FirstNonEmpty(parsedMinute.ReviewerSections?.Limitations)}");
-                        column.Item().Text($"6. Goi y hoan thien: {FirstNonEmpty(parsedMinute.ReviewerSections?.Suggestions)}");
-                        column.Item().Text($"7. Ket luan: {FirstNonEmpty(parsedMinute.ReviewerSections?.OverallConclusion, parsedMinute.PlainReviewerComments)}");
-                    });
-                });
-            }).GeneratePdf();
+            return reportData;
+        }
 
-            var fileName = $"nhan-xet-phan-bien-{SanitizeFileToken(FirstNonEmpty(reviewer?.LecturerCode, data.Assignment?.CommitteeCode, data.Committee?.CommitteeCode, assignmentId.ToString()))}.pdf";
-            return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((content, fileName, PdfMime));
+        private static ExportCommitteeMember? ResolveMemberByRole(
+            List<ThesisManagement.Api.Models.CommitteeMember> members,
+            IReadOnlyDictionary<string, LecturerProfile> memberProfiles,
+            string normalizedRole)
+        {
+            var member = members.FirstOrDefault(x => NormalizeCommitteeRole(x.Role) == normalizedRole);
+            var profile = member == null ? null : TryGetMemberProfile(member, memberProfiles);
+            if (profile == null)
+            {
+                return null;
+            }
+
+            return new ExportCommitteeMember
+            {
+                FullName = profile.FullName,
+                Degree = profile.Degree,
+                Workplace = profile.Organization,
+                Role = normalizedRole
+            };
         }
 
         private async Task<byte[]> BuildDocumentFromTemplateAsync(
@@ -533,6 +537,7 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             var studentCohort = await ResolveStudentCohortAsync(studentClass, cancellationToken);
             var studentDepartment = await ResolveStudentDepartmentAsync(student, cancellationToken);
             var topicDepartment = await ResolveTopicDepartmentAsync(topic, cancellationToken);
+            var supervisorProfile = await ResolveSupervisorProfileAsync(topic, cancellationToken);
 
             var minute = await _uow.DefenseMinutes.Query().AsNoTracking()
                 .FirstOrDefaultAsync(x => x.AssignmentId == assignmentId, cancellationToken);
@@ -569,6 +574,7 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
                 StudentCohort = studentCohort,
                 StudentDepartment = studentDepartment,
                 TopicDepartment = topicDepartment,
+                SupervisorProfile = supervisorProfile,
                 Minute = minute,
                 Result = result,
                 Members = members,
@@ -712,6 +718,19 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             return null;
         }
 
+        private async Task<LecturerProfile?> ResolveSupervisorProfileAsync(Topic? topic, CancellationToken cancellationToken)
+        {
+            if (topic == null || string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode))
+            {
+                return null;
+            }
+
+            var supervisorCode = topic.SupervisorLecturerCode.Trim();
+            return await _uow.LecturerProfiles.Query().AsNoTracking()
+                .Include(x => x.Department)
+                .FirstOrDefaultAsync(x => x.LecturerCode == supervisorCode, cancellationToken);
+        }
+
         private static List<string> BuildMemberRows(
             List<CommitteeMember> members,
             IReadOnlyDictionary<string, LecturerProfile> memberProfiles)
@@ -744,7 +763,48 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             }
 
             var lecturer = TryGetMemberProfile(secretary, memberProfiles);
-            return FirstNonEmpty(lecturer?.FullName, secretary.MemberLecturerCode, secretary.MemberUserCode);
+            return BuildLecturerDisplayName(lecturer, secretary.MemberLecturerCode, secretary.MemberUserCode);
+        }
+
+        private static ExportCommitteeMember? ResolveSupervisorMember(
+            LecturerProfile? supervisorProfile,
+            string? supervisorLecturerCode,
+            string? supervisorUserCode)
+        {
+            if (supervisorProfile == null && string.IsNullOrWhiteSpace(supervisorLecturerCode) && string.IsNullOrWhiteSpace(supervisorUserCode))
+            {
+                return null;
+            }
+
+            return new ExportCommitteeMember
+            {
+                FullName = supervisorProfile?.FullName ?? FirstNonEmpty(supervisorLecturerCode, supervisorUserCode),
+                Degree = supervisorProfile?.Degree,
+                Workplace = supervisorProfile?.Organization
+            };
+        }
+
+        private static string BuildLecturerDisplayName(LecturerProfile? lecturer, params string?[] fallbacks)
+        {
+            var parts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(lecturer?.Degree))
+            {
+                parts.Add(lecturer!.Degree!.Trim());
+            }
+
+            if (!string.IsNullOrWhiteSpace(lecturer?.FullName))
+            {
+                parts.Add(lecturer!.FullName!.Trim());
+            }
+
+            var displayName = string.Join(' ', parts);
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                return displayName;
+            }
+
+            return FirstNonEmpty(fallbacks);
         }
 
         private static LecturerProfile? ResolveReviewer(
@@ -761,6 +821,19 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
         {
             if (!string.IsNullOrWhiteSpace(member.MemberLecturerCode) &&
                 memberProfiles.TryGetValue(member.MemberLecturerCode.Trim(), out var profile))
+            {
+                return profile;
+            }
+
+            return null;
+        }
+
+        private static LecturerProfile? TryGetMemberProfile(
+            string? lecturerCode,
+            IReadOnlyDictionary<string, LecturerProfile> memberProfiles)
+        {
+            if (!string.IsNullOrWhiteSpace(lecturerCode) &&
+                memberProfiles.TryGetValue(lecturerCode.Trim(), out var profile))
             {
                 return profile;
             }
@@ -886,6 +959,7 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
             public DefenseAssignment? Assignment { get; set; }
             public Committee? Committee { get; set; }
             public Topic? Topic { get; set; }
+            public LecturerProfile? SupervisorProfile { get; set; }
             public StudentProfile? Student { get; set; }
             public Class? StudentClass { get; set; }
             public Cohort? StudentCohort { get; set; }

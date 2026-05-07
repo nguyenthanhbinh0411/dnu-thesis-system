@@ -50,7 +50,7 @@ public class DefensePeriodScoringQueriesTests
 
         var processor = new DefensePeriodQueryProcessor(db);
 
-        var result = await processor.GetScoringMatrixAsync(periodId: 1);
+        var result = await processor.GetScoringMatrixAsync(periodId: 1, isForLecturer: true);
 
         result.Success.Should().BeTrue();
         result.Data.Should().NotBeNull();
@@ -76,7 +76,7 @@ public class DefensePeriodScoringQueriesTests
 
         var processor = new DefensePeriodQueryProcessor(db);
 
-        var result = await processor.GetScoringMatrixAsync(periodId: 1);
+        var result = await processor.GetScoringMatrixAsync(periodId: 1, isForLecturer: true);
 
         result.Success.Should().BeTrue();
         result.Data.Should().NotBeNull();
@@ -84,6 +84,26 @@ public class DefensePeriodScoringQueriesTests
         var scored = result.Data!.Single(x => x.AssignmentCode == "ASG-001");
         scored.ScoreGvhd.Should().Be(9m);
         scored.ScoreCt.Should().Be(8m);
+        scored.ScoreTk.Should().BeNull();
+        scored.ScorePb.Should().BeNull();
+        scored.FinalScore.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetScoringMatrixAsync_ShouldHideUnlockedScoresForAdmin()
+    {
+        await using var db = CreateDbContext();
+        SeedScoringScenario(db);
+        var processor = new DefensePeriodQueryProcessor(db);
+
+        var result = await processor.GetScoringMatrixAsync(periodId: 1, isForLecturer: false);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+
+        var scored = result.Data!.Single(x => x.AssignmentCode == "ASG-001");
+        scored.ScoreGvhd.Should().BeNull();
+        scored.ScoreCt.Should().BeNull();
         scored.ScoreTk.Should().BeNull();
         scored.ScorePb.Should().BeNull();
         scored.FinalScore.Should().BeNull();
@@ -107,6 +127,25 @@ public class DefensePeriodScoringQueriesTests
         row.TotalAssignments.Should().Be(2);
         row.CompletedAssignments.Should().Be(1);
         row.ProgressPercent.Should().Be(50m);
+    }
+
+    [Fact]
+    public async Task GetScoringMatrixAsync_ShouldIncludeCommitteeMemberNames()
+    {
+        await using var db = CreateDbContext();
+        SeedScoringScenario(db);
+        var processor = new DefensePeriodQueryProcessor(db);
+
+        var result = await processor.GetScoringMatrixAsync(periodId: 1);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+
+        var row = result.Data!.Single(x => x.AssignmentCode == "ASG-001");
+        row.CommitteeChairCode.Should().Be("L001");
+        row.CommitteeChairName.Should().Be("Chu Tich Nguyen");
+        row.Chair.Should().Be("L001");
+        row.ChairName.Should().Be("Chu Tich Nguyen");
     }
 
     [Fact]
@@ -254,6 +293,22 @@ public class DefensePeriodScoringQueriesTests
                 StudentCode = "S003",
                 UserID = 3,
                 FullName = "Le Van C"
+            });
+
+        db.LecturerProfiles.AddRange(
+            new LecturerProfile
+            {
+                LecturerProfileID = 1,
+                LecturerCode = "L001",
+                FullName = "Chu Tich Nguyen",
+                Organization = "Faculty A"
+            },
+            new LecturerProfile
+            {
+                LecturerProfileID = 2,
+                LecturerCode = "L002",
+                FullName = "Thu Ky Tran",
+                Organization = "Faculty B"
             });
 
         db.DefenseAssignments.AddRange(
