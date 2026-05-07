@@ -189,6 +189,7 @@ healthchecksdb
 # ================================
 # 7️⃣ ASP.NET / Server Config
 # ================================
+appsettings.json
 appsettings.Development.json
 appsettings.Local.json
 appsettings.*.Development.json
@@ -198,6 +199,7 @@ Properties/launchSettings.json
 # ================================
 # 7️⃣ ASP.NET / Server Config
 # ================================
+appsettings.json
 appsettings.Development.json
 appsettings.Local.json
 appsettings.*.Development.json
@@ -256,5 +258,3 @@ $RECYCLE.BIN/
 *.vshistory/
 .history/
 MigrationBackup/
-
-.appsettings.json
