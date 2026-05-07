@@ -994,7 +994,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             fetchData<ApiResponse<boolean>>(`${lecturerBase}/scoring/actions`, {
                 method: "POST",
                 body: {
-                    action: "CLOSE_SESSION",
+                    action: "LOCK_SESSION",
                     committeeId: Number(id),
                     ...(idempotencyKey ? { idempotencyKey } : {}),
                 },
@@ -1942,7 +1942,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 })(),
                 variance: toNumberOrNull(pickSnapshotSection<unknown>(item, ["variance", "Variance"], null)),
                 isLocked: Boolean(pickSnapshotSection<unknown>(item, ["isLocked", "IsLocked"], false)),
-                status: String(pickSnapshotSection<unknown>(item, ["status", "Status"], "PENDING")),
+                status: String(pickSnapshotSection<unknown>(item, ["status", "Status"], "PENDING")).trim().toUpperCase(),
                 submittedCount: Number(pickSnapshotSection<unknown>(item, ["submittedCount", "SubmittedCount"], 0)),
                 requiredCount: Number(pickSnapshotSection<unknown>(item, ["requiredCount", "RequiredCount"], 0)),
                 defenseDocuments: mapDefenseDocuments(rawDocuments),
@@ -2600,8 +2600,10 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     
     const allTopicsGraded = useMemo(() => {
         if (scoringMatrix.length === 0) return false;
-        // In backend, "COMPLETED" or "LOCKED" status means all required scores are present
-        return scoringMatrix.every(row => row.status === "COMPLETED" || row.status === "LOCKED");
+        return scoringMatrix.every(row => {
+            const s = row.status.toUpperCase();
+            return s === "COMPLETED" || s === "LOCKED" || (row.requiredCount > 0 && row.submittedCount >= row.requiredCount);
+        });
     }, [scoringMatrix]);
 
     const canLockSession = (canLockSessionByActions || isChairRole) && allTopicsGraded;
@@ -3668,7 +3670,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             <button
                                                 type="button"
                                                 className="lec-primary"
-                                                disabled={!canLockSession || !allTopicsGraded}
+                                                disabled={!canLockSession}
                                                 onClick={async () => {
                                                     if (!window.confirm("Bạn có chắc chắn muốn chốt điểm cho hội đồng này? Sau khi chốt, các thành viên chỉ có thể chỉnh sửa lại khi Chủ tịch mở chốt.")) {
                                                         return;
