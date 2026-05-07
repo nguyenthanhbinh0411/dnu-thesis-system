@@ -201,12 +201,12 @@ const getConversationTimeLabel = (value: string | null | undefined): string => {
 const getMilestoneStatusTone = (statusLabel: string) => {
   const normalized = (statusLabel || "").toLowerCase().trim();
   if (normalized === "hoàn thành") {
-    return { bg: "#DCFCE7", color: "#166534", border: "#bbf7d0" };
+    return { bg: "#ecfdf5", color: "#059669", border: "#10b981" };
   }
   if (normalized === "đang thực hiện" || normalized === "đang tiến hành") {
-    return { bg: "#FFF7ED", color: "#c2410c", border: "#fed7aa" };
+    return { bg: "#fff7ed", color: "#F37021", border: "#fdba74" };
   }
-  return { bg: "#f1f5f9", color: "#475569", border: "#e2e8f0" };
+  return { bg: "#f8fafc", color: "#64748b", border: "#cbd5e1" };
 };
 
 // Removed unused helper functions
@@ -1101,7 +1101,7 @@ const dashboardStyles = `
     text-align: center;
     font-size: 16px;
     font-weight: 700;
-    color: #3b82f6;
+    color: #003D82;
     box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
   }
 
@@ -1168,10 +1168,10 @@ const dashboardStyles = `
     flex-shrink: 0;
   }
 
-  .stu-card-icon--blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-  .stu-card-icon--indigo { background: linear-gradient(135deg, #6366f1, #4f46e5); }
-  .stu-card-icon--cyan { background: linear-gradient(135deg, #06b6d4, #0ea5e9); }
-  .stu-card-icon--red { background: linear-gradient(135deg, #ef4444, #f97316); }
+  .stu-card-icon--blue { background: linear-gradient(135deg, #003D82, #1e40af); }
+  .stu-card-icon--indigo { background: linear-gradient(135deg, #003D82, #1e3a8a); }
+  .stu-card-icon--cyan { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+  .stu-card-icon--red { background: linear-gradient(135deg, #F37021, #ea580c); }
 
   .stu-card-kicker {
     margin: 0;
@@ -1183,9 +1183,9 @@ const dashboardStyles = `
   .stu-card-link {
     border: 0;
     background: transparent;
-    color: #3b82f6;
+    color: #003D82;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -1314,8 +1314,8 @@ const dashboardStyles = `
 
   .stu-status-pill--topic {
     background: #fff7ed;
-    color: #f97316;
-    border: 1px solid #fed7aa;
+    color: #F37021;
+    border: 1px solid #fdba74;
   }
 
   .stu-chip-row {
@@ -1483,8 +1483,8 @@ const dashboardStyles = `
     background: #cbd5e1;
   }
 
-  .stu-progress-dot.is-completed { background: #22c55e; }
-  .stu-progress-dot.is-current { background: #f59e0b; }
+  .stu-progress-dot.is-completed { background: #10b981; }
+  .stu-progress-dot.is-current { background: #F37021; }
 
   .stu-progress-line {
     position: absolute;
@@ -1496,11 +1496,11 @@ const dashboardStyles = `
   }
 
   .stu-progress-line.is-completed {
-    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   }
 
   .stu-progress-line.is-pending {
-    background: linear-gradient(180deg, #f59e0b 0%, #f97316 100%);
+    background: linear-gradient(180deg, #fb923c 0%, #F37021 100%);
   }
 
   .stu-progress-body {
@@ -1558,7 +1558,7 @@ const dashboardStyles = `
     width: 52px;
     height: 52px;
     border-radius: 16px;
-    background: linear-gradient(135deg, #ef4444, #f97316);
+    background: linear-gradient(135deg, #003D82, #F37021);
     color: #ffffff;
     display: flex;
     align-items: center;
@@ -1835,9 +1835,9 @@ const dashboardStyles = `
     flex-shrink: 0;
   }
 
-  .stu-quick-action--blue .stu-quick-action__icon { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-  .stu-quick-action--green .stu-quick-action__icon { background: linear-gradient(135deg, #22c55e, #16a34a); }
-  .stu-quick-action--amber .stu-quick-action__icon { background: linear-gradient(135deg, #f59e0b, #f97316); }
+  .stu-quick-action--blue .stu-quick-action__icon { background: linear-gradient(135deg, #003D82, #1e40af); }
+  .stu-quick-action--green .stu-quick-action__icon { background: linear-gradient(135deg, #10b981, #059669); }
+  .stu-quick-action--amber .stu-quick-action__icon { background: linear-gradient(135deg, #F37021, #ea580c); }
   .stu-quick-action--violet .stu-quick-action__icon { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
   .stu-quick-action--pink .stu-quick-action__icon { background: linear-gradient(135deg, #ec4899, #db2777); }
 

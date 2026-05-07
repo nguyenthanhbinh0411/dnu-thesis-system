@@ -127,8 +127,10 @@ namespace ThesisManagement.Api.Services.DataExchange
         {
             var catalogTopicCode = Get(row, "catalogTopicCode");
             var title = Required(row, "title");
-            var hasTagCodesColumn = row.ContainsKey("tagCodes");
-            var rawTagCodes = row.TryGetValue("tagCodes", out var rawValue) ? rawValue : string.Empty;
+            var tagColumnNames = new[] { "tagCodes", "tags", "tag", "tag_codes", "tag code", "tag codes" };
+            var tagCodesKey = tagColumnNames.FirstOrDefault(k => row.ContainsKey(k));
+            var hasTagCodesColumn = tagCodesKey != null;
+            var rawTagCodes = tagCodesKey != null ? row[tagCodesKey] : string.Empty;
             var incomingTagCodes = ParseCodeList(rawTagCodes)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -230,8 +232,7 @@ namespace ThesisManagement.Api.Services.DataExchange
 
             foreach (var tagId in tagIds)
             {
-                var exists = existingLinks.Any(x => x.TagID == tagId);
-                if (exists)
+                if (existingLinks.Any(x => x.TagID == tagId))
                     continue;
 
                 await _uow.CatalogTopicTags.AddAsync(new CatalogTopicTag
@@ -353,8 +354,12 @@ namespace ThesisManagement.Api.Services.DataExchange
             var lecturerCode = Get(row, "lecturerCode");
             var effectiveLecturerCode = string.IsNullOrWhiteSpace(lecturerCode) ? _codeGenerator.Generate("LEC") : lecturerCode!.Trim();
             var effectiveUserCode = effectiveLecturerCode;
-            var hasTagCodesColumn = row.ContainsKey("tagCodes");
-            var rawTagCodes = row.TryGetValue("tagCodes", out var rawValue) ? rawValue : string.Empty;
+
+            // Robust column detection for tags (support multiple aliases)
+            var tagColumnNames = new[] { "tagCodes", "tags", "tag", "tag_codes", "tag code", "tag codes" };
+            var tagCodesKey = tagColumnNames.FirstOrDefault(k => row.ContainsKey(k));
+            var hasTagCodesColumn = tagCodesKey != null;
+            var rawTagCodes = tagCodesKey != null ? row[tagCodesKey] : string.Empty;
             var incomingTagCodes = ParseCodeList(rawTagCodes)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -404,6 +409,8 @@ namespace ThesisManagement.Api.Services.DataExchange
                     Gender = Get(row, "gender"),
                     DateOfBirth = ParseDate(Get(row, "dateOfBirth")),
                     Address = Get(row, "address"),
+                    Specialties = Get(row, "specialties"),
+                    Organization = Get(row, "organization"),
                     Notes = Get(row, "notes"),
                     CreatedAt = DateTime.UtcNow,
                     LastUpdated = DateTime.UtcNow
@@ -428,6 +435,8 @@ namespace ThesisManagement.Api.Services.DataExchange
             entity.Email = Get(row, "email") ?? entity.Email;
             entity.PhoneNumber = Get(row, "phoneNumber") ?? entity.PhoneNumber;
             entity.Address = Get(row, "address") ?? entity.Address;
+            entity.Specialties = Get(row, "specialties") ?? entity.Specialties;
+            entity.Organization = Get(row, "organization") ?? entity.Organization;
             entity.Notes = Get(row, "notes") ?? entity.Notes;
             entity.Gender = Get(row, "gender") ?? entity.Gender;
             entity.GuideQuota = ParseInt(Get(row, "guideQuota")) ?? entity.GuideQuota;
@@ -491,29 +500,32 @@ namespace ThesisManagement.Api.Services.DataExchange
 
             foreach (var tagId in tagIds)
             {
+                var tag = existingTagMap.Values.FirstOrDefault(t => t.TagID == tagId);
+                if (tag == null) continue;
+
                 var existing = existingLinks.FirstOrDefault(x => x.TagID == tagId);
                 if (existing != null)
                 {
                     existing.LecturerCode = lecturerCode;
-                    existing.TagCode = existingTagMap.Values.First(x => x.TagID == tagId).TagCode;
+                    existing.TagCode = tag.TagCode;
                     existing.AssignedByUserID = assignedByUserId;
                     existing.AssignedByUserCode = normalizedAssignedByUserCode;
                     existing.AssignedAt = DateTime.UtcNow;
                     _uow.LecturerTags.Update(existing);
-                    continue;
                 }
-
-                var tagCode = existingTagMap.Values.First(x => x.TagID == tagId).TagCode;
-                await _uow.LecturerTags.AddAsync(new LecturerTag
+                else
                 {
-                    LecturerProfileID = lecturerProfileId,
-                    LecturerCode = lecturerCode,
-                    TagID = tagId,
-                    TagCode = tagCode,
-                    AssignedAt = DateTime.UtcNow,
-                    AssignedByUserID = assignedByUserId,
-                    AssignedByUserCode = normalizedAssignedByUserCode
-                });
+                    await _uow.LecturerTags.AddAsync(new LecturerTag
+                    {
+                        LecturerProfileID = lecturerProfileId,
+                        LecturerCode = lecturerCode,
+                        TagID = tagId,
+                        TagCode = tag.TagCode,
+                        AssignedAt = DateTime.UtcNow,
+                        AssignedByUserID = assignedByUserId,
+                        AssignedByUserCode = normalizedAssignedByUserCode
+                    });
+                }
             }
 
             await _uow.SaveChangesAsync();
@@ -917,7 +929,7 @@ namespace ThesisManagement.Api.Services.DataExchange
             if (allLines.Count == 0)
                 return new List<Dictionary<string, string>>();
 
-            var headers = ParseCsvLine(allLines[0]);
+            var headers = ParseCsvLine(allLines[0]).Select(h => h.Trim()).ToList();
             var rows = new List<Dictionary<string, string>>();
             for (var i = 1; i < allLines.Count; i++)
             {
@@ -926,7 +938,7 @@ namespace ThesisManagement.Api.Services.DataExchange
                 for (var col = 0; col < headers.Count; col++)
                 {
                     var key = headers[col];
-                    var value = col < values.Count ? values[col] : string.Empty;
+                    var value = col < values.Count ? values[col].Trim() : string.Empty;
                     row[key] = value;
                 }
                 rows.Add(row);
@@ -1046,7 +1058,7 @@ namespace ThesisManagement.Api.Services.DataExchange
                 return new List<string>();
 
             return value
-                .Split(new[] { ',', ';', '|', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Split(new[] { ',', ';', '|', '\n', '\r', ' ' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(x => x.Trim())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .ToList();
