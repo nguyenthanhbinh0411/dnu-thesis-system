@@ -58,6 +58,18 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string TopicTitle { get; set; } = string.Empty;
         public string? SupervisorLecturerCode { get; set; }
         public string? SupervisorLecturerName { get; set; }
+        public string? CommitteeChairCode { get; set; }
+        public string? CommitteeChairName { get; set; }
+        public string? CommitteeSecretaryCode { get; set; }
+        public string? CommitteeSecretaryName { get; set; }
+        public string? CommitteeReviewerCode { get; set; }
+        public string? CommitteeReviewerName { get; set; }
+        public string? Chair { get; set; }
+        public string? ChairName { get; set; }
+        public string? Secretary { get; set; }
+        public string? SecretaryName { get; set; }
+        public string? Reviewer { get; set; }
+        public string? ReviewerName { get; set; }
         public List<string> TopicTags { get; set; } = new();
         public int? Session { get; set; }
         public string? SessionCode { get; set; }
@@ -94,6 +106,7 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string CommitteeCode { get; set; } = string.Empty;
         public int TotalAssignments { get; set; }
         public int CompletedAssignments { get; set; }
+        public int WaitingPublicAssignments { get; set; }
         public decimal ProgressPercent { get; set; }
     }
 

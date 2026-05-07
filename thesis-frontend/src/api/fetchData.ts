@@ -252,7 +252,14 @@ export async function fetchData<TResponse = unknown>(
       parsed = await response.json();
     } else if (contentType.includes("text/")) {
       parsed = await response.text();
-    } else if (contentType.includes("application/octet-stream")) {
+    } else if (
+      contentType.includes("application/octet-stream") ||
+      contentType.includes("application/pdf") ||
+      contentType.includes(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ) ||
+      contentType.includes("application/vnd.ms-excel")
+    ) {
       parsed = await response.arrayBuffer();
     } else {
       parsed = await response.text();

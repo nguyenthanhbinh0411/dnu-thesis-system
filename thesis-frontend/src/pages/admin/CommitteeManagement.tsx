@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   Download,
   Eye,
+  FileSpreadsheet,
+  FileText,
   Gavel,
   GraduationCap,
   Layers3,
@@ -150,6 +152,9 @@ type CouncilAssignment = {
   assignmentId?: number;
   studentCode: string;
   topicCode?: string;
+  topicTitle?: string;
+  studentName?: string;
+  supervisorName?: string;
   sessionCode: SessionCode;
   startTime?: string;
   endTime?: string;
@@ -231,6 +236,22 @@ const baseCard: React.CSSProperties = {
   borderRadius: 10,
   padding: 18,
   boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+};
+
+const menuItemStyle: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 14px",
+  background: "none",
+  border: "none",
+  textAlign: "left",
+  cursor: "pointer",
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 600,
+  transition: "background 0.16s ease",
 };
 
 const readinessMessageMap: Record<string, string> = {
@@ -1239,6 +1260,8 @@ const CommitteeManagement: React.FC = () => {
   const [, setReadinessReady] = useState(true);
   const [, setReadinessNote] = useState<string>("");
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [, setApiSignal] = useState<{
     at: string;
     traceId?: string;
@@ -1253,6 +1276,25 @@ const CommitteeManagement: React.FC = () => {
   const autoStartDateRef = useRef(autoStartDate);
   const missingEndpointWarningsRef = useRef(new Set<string>());
   const missingPeriodWarningsRef = useRef(false);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(event.target as Node)
+      ) {
+        setExportMenuOpen(false);
+      }
+    };
+
+    if (exportMenuOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => {
+        document.removeEventListener("mousedown", handleOutsideClick);
+      };
+    }
+    return undefined;
+  }, [exportMenuOpen]);
 
   useEffect(() => {
     selectedRoomsRef.current = selectedRooms;
@@ -1678,6 +1720,25 @@ const CommitteeManagement: React.FC = () => {
         ]).map((value) => ({ tagCode: value, tagName: value }));
 
         return toCompatResponse(response, fallback);
+      },
+      exportCommitteeRoster: async (
+        format: "xlsx" | "excel" | "csv" | "pdf",
+      ) => {
+        if (!defensePeriodId) {
+          throw new Error("Thiếu mã đợt bảo vệ để xuất danh sách hội đồng.");
+        }
+
+        const params = new URLSearchParams({
+          reportType: "committee-roster",
+          format,
+        }).toString();
+
+        return fetchData<unknown>(
+          `${defensePeriodBase}/reports/export?${params}`,
+          {
+            method: "GET",
+          },
+        );
       },
       getLecturerDefenseList: async (query?: {
         defenseTermId?: number | null;
@@ -2447,7 +2508,20 @@ const CommitteeManagement: React.FC = () => {
           );
         }
 
-        const mappedStudents = (studentsData.length > 0 ? studentsData : topicsData)
+        const masterStudentsRaw = [...studentsData, ...topicsData];
+        const studentMap = new Map<string, Record<string, unknown>>();
+        masterStudentsRaw.forEach((item) => {
+          const code = String(
+            pickCaseInsensitiveValue(item, ["studentCode", "StudentCode"], ""),
+          )
+            .trim()
+            .toUpperCase();
+          if (code && !studentMap.has(code)) {
+            studentMap.set(code, item);
+          }
+        });
+
+        const mappedStudents = Array.from(studentMap.values())
           .map((item) => mapStudentRecord(item))
           .filter((item) => item.studentCode.length > 0);
         setStudents(mappedStudents);
@@ -2768,6 +2842,27 @@ const CommitteeManagement: React.FC = () => {
                       ),
                     )
                     : undefined,
+                  topicTitle: String(
+                    pickCaseInsensitiveValue(
+                      assignment,
+                      ["topicTitle", "TopicTitle", "title", "Title"],
+                      "",
+                    ),
+                  ).trim() || undefined,
+                  studentName: String(
+                    pickCaseInsensitiveValue(
+                      assignment,
+                      ["studentName", "StudentName"],
+                      "",
+                    ),
+                  ).trim() || undefined,
+                  supervisorName: String(
+                    pickCaseInsensitiveValue(
+                      assignment,
+                      ["supervisorName", "SupervisorName", "lecturerName", "LecturerName"],
+                      "",
+                    ),
+                  ).trim() || undefined,
                   sessionCode,
                   startTime: normalizeTimeOnly(
                     String(
@@ -3378,10 +3473,19 @@ const CommitteeManagement: React.FC = () => {
     return `HD-${defensePeriodId ?? "PERIOD"}-${String(max + 1).padStart(2, "0")}`;
   }, [defensePeriodId, editableDrafts]);
 
-  const findStudentByCode = (studentCode: string) =>
-    students.find(
-      (item: EligibleStudent) => item.studentCode === studentCode,
-    ) ?? null;
+  const findStudentByCode = useCallback(
+    (studentCode: string) => {
+      const normalized = String(studentCode ?? "").trim().toUpperCase();
+      if (!normalized) return null;
+      return (
+        students.find(
+          (item: EligibleStudent) =>
+            item.studentCode.trim().toUpperCase() === normalized,
+        ) ?? null
+      );
+    },
+    [students],
+  );
 
   const filteredAutoTopics = useMemo(() => {
     const keyword = topicSearchKeyword.trim().toLowerCase();
@@ -4535,59 +4639,63 @@ const CommitteeManagement: React.FC = () => {
     setAutoGenerateStep(2);
   };
 
-  const exportCouncilListCsv = useCallback(() => {
-    if (filteredCouncilRows.length === 0) {
-      notifyWarning("Không có dữ liệu hội đồng để xuất file.");
-      return;
-    }
+  const exportCouncilRoster = useCallback(
+    async (format: "xlsx" | "excel" | "csv" | "pdf") => {
+      if (!defensePeriodId) {
+        notifyWarning("Thiếu mã đợt bảo vệ để xuất danh sách hội đồng.");
+        return;
+      }
 
-    const toCsvField = (value: string | number) => {
-      const text = String(value ?? "").replace(/"/g, '""');
-      return `"${text}"`;
-    };
+      if (filteredCouncilRows.length === 0) {
+        notifyWarning("Không có dữ liệu hội đồng để xuất file.");
+        return;
+      }
 
-    const headers = [
-      "MaHoiDong",
-      "NgayBaoVe",
-      "Phong",
-      "Tags",
-      "SoDeTaiSang",
-      "SoDeTaiChieu",
-      "SoThanhVien",
-      "TrangThai",
-    ];
+      try {
+        setActionInFlight("Xuất danh sách hội đồng");
+        setExportMenuOpen(false);
+        const result = await adminApi.exportCommitteeRoster(format);
 
-    const rows = filteredCouncilRows.map((row) => [
-      row.id,
-      row.defenseDate,
-      row.room,
-      getTagDisplayList(row.councilTags).join(" | "),
-      row.morningStudents.length,
-      row.afternoonStudents.length,
-      row.memberCount,
-      row.status,
-    ]);
+        let blob: Blob;
+        let extension = format === "excel" ? "xlsx" : format;
 
-    const csvContent = [
-      headers.map((header) => toCsvField(header)).join(","),
-      ...rows.map((row) => row.map((value) => toCsvField(value)).join(",")),
-    ].join("\n");
+        if (typeof result === "string") {
+          blob = new Blob([result], { type: "text/csv;charset=utf-8;" });
+        } else if (result instanceof ArrayBuffer) {
+          const contentType =
+            format === "pdf"
+              ? "application/pdf"
+              : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+          blob = new Blob([result], { type: contentType });
+        } else {
+          const rawText = JSON.stringify(result ?? "", null, 2);
+          blob = new Blob([rawText], { type: "text/plain;charset=utf-8;" });
+        }
 
-    const blob = new Blob([`\uFEFF${csvContent}`], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const fileDate = new Date().toISOString().slice(0, 10);
-    anchor.href = objectUrl;
-    anchor.download = `council-list-${fileDate}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(objectUrl);
-
-    notifySuccess("Đã xuất file danh sách hội đồng.");
-  }, [filteredCouncilRows, getTagDisplayList, notifySuccess, notifyWarning]);
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const fileDate = new Date().toISOString().slice(0, 10);
+        anchor.href = objectUrl;
+        anchor.download = `committee-roster-${defensePeriodId}-${fileDate}.${extension}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(objectUrl);
+        notifySuccess(
+          `Đã xuất file danh sách hội đồng (${format.toUpperCase()}).`,
+        );
+      } catch (error) {
+        notifyError(
+          error instanceof Error
+            ? error.message
+            : "Không thể xuất file danh sách hội đồng.",
+        );
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [adminApi, defensePeriodId, filteredCouncilRows, notifyError, notifySuccess, notifyWarning],
+  );
 
   const lockCouncils = async () => {
     if (councilListLocked || actionInFlight) {
@@ -6688,8 +6796,27 @@ const CommitteeManagement: React.FC = () => {
       ),
     [manualAssignments],
   );
+  const masterTopicRowByStudentCode = useMemo(() => {
+    const map = new Map<string, any>();
+    students.forEach((student) => {
+      const code = student.studentCode.trim().toUpperCase();
+      if (code) {
+        const supervisorCode = String(student.supervisorCode ?? "").trim();
+        const lecturerName = supervisorCode
+          ? getLecturerDisplayNameByCode(supervisorCode, supervisorCode)
+          : "Chưa gán";
+        map.set(code, {
+          ...student,
+          lecturerName,
+          supervisorName: lecturerName,
+        });
+      }
+    });
+    return map;
+  }, [students, getLecturerDisplayNameByCode]);
+
   const manualTopicRowByStudentCode = useMemo(
-    () => new Map(eligibleTopicRows.map((row) => [row.studentCode, row] as const)),
+    () => new Map(eligibleTopicRows.map((row) => [row.studentCode.trim().toUpperCase(), row] as const)),
     [eligibleTopicRows],
   );
   const manualSelectedTopicCodes = useMemo(
@@ -6710,7 +6837,9 @@ const CommitteeManagement: React.FC = () => {
             return null;
           }
 
-          const topicRow = manualTopicRowByStudentCode.get(studentCode);
+          const topicRow =
+            manualTopicRowByStudentCode.get(studentCode.toUpperCase()) ||
+            masterTopicRowByStudentCode.get(studentCode.toUpperCase());
           const sessionCode = normalizeSessionCode(assignment.sessionCode);
           const sessionRange = resolveManualAssignmentRange(
             manualScheduleMode,
@@ -6723,9 +6852,10 @@ const CommitteeManagement: React.FC = () => {
             studentCode,
             topicCode:
               topicRow?.topicCode || String(assignment.topicCode ?? "").trim() || "-",
-            topicTitle: topicRow?.topicTitle || "-",
-            studentName: topicRow?.studentName || "-",
-            supervisorName: topicRow?.lecturerName || "-",
+            topicTitle: topicRow?.topicTitle || assignment.topicTitle || "-",
+            studentName: topicRow?.studentName || assignment.studentName || "-",
+            supervisorName:
+              topicRow?.lecturerName || assignment.supervisorName || "-",
             topicTags: topicRow?.topicTags ?? [],
             lecturerTags: topicRow?.lecturerTags ?? [],
             sessionCode,
@@ -8871,13 +9001,62 @@ const CommitteeManagement: React.FC = () => {
                 >
                   <Plus size={14} /> Thêm hội đồng thủ công
                 </button>
-                <button
-                  type="button"
-                  className="committee-ghost-btn"
-                  onClick={exportCouncilListCsv}
-                >
-                  <Download size={14} /> Xuất danh sách hội đồng
-                </button>
+                <div style={{ position: "relative" }} ref={exportMenuRef}>
+                  <button
+                    type="button"
+                    className="committee-ghost-btn"
+                    onClick={() => setExportMenuOpen((open) => !open)}
+                    disabled={filteredCouncilRows.length === 0 || Boolean(actionInFlight)}
+                  >
+                    <Download size={14} /> Xuất danh sách hội đồng
+                  </button>
+                  {exportMenuOpen && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        right: 0,
+                        marginTop: 8,
+                        background: "#ffffff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 12,
+                        boxShadow: "0 10px 20px rgba(15, 23, 42, 0.12)",
+                        minWidth: 210,
+                        zIndex: 1100,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void exportCouncilRoster("xlsx")}
+                        style={menuItemStyle}
+                      >
+                        <FileSpreadsheet size={16} /> Excel (.xlsx)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void exportCouncilRoster("excel")}
+                        style={menuItemStyle}
+                      >
+                        <FileSpreadsheet size={16} /> Excel (legacy)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void exportCouncilRoster("csv")}
+                        style={menuItemStyle}
+                      >
+                        <FileText size={16} /> CSV (.csv)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void exportCouncilRoster("pdf")}
+                        style={menuItemStyle}
+                      >
+                        <Download size={16} /> PDF (.pdf)
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

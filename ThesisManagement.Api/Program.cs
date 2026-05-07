@@ -245,6 +245,7 @@ builder.Services.AddScoped<IDataExchangeService, DataExchangeService>();
 builder.Services.AddScoped<IDefenseTemplateExportService, DefenseTemplateExportService>();
 builder.Services.AddScoped<IDocumentExportService, DocumentExportService>();
 builder.Services.AddScoped<IDefenseOperationsExportService, DefenseOperationsExportService>();
+builder.Services.AddScoped<ICommitteeRosterExportService, CommitteeRosterExportService>();
 builder.Services.AddScoped<ICommitteeConstraintService, CommitteeConstraintService>();
 builder.Services.AddScoped<ICommitteeConstraintRule, RoleRequirementRule>();
 builder.Services.AddScoped<ICommitteeConstraintRule, LecturerOverlapRule>();
@@ -506,7 +507,6 @@ builder.Services.AddScoped<IRollbackDefensePeriodCommand, RollbackDefensePeriodC
 builder.Services.AddScoped<IPublishDefensePeriodScoresCommand, PublishDefensePeriodScoresCommand>();
 builder.Services.AddScoped<ISaveLecturerMinuteCommand, SaveLecturerMinuteCommand>();
 builder.Services.AddScoped<ISubmitLecturerIndependentScoreCommand, SubmitLecturerIndependentScoreCommand>();
-builder.Services.AddScoped<IRequestReopenScoreCommand, RequestReopenScoreCommand>();
 builder.Services.AddScoped<IOpenLecturerSessionCommand, OpenLecturerSessionCommand>();
 builder.Services.AddScoped<ILockLecturerSessionCommand, LockLecturerSessionCommand>();
 builder.Services.AddScoped<IApproveRevisionByLecturerCommand, ApproveRevisionByLecturerCommand>();

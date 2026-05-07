@@ -11,7 +11,9 @@ using ThesisManagement.Api.Application.Common;
 using ThesisManagement.Api.Data;
 using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
+using ThesisManagement.Api.DTOs.DocumentExports;
 using ThesisManagement.Api.Models;
+using ThesisManagement.Api.Services.DocumentExports;
 
 namespace ThesisManagement.Api.Application.Query.DefensePeriods
 {
@@ -43,7 +45,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         Task<ApiResponse<AnalyticsOverviewDto>> GetOverviewAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<CouncilAnalyticsDto>>> GetAnalyticsByCouncilAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<AnalyticsDistributionDto>> GetDistributionAsync(int periodId, CancellationToken cancellationToken = default);
-        Task<ApiResponse<List<ScoringMatrixRowDto>>> GetScoringMatrixAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
+        Task<ApiResponse<List<ScoringMatrixRowDto>>> GetScoringMatrixAsync(int periodId, int? committeeId = null, bool isForLecturer = false, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<ScoringProgressDto>>> GetScoringProgressAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<TopicFinalScoreProgressDto>>> GetTopicFinalScoreProgressAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<ScoringAlertDto>>> GetScoringAlertsAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
@@ -52,7 +54,8 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         Task<ApiResponse<List<PublishHistoryDto>>> GetPublishHistoryAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<CouncilAuditHistoryDto>>> GetCouncilAuditHistoryAsync(int periodId, int? councilId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<RevisionAuditTrailDto>>> GetRevisionAuditTrailAsync(int periodId, int revisionId, CancellationToken cancellationToken = default);
-    }
+          Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default);
+     }
 
     internal sealed class DefensePeriodConfigSnapshot
     {
@@ -130,10 +133,12 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         }
 
         private readonly ApplicationDbContext _db;
+        private readonly IDocumentExportService? _documentExportService;
 
-        public DefensePeriodQueryProcessor(ApplicationDbContext db)
+        public DefensePeriodQueryProcessor(ApplicationDbContext db, IDocumentExportService? documentExportService = null)
         {
             _db = db;
+            _documentExportService = documentExportService;
         }
 
         public async Task<ApiResponse<List<EligibleStudentDto>>> GetStudentsAsync(int periodId, bool eligibleOnly, CancellationToken cancellationToken = default)
@@ -1582,7 +1587,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             return ApiResponse<AnalyticsDistributionDto>.SuccessResponse(distribution);
         }
 
-        public async Task<ApiResponse<List<ScoringMatrixRowDto>>> GetScoringMatrixAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
+        public async Task<ApiResponse<List<ScoringMatrixRowDto>>> GetScoringMatrixAsync(int periodId, int? committeeId = null, bool isForLecturer = false, CancellationToken cancellationToken = default)
         {
             var assignments = await GetScopedAssignmentsAsync(periodId, committeeId, cancellationToken);
             if (assignments.Count == 0)
@@ -1781,6 +1786,27 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .Select(x => new { CommitteeId = x.CommitteeID!.Value, x.MemberLecturerCode, x.Role })
                 .ToListAsync(cancellationToken);
 
+            var committeeMemberCodes = committeeMembers
+                .Where(x => !string.IsNullOrWhiteSpace(x.MemberLecturerCode))
+                .Select(x => x.MemberLecturerCode!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var committeeMemberNameRows = committeeMemberCodes.Count == 0
+                ? new List<LecturerNameSnapshotRow>()
+                : await _db.LecturerProfiles.AsNoTracking()
+                    .Where(x => x.LecturerCode != null && committeeMemberCodes.Contains(x.LecturerCode))
+                    .Select(x => new LecturerNameSnapshotRow
+                    {
+                        LecturerCode = x.LecturerCode!,
+                        Name = x.FullName ?? x.LecturerCode!
+                    })
+                    .ToListAsync(cancellationToken);
+
+            var committeeMemberNameMap = committeeMemberNameRows
+                .Where(x => !string.IsNullOrWhiteSpace(x.LecturerCode))
+                .ToDictionary(x => x.LecturerCode, x => x.Name, StringComparer.OrdinalIgnoreCase);
+
             var memberCountMap = committeeMembers
                 .GroupBy(x => x.CommitteeId)
                 .ToDictionary(
@@ -1906,10 +1932,30 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     var status = isLocked
                         ? "LOCKED"
                         : submittedCount >= requiredCount && requiredCount > 0
-                            ? "COMPLETED"
+                            ? "WAITING_PUBLIC"
                             : submittedCount > 0
                                 ? "IN_PROGRESS"
                                 : "PENDING";
+
+                    var committeeChairCode = committeeMembers
+                        .FirstOrDefault(m => m.CommitteeId == cid && string.Equals(NormalizeRole(m.Role), "CT", StringComparison.OrdinalIgnoreCase))
+                        ?.MemberLecturerCode;
+                    var committeeSecretaryCode = committeeMembers
+                        .FirstOrDefault(m => m.CommitteeId == cid && string.Equals(NormalizeRole(m.Role), "UVTK", StringComparison.OrdinalIgnoreCase))
+                        ?.MemberLecturerCode;
+                    var committeeReviewerCode = committeeMembers
+                        .FirstOrDefault(m => m.CommitteeId == cid && string.Equals(NormalizeRole(m.Role), "UVPB", StringComparison.OrdinalIgnoreCase))
+                        ?.MemberLecturerCode;
+
+                    var committeeChairName = !string.IsNullOrWhiteSpace(committeeChairCode) && committeeMemberNameMap.TryGetValue(committeeChairCode, out var chairNameValue)
+                        ? chairNameValue
+                        : committeeChairCode;
+                    var committeeSecretaryName = !string.IsNullOrWhiteSpace(committeeSecretaryCode) && committeeMemberNameMap.TryGetValue(committeeSecretaryCode, out var secretaryNameValue)
+                        ? secretaryNameValue
+                        : committeeSecretaryCode;
+                    var committeeReviewerName = !string.IsNullOrWhiteSpace(committeeReviewerCode) && committeeMemberNameMap.TryGetValue(committeeReviewerCode, out var reviewerNameValue)
+                        ? reviewerNameValue
+                        : committeeReviewerCode;
 
                     var hasGeneratedDocuments = defenseDocumentsByAssignment.TryGetValue(assignment.AssignmentID, out var generatedDocuments)
                         && generatedDocuments.Count > 0;
@@ -1921,7 +1967,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
 
                     // Score resolution:
                     // - When LOCKED (chốt): use DEFENSE_RESULTS (finalized, for export)
-                    // - When NOT locked: use DEFENSE_SCORES (live working scores)
+                    // - When NOT locked: show live scores for lecturers, hide for admins
                     roleScoreLookup.TryGetValue(assignment.AssignmentID, out var roleScores);
 
                     decimal? liveScoreCt, liveScoreTk, liveScorePb, liveScoreGvhd;
@@ -1934,6 +1980,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         liveScoreTk = defenseResult.ScoreUvtk;
                         liveScorePb = defenseResult.ScoreUvpb;
                         liveScoreGvhd = defenseResult.ScoreGvhd ?? resolvedSupervisorScore;
+                        topicSupervisorScore = defenseResult.ScoreGvhd;
                         // Comments still come from DEFENSE_SCORES (DEFENSE_RESULTS doesn't store comments)
                         if (roleScores != null)
                         {
@@ -1943,9 +1990,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                             if (roleScores.TryGetValue("GVHD", out var gvhdc)) commentGvhd = gvhdc.Comment;
                         }
                     }
-                    else
+                    else if (isForLecturer)
                     {
-                        // Not locked: use live DEFENSE_SCORES
+                        // Not locked but for lecturer: use live DEFENSE_SCORES
                         liveScoreCt = roleScores != null && roleScores.TryGetValue("CT", out var ctRow) ? (decimal?)ctRow.Score : null;
                         liveScoreTk = roleScores != null && roleScores.TryGetValue("UVTK", out var tkRow) ? (decimal?)tkRow.Score : null;
                         liveScorePb = roleScores != null && roleScores.TryGetValue("UVPB", out var pbRow) ? (decimal?)pbRow.Score : null;
@@ -1959,6 +2006,19 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                             if (roleScores.TryGetValue("GVHD", out var gvhdc2)) commentGvhd = gvhdc2.Comment;
                         }
                     }
+                    else
+                    {
+                        // Not locked and for admin: hide scores
+                        liveScoreCt = null;
+                        liveScoreTk = null;
+                        liveScorePb = null;
+                        liveScoreGvhd = null;
+                        commentCt = null;
+                        commentTk = null;
+                        commentPb = null;
+                        commentGvhd = null;
+                        topicSupervisorScore = null;
+                    }
 
                     decimal? liveFinalScore = null;
                     string? liveFinalGrade = null;
@@ -1967,7 +2027,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         liveFinalScore = defenseResult?.FinalScoreNumeric;
                         liveFinalGrade = defenseResult?.FinalScoreText;
                     }
-                    else
+                    else if (isForLecturer)
                     {
                         var liveComponentScores = new List<decimal>();
                         if (liveScoreGvhd.HasValue) liveComponentScores.Add(liveScoreGvhd.Value);
@@ -1986,6 +2046,12 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                             else liveFinalGrade = "Kém";
                         }
                     }
+                    else
+                    {
+                        // Not locked and for admin: hide final scores
+                        liveFinalScore = null;
+                        liveFinalGrade = null;
+                    }
 
                     return new ScoringMatrixRowDto
                     {
@@ -1999,6 +2065,18 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         TopicTitle = topic?.Title ?? string.Empty,
                         SupervisorLecturerCode = supervisorCode,
                         SupervisorLecturerName = supervisorName,
+                        CommitteeChairCode = committeeChairCode,
+                        CommitteeChairName = committeeChairName,
+                        CommitteeSecretaryCode = committeeSecretaryCode,
+                        CommitteeSecretaryName = committeeSecretaryName,
+                        CommitteeReviewerCode = committeeReviewerCode,
+                        CommitteeReviewerName = committeeReviewerName,
+                        Chair = committeeChairCode,
+                        ChairName = committeeChairName,
+                        Secretary = committeeSecretaryCode,
+                        SecretaryName = committeeSecretaryName,
+                        Reviewer = committeeReviewerCode,
+                        ReviewerName = committeeReviewerName,
                         TopicTags = topicTags,
                         StudentCode = studentCode,
                         StudentName = studentName,
@@ -2036,7 +2114,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
 
         public async Task<ApiResponse<List<ScoringProgressDto>>> GetScoringProgressAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
         {
-            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, cancellationToken);
+            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, isForLecturer: false, cancellationToken);
             if (!matrixResult.Success || matrixResult.Data == null)
             {
                 return ApiResponse<List<ScoringProgressDto>>.Fail(matrixResult.Message ?? "Không thể lấy scoring matrix.", matrixResult.HttpStatusCode == 0 ? 400 : matrixResult.HttpStatusCode, matrixResult.Errors, matrixResult.Code);
@@ -2047,13 +2125,17 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .Select(g =>
                 {
                     var total = g.Count();
-                    var completed = g.Count(x => x.Status == "COMPLETED" || x.Status == "LOCKED");
+                    var waiting = g.Count(x => x.Status == "WAITING_PUBLIC");
+                    var locked = g.Count(x => x.Status == "LOCKED");
+                    var completed = locked + waiting;
+
                     return new ScoringProgressDto
                     {
                         CommitteeId = g.Key.CommitteeId,
                         CommitteeCode = g.Key.CommitteeCode,
                         TotalAssignments = total,
                         CompletedAssignments = completed,
+                        WaitingPublicAssignments = waiting,
                         ProgressPercent = total == 0 ? 0 : Math.Round((decimal)completed * 100m / total, 2)
                     };
                 })
@@ -2065,7 +2147,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
 
         public async Task<ApiResponse<List<TopicFinalScoreProgressDto>>> GetTopicFinalScoreProgressAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default)
         {
-            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, cancellationToken);
+            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, isForLecturer: false, cancellationToken);
             if (!matrixResult.Success || matrixResult.Data == null)
             {
                 return ApiResponse<List<TopicFinalScoreProgressDto>>.Fail(
@@ -2100,7 +2182,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         {
             const decimal varianceThreshold = 2.0m;
 
-            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, cancellationToken);
+            var matrixResult = await GetScoringMatrixAsync(periodId, committeeId, isForLecturer: false, cancellationToken);
             if (!matrixResult.Success || matrixResult.Data == null)
             {
                 return ApiResponse<List<ScoringAlertDto>>.Fail(matrixResult.Message ?? "Không thể lấy scoring matrix.", matrixResult.HttpStatusCode == 0 ? 400 : matrixResult.HttpStatusCode, matrixResult.Errors, matrixResult.Code);
@@ -2153,13 +2235,128 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 rows = rows.Where(r => r.CouncilId == councilId.Value).ToList();
             }
 
-            var normalizedFormat = (format ?? "csv").Trim().ToLowerInvariant();
-            var safeType = string.IsNullOrWhiteSpace(reportType) ? "report" : reportType.Trim().ToLowerInvariant();
+            var normalizedFormat = (format ?? "word").Trim().ToLowerInvariant();
+            if (normalizedFormat == "docx")
+            {
+                normalizedFormat = "word";
+            }
+
+            var normalizedType = NormalizeExportReportType(reportType);
+            var safeType = string.IsNullOrWhiteSpace(normalizedType) ? "report" : normalizedType;
             var fileNameBase = councilId.HasValue ? $"{safeType}_{periodId}_c{councilId.Value}" : $"{safeType}_{periodId}";
+
+            if (normalizedType == "scoreboard")
+            {
+                if (!councilId.HasValue)
+                {
+                    return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail(
+                        "Cần committeeId để xuất bảng điểm.",
+                        400);
+                }
+
+                var committee = await _db.Committees.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.CommitteeID == councilId.Value, cancellationToken);
+
+                if (committee == null)
+                {
+                    return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail(
+                        "Không tìm thấy hội đồng.",
+                        404);
+                }
+
+                if (normalizedFormat != "word" && normalizedFormat != "pdf")
+                {
+                    return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail(
+                        "Định dạng không hợp lệ. Chỉ hỗ trợ word hoặc pdf.",
+                        400);
+                }
+
+                if (_documentExportService == null)
+                {
+                    return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail(
+                        "Dịch vụ xuất tài liệu chưa được cấu hình.",
+                        500);
+                }
+
+                // Fetch the defense assignment for this committee
+                var assignment = await _db.DefenseAssignments.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.CommitteeID == councilId.Value, cancellationToken);
+
+                // Fetch defense result for score data
+                DefenseResult? defenseResult = null;
+                if (assignment != null)
+                {
+                    defenseResult = await _db.DefenseResults.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.AssignmentId == assignment.AssignmentID, cancellationToken);
+                }
+
+                // Fetch student and class information
+                StudentProfile? student = null;
+                Class? studentClass = null;
+                if (assignment != null)
+                {
+                    var topic = await _db.Topics.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.TopicCode == assignment.TopicCode, cancellationToken);
+
+                    if (topic != null && !string.IsNullOrWhiteSpace(topic.ProposerStudentCode))
+                    {
+                        student = await _db.StudentProfiles.AsNoTracking()
+                            .FirstOrDefaultAsync(x => x.StudentCode == topic.ProposerStudentCode.Trim(), cancellationToken);
+
+                        if (student?.ClassID.HasValue == true)
+                        {
+                            studentClass = await _db.Classes.AsNoTracking()
+                                .FirstOrDefaultAsync(x => x.ClassID == student.ClassID.Value, cancellationToken);
+                        }
+                    }
+                }
+
+                var reportData = new ReportData
+                {
+                    CommitteeCode = FirstNonEmpty(committee.CommitteeCode, committee.Name),
+                    DefenseDate = FormatDate(committee.DefenseDate),
+                    DefenseDay = committee.DefenseDate?.Day.ToString("00"),
+                    DefenseMonth = committee.DefenseDate?.Month.ToString("00"),
+                    DefenseYear = committee.DefenseDate?.Year.ToString(),
+                    MajorCode = "CNTT",
+                    MajorName = "Công nghệ thông tin",
+                    ScoreCTNumber = defenseResult != null ? FormatScore(defenseResult.ScoreCt) : string.Empty,
+                    ScoreCTText = defenseResult?.FinalScoreText,
+                    ScoreCTNote = string.Empty,
+                    ScorePBNumber = defenseResult != null ? FormatScore(defenseResult.ScoreUvpb) : string.Empty,
+                    ScorePBText = defenseResult?.FinalScoreText,
+                    ScorePBNote = string.Empty,
+                    ScoreTKNumber = defenseResult != null ? FormatScore(defenseResult.ScoreUvtk) : string.Empty,
+                    ScoreTKText = defenseResult?.FinalScoreText,
+                    ScoreTKNote = string.Empty,
+                    FinalScoreNumber = defenseResult != null ? FormatScore(defenseResult.FinalScoreNumeric) : string.Empty,
+                    FinalScoreText = defenseResult?.FinalScoreText,
+                    StudentCode = student?.StudentCode,
+                    StudentFullName = student?.FullName,
+                    ClassName = FirstNonEmpty(studentClass?.ClassName, studentClass?.ClassCode)
+                };
+
+                if (normalizedFormat == "pdf")
+                {
+                    var export = await _documentExportService.ExportPdfAsync(DocumentExportType.BangDiem, reportData, cancellationToken);
+                    await TrackExportAsync(periodId, $"{fileNameBase}.pdf", "Success", cancellationToken);
+                    return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                        export.Content,
+                        $"{fileNameBase}.pdf",
+                        export.ContentType));
+                }
+
+                var wordExport = await _documentExportService.ExportWordAsync(DocumentExportType.BangDiem, reportData, cancellationToken);
+                await TrackExportAsync(periodId, $"{fileNameBase}.docx", "Success", cancellationToken);
+                return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                    wordExport.Content,
+                    $"{fileNameBase}.docx",
+                    wordExport.ContentType));
+            }
 
             if (normalizedFormat == "pdf")
             {
-                var pdfBytes = BuildPdfContent(rows, reportType, councilId);
+                var pdfBytes = BuildPdfContent(rows, normalizedType, councilId);
                 await TrackExportAsync(periodId, $"{fileNameBase}.pdf", "Success", cancellationToken);
                 return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
                     pdfBytes,
@@ -2169,7 +2366,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
 
             if (normalizedFormat == "xlsx")
             {
-                var xlsxBytes = BuildXlsxContent(rows, reportType, councilId);
+                var xlsxBytes = BuildXlsxContent(rows, normalizedType, councilId);
                 await TrackExportAsync(periodId, $"{fileNameBase}.xlsx", "Success", cancellationToken);
                 return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
                     xlsxBytes,
@@ -2184,7 +2381,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     400);
             }
 
-            var csvBytes = BuildCsvContent(rows, reportType, councilId);
+            var csvBytes = BuildCsvContent(rows, normalizedType, councilId);
             await TrackExportAsync(periodId, $"{fileNameBase}.csv", "Success", cancellationToken);
             return ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
                 csvBytes,
@@ -2321,6 +2518,125 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .ToListAsync(cancellationToken);
         }
 
+        public async Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default)
+        {
+            var result = new CommitteeRosterExportSnapshotDto
+            {
+                ExportedAt = DateTime.Now,
+                Rows = new List<CommitteeRosterRowDto>()
+            };
+
+            var councils = await _db.Committees.AsNoTracking()
+                .Where(c => c.DefenseTermId == periodId)
+                .OrderBy(c => c.CommitteeID)
+                .ToListAsync(cancellationToken);
+
+            if (councils.Count == 0)
+                return ApiResponse<CommitteeRosterExportSnapshotDto>.SuccessResponse(result);
+
+            var councilIds = councils.Select(c => c.CommitteeID).ToList();
+            result.TotalCommittees = councils.Count;
+
+            var assignments = await _db.DefenseAssignments.AsNoTracking()
+                .Where(a => a.CommitteeID.HasValue && councilIds.Contains(a.CommitteeID.Value))
+                .ToListAsync(cancellationToken);
+
+            var topicCodes = assignments.Select(a => a.TopicCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            var topics = topicCodes.Count == 0
+                ? new Dictionary<string, Topic>()
+                : await _db.Topics.AsNoTracking()
+                    .Where(t => topicCodes.Contains(t.TopicCode))
+                    .ToDictionaryAsync(t => t.TopicCode ?? "", t => t, cancellationToken);
+
+            var studentCodes = topics.Values.Select(t => t.ProposerStudentCode)
+                .Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            var students = studentCodes.Count == 0 ? new Dictionary<string, StudentProfile>()
+                : await _db.StudentProfiles.AsNoTracking()
+                    .Where(s => studentCodes.Contains(s.StudentCode))
+                    .ToDictionaryAsync(s => s.StudentCode ?? "", s => s, cancellationToken);
+
+            var lecturerCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var topic in topics.Values)
+                if (!string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode))
+                    lecturerCodes.Add(topic.SupervisorLecturerCode.Trim());
+
+            var members = await _db.CommitteeMembers.AsNoTracking()
+                .Where(m => m.CommitteeID.HasValue && councilIds.Contains(m.CommitteeID.Value))
+                .ToListAsync(cancellationToken);
+
+            foreach (var member in members)
+            {
+                if (!string.IsNullOrWhiteSpace(member.MemberLecturerCode))
+                {
+                    lecturerCodes.Add(member.MemberLecturerCode.Trim());
+                }
+            }
+
+            var lecturers = lecturerCodes.Count == 0 ? new Dictionary<string, LecturerProfile>()
+                : await _db.LecturerProfiles.AsNoTracking()
+                    .Where(l => l.LecturerCode != null && lecturerCodes.Contains(l.LecturerCode))
+                    .ToDictionaryAsync(l => l.LecturerCode ?? "", l => l, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+            int rowNumber = 1;
+            var memberDict = members.GroupBy(m => m.CommitteeID!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var committee in councils)
+            {
+                var committeeAssignments = assignments
+                    .Where(a => a.CommitteeID == committee.CommitteeID)
+                    .OrderBy(a => a.Session).ThenBy(a => a.AssignmentID).ToList();
+
+                if (!memberDict.TryGetValue(committee.CommitteeID, out var committeeMembers))
+                    committeeMembers = new List<ThesisManagement.Api.Models.CommitteeMember>();
+
+                var chair = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "CT");
+                var secretary = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "UVTK");
+                var reviewer = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "UVPB");
+
+                foreach (var assignment in committeeAssignments)
+                {
+                    var topic = assignment.TopicCode != null && topics.TryGetValue(assignment.TopicCode, out var t) ? t : null;
+                    var studentCode = topic?.ProposerStudentCode;
+                    var student = studentCode != null && students.TryGetValue(studentCode, out var s) ? s : null;
+                    var advisorCode = topic?.SupervisorLecturerCode;
+                    var advisorDisplay = advisorCode != null && lecturers.TryGetValue(advisorCode, out var adv)
+                        ? $"{adv.Degree} {adv.FullName}".Trim() : advisorCode;
+
+                    result.Rows.Add(new CommitteeRosterRowDto
+                    {
+                        RowNumber = rowNumber++,
+                        StudentCode = studentCode,
+                        StudentFullName = student?.FullName,
+                        AdvisorDisplay = advisorDisplay,
+                        CommitteeCode = committee.CommitteeCode,
+                        ChairDisplay = GetLecturerDisplay(chair, lecturers),
+                        ChairWorkplace = GetLecturerWorkplace(chair, lecturers),
+                        SecretaryDisplay = GetLecturerDisplay(secretary, lecturers),
+                        SecretaryWorkplace = GetLecturerWorkplace(secretary, lecturers),
+                        ReviewerDisplay = GetLecturerDisplay(reviewer, lecturers),
+                        ReviewerWorkplace = GetLecturerWorkplace(reviewer, lecturers),
+                        DefenseSession = assignment.Session.HasValue ? (assignment.Session.Value == 1 ? "Sáng" : "Chiều") : "",
+                        DefenseDate = committee.DefenseDate?.ToString("dd/MM/yyyy") ?? ""
+                    });
+                }
+            }
+
+            return ApiResponse<CommitteeRosterExportSnapshotDto>.SuccessResponse(result);
+        }
+
+        private string? GetLecturerDisplay(ThesisManagement.Api.Models.CommitteeMember? member, Dictionary<string, LecturerProfile> lecturers)
+        {
+            if (member == null || string.IsNullOrWhiteSpace(member.MemberLecturerCode)) return null;
+            return lecturers.TryGetValue(member.MemberLecturerCode, out var l)
+                ? $"{l.Degree} {l.FullName}".Trim() : member.MemberLecturerCode;
+        }
+
+        private string? GetLecturerWorkplace(ThesisManagement.Api.Models.CommitteeMember? member, Dictionary<string, LecturerProfile> lecturers)
+        {
+            if (member == null || string.IsNullOrWhiteSpace(member.MemberLecturerCode)) return null;
+            return lecturers.TryGetValue(member.MemberLecturerCode, out var l) ? l.Organization : null;
+        }
+
         private async Task<List<DefenseAssignment>> GetScopedAssignmentsAsync(int periodId, int? committeeId, CancellationToken cancellationToken)
         {
             var config = await GetPeriodConfigAsync(periodId, cancellationToken);
@@ -2345,9 +2661,73 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .ToListAsync(cancellationToken);
         }
 
+        private static string NormalizeExportReportType(string? reportType)
+        {
+            var normalized = (reportType ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                "form-1" => "scoreboard",
+                "scoreboard" => "scoreboard",
+                "minutes" => "minutes",
+                "review" => "review",
+                "council-summary" => "council-summary",
+                "final-term" => "final-term",
+                "sync-errors" => "sync-errors",
+                _ => normalized
+            };
+        }
+
+        private static string FirstNonEmpty(params string?[] values)
+        {
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string FormatDate(DateTime? value)
+        {
+            return value.HasValue ? value.Value.ToString("dd/MM/yyyy") : string.Empty;
+        }
+
+        private static string FormatScore(decimal? score)
+        {
+            return score.HasValue ? score.Value.ToString("0.##") : string.Empty;
+        }
+
+        private static string BuildReviewNote(ScoreRowData row)
+        {
+            if (!row.Score.HasValue)
+            {
+                return "Chưa đủ điểm thành phần để nhận xét tổng kết.";
+            }
+
+            if (row.Score.Value >= 8.5m)
+            {
+                return "Đề tài đạt chất lượng tốt, trình bày rõ ràng.";
+            }
+
+            if (row.Score.Value >= 7m)
+            {
+                return "Đề tài đạt yêu cầu, cần hoàn thiện thêm phần thảo luận.";
+            }
+
+            if (row.Score.Value >= 5m)
+            {
+                return "Đề tài đạt mức trung bình, cần chỉnh sửa trước khi lưu hồ sơ.";
+            }
+
+            return "Đề tài cần bổ sung nội dung và bảo vệ lại theo góp ý hội đồng.";
+        }
+
         private static byte[] BuildCsvContent(List<ScoreRowData> rows, string reportType, int? councilId)
         {
-            var normalizedType = (reportType ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedType = NormalizeExportReportType(reportType);
             var sb = new StringBuilder();
 
             if (normalizedType == "council-summary")
@@ -2362,6 +2742,37 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         EscapeCsv(row.Avg.ToString("0.0")),
                         EscapeCsv(row.Max.ToString("0.0")),
                         EscapeCsv(row.Min.ToString("0.0"))));
+                }
+            }
+            else if (normalizedType == "minutes")
+            {
+                sb.AppendLine("CouncilId,Room,Session,StudentCode,StudentName,TopicTitle,Result");
+                foreach (var row in rows.OrderBy(r => r.CouncilId).ThenBy(r => r.Session).ThenBy(r => r.StudentCode))
+                {
+                    var result = row.Score.HasValue ? "Đã thông qua" : "Chờ chốt";
+                    sb.AppendLine(string.Join(",",
+                        EscapeCsv(row.CouncilId.ToString()),
+                        EscapeCsv(row.Room ?? string.Empty),
+                        EscapeCsv(row.Session),
+                        EscapeCsv(row.StudentCode),
+                        EscapeCsv(row.StudentName),
+                        EscapeCsv(row.TopicTitle),
+                        EscapeCsv(result)));
+                }
+            }
+            else if (normalizedType == "review")
+            {
+                sb.AppendLine("CouncilId,StudentCode,StudentName,TopicTitle,Score,Grade,Review");
+                foreach (var row in rows.OrderBy(r => r.CouncilId).ThenBy(r => r.StudentCode))
+                {
+                    sb.AppendLine(string.Join(",",
+                        EscapeCsv(row.CouncilId.ToString()),
+                        EscapeCsv(row.StudentCode),
+                        EscapeCsv(row.StudentName),
+                        EscapeCsv(row.TopicTitle),
+                        EscapeCsv(row.Score?.ToString("0.0") ?? string.Empty),
+                        EscapeCsv(row.Grade ?? string.Empty),
+                        EscapeCsv(BuildReviewNote(row))));
                 }
             }
             else
@@ -2405,9 +2816,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         {
             using var workbook = new XLWorkbook();
             var sheet = workbook.Worksheets.Add("Report");
-            var normalizedType = (reportType ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedType = NormalizeExportReportType(reportType);
 
-            if (normalizedType == "form-1")
+            if (normalizedType == "scoreboard")
             {
                 return BuildForm1TemplateXlsx(workbook, rows, councilId);
             }
@@ -2432,6 +2843,54 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     sheet.Cell(r, 4).Value = row.Avg;
                     sheet.Cell(r, 5).Value = row.Max;
                     sheet.Cell(r, 6).Value = row.Min;
+                }
+            }
+            else if (normalizedType == "minutes")
+            {
+                sheet.Cell(1, 1).Value = "CouncilId";
+                sheet.Cell(1, 2).Value = "Room";
+                sheet.Cell(1, 3).Value = "Session";
+                sheet.Cell(1, 4).Value = "StudentCode";
+                sheet.Cell(1, 5).Value = "StudentName";
+                sheet.Cell(1, 6).Value = "TopicTitle";
+                sheet.Cell(1, 7).Value = "Result";
+
+                var ordered = rows.OrderBy(r => r.CouncilId).ThenBy(r => r.Session).ThenBy(r => r.StudentCode).ToList();
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    var row = ordered[i];
+                    var r = i + 2;
+                    sheet.Cell(r, 1).Value = row.CouncilId;
+                    sheet.Cell(r, 2).Value = row.Room ?? string.Empty;
+                    sheet.Cell(r, 3).Value = row.Session;
+                    sheet.Cell(r, 4).Value = row.StudentCode;
+                    sheet.Cell(r, 5).Value = row.StudentName;
+                    sheet.Cell(r, 6).Value = row.TopicTitle;
+                    sheet.Cell(r, 7).Value = row.Score.HasValue ? "Đã thông qua" : "Chờ chốt";
+                }
+            }
+            else if (normalizedType == "review")
+            {
+                sheet.Cell(1, 1).Value = "CouncilId";
+                sheet.Cell(1, 2).Value = "StudentCode";
+                sheet.Cell(1, 3).Value = "StudentName";
+                sheet.Cell(1, 4).Value = "TopicTitle";
+                sheet.Cell(1, 5).Value = "Score";
+                sheet.Cell(1, 6).Value = "Grade";
+                sheet.Cell(1, 7).Value = "Review";
+
+                var ordered = rows.OrderBy(r => r.CouncilId).ThenBy(r => r.StudentCode).ToList();
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    var row = ordered[i];
+                    var r = i + 2;
+                    sheet.Cell(r, 1).Value = row.CouncilId;
+                    sheet.Cell(r, 2).Value = row.StudentCode;
+                    sheet.Cell(r, 3).Value = row.StudentName;
+                    sheet.Cell(r, 4).Value = row.TopicTitle;
+                    sheet.Cell(r, 5).Value = row.Score.HasValue ? row.Score.Value : string.Empty;
+                    sheet.Cell(r, 6).Value = row.Grade ?? string.Empty;
+                    sheet.Cell(r, 7).Value = BuildReviewNote(row);
                 }
             }
             else
@@ -2626,7 +3085,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         private static byte[] BuildPdfContent(List<ScoreRowData> rows, string reportType, int? councilId)
         {
             QuestPDF.Settings.License = LicenseType.Community;
-            var normalizedType = (reportType ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedType = NormalizeExportReportType(reportType);
 
             return Document.Create(container =>
             {
@@ -2677,6 +3136,82 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                                 table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(summary.Avg.ToString("0.0"));
                                 table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(summary.Max.ToString("0.0"));
                                 table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(summary.Min.ToString("0.0"));
+                            }
+                        });
+                    }
+                    else if (normalizedType == "minutes")
+                    {
+                        page.Content().PaddingTop(12).Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(60);
+                                columns.ConstantColumn(70);
+                                columns.ConstantColumn(55);
+                                columns.ConstantColumn(80);
+                                columns.RelativeColumn(1.2f);
+                                columns.RelativeColumn(1.8f);
+                                columns.ConstantColumn(80);
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Council").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Room").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Session").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Student").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Name").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Topic").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Result").Bold();
+                            });
+
+                            foreach (var row in rows)
+                            {
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.CouncilId.ToString());
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.Room ?? string.Empty);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.Session);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.StudentCode);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.StudentName);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.TopicTitle);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.Score.HasValue ? "Đã thông qua" : "Chờ chốt");
+                            }
+                        });
+                    }
+                    else if (normalizedType == "review")
+                    {
+                        page.Content().PaddingTop(12).Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(60);
+                                columns.ConstantColumn(80);
+                                columns.RelativeColumn(1.2f);
+                                columns.RelativeColumn(1.8f);
+                                columns.ConstantColumn(55);
+                                columns.ConstantColumn(45);
+                                columns.RelativeColumn(1.6f);
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Council").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Student").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Name").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Topic").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Score").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Grade").Bold();
+                                header.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2).PaddingVertical(4).PaddingHorizontal(3).Text("Review").Bold();
+                            });
+
+                            foreach (var row in rows)
+                            {
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.CouncilId.ToString());
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.StudentCode);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.StudentName);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.TopicTitle);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.Score?.ToString("0.0") ?? string.Empty);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(row.Grade ?? string.Empty);
+                                table.Cell().Border(0.6f).BorderColor(Colors.Grey.Lighten1).PaddingVertical(3).PaddingHorizontal(3).Text(BuildReviewNote(row));
                             }
                         });
                     }
@@ -2908,7 +3443,6 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             if (normalizedRole == "CT")
             {
                 actions.Add("OPEN_SESSION");
-                actions.Add("REOPEN_REQUEST");
                 actions.Add("LOCK_SESSION");
             }
 

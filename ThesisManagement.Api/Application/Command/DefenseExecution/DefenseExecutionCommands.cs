@@ -20,11 +20,6 @@ namespace ThesisManagement.Api.Application.Command.DefenseExecution
         Task<ApiResponse<bool>> ExecuteAsync(int committeeId, LecturerScoreSubmitDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
     }
 
-    public interface IRequestReopenScoreCommand
-    {
-        Task<ApiResponse<bool>> ExecuteAsync(int committeeId, ReopenScoreRequestDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
-    }
-
     public interface IOpenLecturerSessionCommand
     {
         Task<ApiResponse<bool>> ExecuteAsync(int committeeId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
@@ -72,14 +67,6 @@ namespace ThesisManagement.Api.Application.Command.DefenseExecution
         public SubmitLecturerIndependentScoreCommand(IDefensePeriodCommandProcessor processor) => _processor = processor;
         public Task<ApiResponse<bool>> ExecuteAsync(int committeeId, LecturerScoreSubmitDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
             => _processor.SubmitIndependentScoreAsync(committeeId, request, lecturerCode, actorUserId, idempotencyKey, cancellationToken);
-    }
-
-    public class RequestReopenScoreCommand : IRequestReopenScoreCommand
-    {
-        private readonly IDefensePeriodCommandProcessor _processor;
-        public RequestReopenScoreCommand(IDefensePeriodCommandProcessor processor) => _processor = processor;
-        public Task<ApiResponse<bool>> ExecuteAsync(int committeeId, ReopenScoreRequestDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
-            => _processor.RequestReopenScoreAsync(committeeId, request, lecturerCode, actorUserId, idempotencyKey, cancellationToken);
     }
 
     public class OpenLecturerSessionCommand : IOpenLecturerSessionCommand

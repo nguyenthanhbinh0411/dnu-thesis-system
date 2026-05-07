@@ -1,0 +1,173 @@
+        public async Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default)
+        {
+            var result = new CommitteeRosterExportSnapshotDto
+            {
+                ExportedAt = DateTime.Now,
+                Rows = new List<CommitteeRosterRowDto>()
+            };
+
+            // Get all committees with their assignments for this period
+            var councils = await _db.Committees.AsNoTracking()
+                .Where(c => c.DefenseTermId == periodId)
+                .OrderBy(c => c.CommitteeID)
+                .ToListAsync(cancellationToken);
+
+            if (councils.Count == 0)
+            {
+                return ApiResponse<CommitteeRosterExportSnapshotDto>.SuccessResponse(result);
+            }
+
+            var councilIds = councils.Select(c => c.CommitteeID).ToList();
+            result.TotalCommittees = councils.Count;
+
+            // Get all assignments for these committees
+            var assignments = await _db.DefenseAssignments.AsNoTracking()
+                .Where(a => a.CommitteeID.HasValue && councilIds.Contains(a.CommitteeID.Value))
+                .Include(a => a.Topic)
+                .ToListAsync(cancellationToken);
+
+            // Get all topics  
+            var topicCodes = assignments.Select(a => a.TopicCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            var topics = topicCodes.Count == 0
+                ? new Dictionary<string, Topic>()
+                : await _db.Topics.AsNoTracking()
+                    .Where(t => topicCodes.Contains(t.TopicCode))
+                    .ToDictionaryAsync(t => t.TopicCode ?? "", t => t, cancellationToken);
+
+            // Get student profiles
+            var studentCodes = topics.Values
+                .Select(t => t.ProposerStudentCode)
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .ToList();
+            var students = studentCodes.Count == 0
+                ? new Dictionary<string, StudentProfile>()
+                : await _db.StudentProfiles.AsNoTracking()
+                    .Where(s => studentCodes.Contains(s.StudentCode))
+                    .ToDictionaryAsync(s => s.StudentCode ?? "", s => s, cancellationToken);
+
+            // Get lecturer profiles (advisors, committee members)
+            var lecturerCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var topic in topics.Values)
+            {
+                if (!string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode))
+                    lecturerCodes.Add(topic.SupervisorLecturerCode.Trim());
+            }
+
+            var members = await _db.CommitteeMembers.AsNoTracking()
+                .Where(m => councilIds.Contains(m.CommitteeID))
+                .ToListAsync(cancellationToken);
+
+            var memberLecturerCodes = members
+                .Select(m => m.MemberLecturerCode)
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .ToList();
+
+            foreach (var code in memberLecturerCodes)
+                if (!string.IsNullOrWhiteSpace(code))
+                    lecturerCodes.Add(code.Trim());
+
+            var lecturers = lecturerCodes.Count == 0
+                ? new Dictionary<string, LecturerProfile>()
+                : await _db.LecturerProfiles.AsNoTracking()
+                    .Where(l => l.LecturerCode != null && lecturerCodes.Contains(l.LecturerCode))
+                    .ToDictionaryAsync(l => l.LecturerCode ?? "", l => l, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+            // Build roster rows grouped by committee
+            int rowNumber = 1;
+            var committeeDict = councils.ToDictionary(c => c.CommitteeID, c => c);
+            var memberDict = members.GroupBy(m => m.CommitteeID)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var committee in councils)
+            {
+                var committeeAssignments = assignments
+                    .Where(a => a.CommitteeID == committee.CommitteeID)
+                    .OrderBy(a => a.Session)
+                    .ThenBy(a => a.AssignmentID)
+                    .ToList();
+
+                // Get members for this committee
+                if (!memberDict.TryGetValue(committee.CommitteeID, out var committeeMembers))
+                {
+                    committeeMembers = new List<CommitteeMember>();
+                }
+
+                var chair = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "CT");
+                var secretary = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "UVTK");
+                var reviewer = committeeMembers.FirstOrDefault(m => m.Role?.ToUpper() == "UVPB");
+
+                // Get lecturer info
+                var chairDisplay = GetLecturerDisplay(chair, lecturers);
+                var chairWorkplace = GetLecturerWorkplace(chair, lecturers);
+                var secretaryDisplay = GetLecturerDisplay(secretary, lecturers);
+                var secretaryWorkplace = GetLecturerWorkplace(secretary, lecturers);
+                var reviewerDisplay = GetLecturerDisplay(reviewer, lecturers);
+                var reviewerWorkplace = GetLecturerWorkplace(reviewer, lecturers);
+
+                foreach (var assignment in committeeAssignments)
+                {
+                    // Get student and topic info
+                    var topic = assignment.TopicCode != null && topics.TryGetValue(assignment.TopicCode, out var t) ? t : null;
+                    var studentCode = topic?.ProposerStudentCode;
+                    var student = studentCode != null && students.TryGetValue(studentCode, out var s) ? s : null;
+
+                    var advisorCode = topic?.SupervisorLecturerCode;
+                    var advisorDisplay = advisorCode != null && lecturers.TryGetValue(advisorCode, out var adv)
+                        ? $"{adv.Degree} {adv.FullName}".Trim()
+                        : advisorCode;
+
+                    // Get defense schedule
+                    var session = assignment.Session.HasValue 
+                        ? (assignment.Session.Value == 1 ? "Sáng" : "Chiều")
+                        : string.Empty;
+                    var defenseDate = committee.DefenseDate?.ToString("dd/MM/yyyy") ?? string.Empty;
+
+                    result.Rows.Add(new CommitteeRosterRowDto
+                    {
+                        RowNumber = rowNumber++,
+                        StudentCode = studentCode,
+                        StudentFullName = student?.FullName,
+                        AdvisorDisplay = advisorDisplay,
+                        CommitteeCode = committee.CommitteeCode,
+                        ChairDisplay = chairDisplay,
+                        ChairWorkplace = chairWorkplace,
+                        SecretaryDisplay = secretaryDisplay,
+                        SecretaryWorkplace = secretaryWorkplace,
+                        ReviewerDisplay = reviewerDisplay,
+                        ReviewerWorkplace = reviewerWorkplace,
+                        DefenseSession = session,
+                        DefenseDate = defenseDate
+                    });
+                }
+            }
+
+            return ApiResponse<CommitteeRosterExportSnapshotDto>.SuccessResponse(result);
+        }
+
+        private string? GetLecturerDisplay(CommitteeMember? member, Dictionary<string, LecturerProfile> lecturers)
+        {
+            if (member == null || string.IsNullOrWhiteSpace(member.MemberLecturerCode))
+                return null;
+
+            if (lecturers.TryGetValue(member.MemberLecturerCode, out var lecturer))
+            {
+                return $"{lecturer.Degree} {lecturer.FullName}".Trim();
+            }
+
+            return member.MemberLecturerCode;
+        }
+
+        private string? GetLecturerWorkplace(CommitteeMember? member, Dictionary<string, LecturerProfile> lecturers)
+        {
+            if (member == null || string.IsNullOrWhiteSpace(member.MemberLecturerCode))
+                return null;
+
+            if (lecturers.TryGetValue(member.MemberLecturerCode, out var lecturer))
+            {
+                return lecturer.Organization;
+            }
+
+            return null;
+        }

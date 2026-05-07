@@ -49,7 +49,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
 
         Task<ApiResponse<bool>> SaveLecturerMinuteAsync(int committeeId, UpdateLecturerMinutesDto request, string lecturerCode, int actorUserId, CancellationToken cancellationToken = default);
         Task<ApiResponse<bool>> SubmitIndependentScoreAsync(int committeeId, LecturerScoreSubmitDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
-        Task<ApiResponse<bool>> RequestReopenScoreAsync(int committeeId, ReopenScoreRequestDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<bool>> OpenSessionAsync(int committeeId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<bool>> LockSessionAsync(int committeeId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<bool>> ApproveRevisionAsync(int revisionId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
@@ -3091,30 +3090,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
             }
 
             await SaveIdempotencyResponseAsync("SUBMIT_INDEPENDENT_SCORE", committeeId, idempotencyKey, requestHash, response, cancellationToken);
-            return response;
-        }
-
-        public async Task<ApiResponse<bool>> RequestReopenScoreAsync(int committeeId, ReopenScoreRequestDto request, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
-        {
-            var requestHash = ComputeRequestHash("UC3.REQUEST_REOPEN", committeeId, lecturerCode, request.AssignmentId, request.Reason ?? string.Empty);
-            var replay = await TryReplayResponseAsync<bool>("REQUEST_REOPEN_SCORE", committeeId, idempotencyKey, requestHash, cancellationToken);
-            if (replay != null)
-            {
-                return replay;
-            }
-
-            ApiResponse<bool> response;
-            try
-            {
-                await _scoreWorkflowService.RequestReopenScoreAsync(committeeId, request, lecturerCode, actorUserId, cancellationToken);
-                response = ApiResponse<bool>.SuccessResponse(true, code: DefenseUcErrorCodes.Scoring.ReopenSuccess);
-            }
-            catch (BusinessRuleException ex)
-            {
-                response = Fail<bool>(ex.Message, 400, ResolveUcCode(ex.Code, "UC3.2"), ex.Details);
-            }
-
-            await SaveIdempotencyResponseAsync("REQUEST_REOPEN_SCORE", committeeId, idempotencyKey, requestHash, response, cancellationToken);
             return response;
         }
 

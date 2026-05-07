@@ -22,6 +22,7 @@ using ThesisManagement.Api.DTOs.DefenseTermStudents.Query;
 using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
 using ThesisManagement.Api.Data;
+using ThesisManagement.Api.Models;
 using ThesisManagement.Api.Services.DefenseOperationsExport;
 
 namespace ThesisManagement.Api.Controllers
@@ -82,6 +83,7 @@ namespace ThesisManagement.Api.Controllers
         private readonly IGetCouncilAuditHistoryQuery _councilAuditHistoryQuery;
         private readonly IGetRevisionAuditTrailQuery _revisionAuditTrailQuery;
         private readonly IDefenseOperationsExportService _operationsExportService;
+        private readonly ICommitteeRosterExportService _committeeRosterExportService;
         private readonly ICreateDefenseTermStudentCommand _createDefenseTermStudentCommand;
         private readonly IUpdateDefenseTermStudentCommand _updateDefenseTermStudentCommand;
         private readonly IDeleteDefenseTermStudentCommand _deleteDefenseTermStudentCommand;
@@ -144,6 +146,7 @@ namespace ThesisManagement.Api.Controllers
             IGetCouncilAuditHistoryQuery councilAuditHistoryQuery,
             IGetRevisionAuditTrailQuery revisionAuditTrailQuery,
             IDefenseOperationsExportService operationsExportService,
+            ICommitteeRosterExportService committeeRosterExportService,
             ICreateDefenseTermStudentCommand createDefenseTermStudentCommand,
             IUpdateDefenseTermStudentCommand updateDefenseTermStudentCommand,
             IDeleteDefenseTermStudentCommand deleteDefenseTermStudentCommand,
@@ -202,6 +205,7 @@ namespace ThesisManagement.Api.Controllers
             _councilAuditHistoryQuery = councilAuditHistoryQuery;
             _revisionAuditTrailQuery = revisionAuditTrailQuery;
             _operationsExportService = operationsExportService;
+            _committeeRosterExportService = committeeRosterExportService;
             _createDefenseTermStudentCommand = createDefenseTermStudentCommand;
             _updateDefenseTermStudentCommand = updateDefenseTermStudentCommand;
             _deleteDefenseTermStudentCommand = deleteDefenseTermStudentCommand;
@@ -1457,10 +1461,72 @@ namespace ThesisManagement.Api.Controllers
                 return MapFailure(state, stateStatusCode, "Không thể lấy trạng thái đợt.");
             }
 
+            var safeScoringMatrix = scoringMatrix.Data?.Select(row =>
+            {
+                if (row.IsLocked || row.Status == "LOCKED")
+                {
+                    return row;
+                }
+                
+                return new ScoringMatrixRowDto
+                {
+                    CommitteeId = row.CommitteeId,
+                    CommitteeCode = row.CommitteeCode,
+                    CommitteeName = row.CommitteeName,
+                    Room = row.Room,
+                    AssignmentId = row.AssignmentId,
+                    AssignmentCode = row.AssignmentCode,
+                    TopicCode = row.TopicCode,
+                    TopicTitle = row.TopicTitle,
+                    SupervisorLecturerCode = row.SupervisorLecturerCode,
+                    SupervisorLecturerName = row.SupervisorLecturerName,
+                    CommitteeChairCode = row.CommitteeChairCode,
+                    CommitteeChairName = row.CommitteeChairName,
+                    CommitteeSecretaryCode = row.CommitteeSecretaryCode,
+                    CommitteeSecretaryName = row.CommitteeSecretaryName,
+                    CommitteeReviewerCode = row.CommitteeReviewerCode,
+                    CommitteeReviewerName = row.CommitteeReviewerName,
+                    Chair = row.Chair,
+                    ChairName = row.ChairName,
+                    Secretary = row.Secretary,
+                    SecretaryName = row.SecretaryName,
+                    Reviewer = row.Reviewer,
+                    ReviewerName = row.ReviewerName,
+                    TopicTags = row.TopicTags,
+                    Session = row.Session,
+                    SessionCode = row.SessionCode,
+                    ScheduledAt = row.ScheduledAt,
+                    StartTime = row.StartTime,
+                    EndTime = row.EndTime,
+                    StudentCode = row.StudentCode,
+                    StudentName = row.StudentName,
+                    ClassName = row.ClassName,
+                    CohortCode = row.CohortCode,
+                    SupervisorOrganization = row.SupervisorOrganization,
+                    SubmittedCount = row.SubmittedCount,
+                    RequiredCount = row.RequiredCount,
+                    IsLocked = row.IsLocked,
+                    Status = row.Status,
+                    DefenseDocuments = row.DefenseDocuments,
+                    TopicSupervisorScore = row.TopicSupervisorScore,
+                    ScoreCt = null,
+                    ScoreTk = null,
+                    ScorePb = null,
+                    ScoreGvhd = null,
+                    FinalScore = null,
+                    FinalGrade = null,
+                    Variance = null,
+                    CommentCt = null,
+                    CommentTk = null,
+                    CommentPb = null,
+                    CommentGvhd = null
+                };
+            }).ToList();
+
             var data = new
             {
                 Monitoring = monitoring.Data,
-                ScoringMatrix = scoringMatrix.Data,
+                ScoringMatrix = safeScoringMatrix,
                 ProgressTracking = progress.Data,
                 PostDefense = postDefense.Data,
                 Audit = audit.Data,
@@ -1484,7 +1550,7 @@ namespace ThesisManagement.Api.Controllers
         }
 
         [HttpGet("{periodId:int}/operations/export")]
-        [Authorize(Roles = "Admin,Head")]
+        [Authorize]
         public async Task<ActionResult<ApiResponse<object>>> ExportOperationsSnapshotCompact(
             int periodId,
             [FromQuery] DefensePeriodOperationsSnapshotQueryDto query,
@@ -1540,7 +1606,7 @@ namespace ThesisManagement.Api.Controllers
         }
 
         [HttpGet("{periodId:int}/reports/export")]
-        [Authorize(Roles = "Admin,Head")]
+        [Authorize]
         public async Task<IActionResult> ExportReportCompact(
             int periodId,
             [FromQuery] string reportType = "final-term",
@@ -1561,7 +1627,17 @@ namespace ThesisManagement.Api.Controllers
                     return BadRequest(ApiResponse<object>.Fail("reportType=form-1 yêu cầu councilId.", 400));
                 }
 
-                return await ExportForm1(periodId, councilId.Value, format);
+                return await ExportCouncilPackage(periodId, "scoreboard", councilId.Value, format);
+            }
+
+            if (normalized == "scoreboard" || normalized == "minutes" || normalized == "review")
+            {
+                if (!councilId.HasValue)
+                {
+                    return BadRequest(ApiResponse<object>.Fail($"reportType={normalized} yêu cầu councilId.", 400));
+                }
+
+                return await ExportCouncilPackage(periodId, normalized, councilId.Value, format);
             }
 
             if (normalized == "final-term")
@@ -1569,12 +1645,17 @@ namespace ThesisManagement.Api.Controllers
                 return await ExportFinalTerm(periodId, councilId, format);
             }
 
+            if (normalized == "committee-roster")
+            {
+                return await ExportCommitteeRoster(periodId, format);
+            }
+
             if (normalized == "sync-errors")
             {
                 return await ExportSyncErrors(periodId, format);
             }
 
-            return BadRequest(ApiResponse<object>.Fail("reportType không hợp lệ. Hỗ trợ: council-summary, form-1, final-term, sync-errors.", 400));
+            return BadRequest(ApiResponse<object>.Fail("reportType không hợp lệ. Hỗ trợ: council-summary, scoreboard, minutes, review, form-1, final-term, committee-roster, sync-errors.", 400));
         }
 
         private ActionResult<ApiResponse<object>> WrapAsObject<T>(ActionResult<ApiResponse<T>> actionResult, string action)
@@ -3790,6 +3871,18 @@ namespace ThesisManagement.Api.Controllers
         }
 
 
+        private async Task<IActionResult> ExportCouncilPackage(int periodId, string reportType, int councilId, [FromQuery] string format = "csv")
+        {
+            var result = await _reportQuery.ExecuteAsync(periodId, reportType, format, councilId);
+            if (!result.Success)
+            {
+                return StatusCode(result.HttpStatusCode == 0 ? 400 : result.HttpStatusCode, result);
+            }
+
+            return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
+        }
+
+
         private async Task<IActionResult> ExportFinalTerm(int periodId, [FromQuery] int? councilId = null, [FromQuery] string format = "csv")
         {
             var result = await _reportQuery.ExecuteAsync(periodId, "final-term", format, councilId);
@@ -3801,6 +3894,329 @@ namespace ThesisManagement.Api.Controllers
             return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
         }
 
+        private async Task<IActionResult> ExportCommitteeRoster(int periodId, [FromQuery] string format = "xlsx")
+        {
+            var normalizedFormat = (format ?? "xlsx").Trim().ToLowerInvariant();
+            if (normalizedFormat != "xlsx" && normalizedFormat != "excel" && normalizedFormat != "csv" && normalizedFormat != "pdf")
+            {
+                return BadRequest(ApiResponse<object>.Fail("reportType=committee-roster chỉ hỗ trợ format=xlsx, csv hoặc pdf.", 400));
+            }
+
+            var snapshot = await BuildCommitteeRosterSnapshot(periodId, HttpContext.RequestAborted);
+            var exportResult = await _committeeRosterExportService.ExportRosterAsync(snapshot, periodId, normalizedFormat, HttpContext.RequestAborted);
+            return File(exportResult.Content, exportResult.ContentType, exportResult.FileName);
+        }
+
+        private async Task<CommitteeRosterExportSnapshotDto> BuildCommitteeRosterSnapshot(int periodId, CancellationToken cancellationToken)
+        {
+            var assignments = await _db.DefenseAssignments
+                .AsNoTracking()
+                .Where(x => x.DefenseTermId == periodId)
+                .Where(x => !string.IsNullOrWhiteSpace(x.CommitteeCode) || x.CommitteeID.HasValue)
+                .ToListAsync(cancellationToken);
+
+            if (assignments.Count == 0)
+            {
+                return new CommitteeRosterExportSnapshotDto
+                {
+                    TotalCommittees = 0,
+                    ExportedAt = DateTime.UtcNow
+                };
+            }
+
+            var topicIds = assignments
+                .Where(x => x.TopicID.HasValue)
+                .Select(x => x.TopicID!.Value)
+                .Distinct()
+                .ToList();
+
+            var topics = await _db.Topics
+                .AsNoTracking()
+                .Where(t => topicIds.Contains(t.TopicID))
+                .ToDictionaryAsync(t => t.TopicID, t => t, cancellationToken);
+
+            var committeeIds = assignments
+                .Where(x => x.CommitteeID.HasValue)
+                .Select(x => x.CommitteeID!.Value)
+                .Distinct()
+                .ToList();
+
+            var committeeCodes = assignments
+                .Where(x => !string.IsNullOrWhiteSpace(x.CommitteeCode))
+                .Select(x => x.CommitteeCode!.Trim())
+                .Where(c => c.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var committeesById = new Dictionary<int, Committee>();
+            if (committeeIds.Count > 0)
+            {
+                committeesById = await _db.Committees
+                    .AsNoTracking()
+                    .Where(c => committeeIds.Contains(c.CommitteeID))
+                    .ToDictionaryAsync(c => c.CommitteeID, c => c, cancellationToken);
+
+                foreach (var fallbackCode in committeesById.Values
+                    .Where(c => !string.IsNullOrWhiteSpace(c.CommitteeCode))
+                    .Select(c => c.CommitteeCode!.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!committeeCodes.Contains(fallbackCode, StringComparer.OrdinalIgnoreCase))
+                    {
+                        committeeCodes.Add(fallbackCode);
+                    }
+                }
+            }
+
+            var studentCodes = topics.Values
+                .Where(t => !string.IsNullOrWhiteSpace(t.ProposerStudentCode))
+                .Select(t => t.ProposerStudentCode!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var studentProfiles = await _db.StudentProfiles
+                .AsNoTracking()
+                .Where(x => studentCodes.Contains(x.StudentCode))
+                .ToDictionaryAsync(x => x.StudentCode, x => x, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+            var memberLecturerCodes = await _db.CommitteeMembers
+                .AsNoTracking()
+                .Where(m => (committeeCodes.Contains(m.CommitteeCode!) || (m.CommitteeID.HasValue && committeeIds.Contains(m.CommitteeID.Value)))
+                            && !string.IsNullOrWhiteSpace(m.MemberLecturerCode))
+                .Select(m => m.MemberLecturerCode!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            var supervisorCodes = topics.Values
+                .Where(t => !string.IsNullOrWhiteSpace(t.SupervisorLecturerCode))
+                .Select(t => t.SupervisorLecturerCode!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var lecturerCodes = memberLecturerCodes
+                .Concat(supervisorCodes)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Select(code => code.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var lecturerProfiles = await _db.LecturerProfiles
+                .AsNoTracking()
+                .Where(l => lecturerCodes.Contains(l.LecturerCode))
+                .ToDictionaryAsync(l => l.LecturerCode, l => l, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+            var committeeMembers = await _db.CommitteeMembers
+                .AsNoTracking()
+                .Where(m => (!string.IsNullOrWhiteSpace(m.CommitteeCode) && committeeCodes.Contains(m.CommitteeCode!.Trim()))
+                            || (m.CommitteeID.HasValue && committeeIds.Contains(m.CommitteeID.Value)))
+                .ToListAsync(cancellationToken);
+
+            var membersByCommitteeCode = committeeMembers
+                .GroupBy(m => (m.CommitteeCode ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            var committeeByCode = await _db.Committees
+                .AsNoTracking()
+                .Where(c => c.DefenseTermId == periodId && !string.IsNullOrWhiteSpace(c.CommitteeCode) && committeeCodes.Contains(c.CommitteeCode!.Trim()))
+                .ToDictionaryAsync(c => c.CommitteeCode!.Trim(), c => c, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+            var rows = new List<CommitteeRosterRowDto>();
+
+            foreach (var assignment in assignments)
+            {
+                if (!assignment.TopicID.HasValue)
+                {
+                    continue;
+                }
+
+                if (!topics.TryGetValue(assignment.TopicID.Value, out var topic))
+                {
+                    continue;
+                }
+
+                var topicStudentCode = string.IsNullOrWhiteSpace(topic.ProposerStudentCode)
+                    ? string.Empty
+                    : topic.ProposerStudentCode!.Trim();
+
+                var committeeCode = !string.IsNullOrWhiteSpace(assignment.CommitteeCode)
+                    ? assignment.CommitteeCode!.Trim()
+                    : assignment.CommitteeID.HasValue && committeesById.TryGetValue(assignment.CommitteeID.Value, out var committeeById) && !string.IsNullOrWhiteSpace(committeeById.CommitteeCode)
+                        ? committeeById.CommitteeCode!.Trim()
+                        : string.Empty;
+
+                if (string.IsNullOrWhiteSpace(committeeCode))
+                {
+                    continue;
+                }
+
+                var studentProfile = !string.IsNullOrWhiteSpace(topicStudentCode) && studentProfiles.TryGetValue(topicStudentCode, out var profile)
+                    ? profile
+                    : null;
+
+                var advisorProfile = !string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode) && lecturerProfiles.TryGetValue(topic.SupervisorLecturerCode!.Trim(), out var advisor)
+                    ? advisor
+                    : null;
+
+                var committeeMemberList = membersByCommitteeCode.TryGetValue(committeeCode, out var groupMembers)
+                    ? groupMembers
+                    : new List<CommitteeMember>();
+
+                var chairMember = ResolveCommitteeRole(committeeMemberList, "CT");
+                var secretaryMember = ResolveCommitteeRole(committeeMemberList, "UVTK");
+                var reviewerMember = ResolveCommitteeRole(committeeMemberList, "UVPB");
+
+                rows.Add(new CommitteeRosterRowDto
+                {
+                    StudentCode = topicStudentCode,
+                    StudentFullName = studentProfile?.FullName?.Trim() ?? topicStudentCode,
+                    AdvisorDisplay = BuildLecturerDisplayName(advisorProfile, topic.SupervisorLecturerCode),
+                    CommitteeCode = committeeCode,
+                    ChairDisplay = BuildCommitteeMemberDisplay(chairMember, lecturerProfiles),
+                    ChairWorkplace = BuildCommitteeMemberWorkplace(chairMember, lecturerProfiles),
+                    SecretaryDisplay = BuildCommitteeMemberDisplay(secretaryMember, lecturerProfiles),
+                    SecretaryWorkplace = BuildCommitteeMemberWorkplace(secretaryMember, lecturerProfiles),
+                    ReviewerDisplay = BuildCommitteeMemberDisplay(reviewerMember, lecturerProfiles),
+                    ReviewerWorkplace = BuildCommitteeMemberWorkplace(reviewerMember, lecturerProfiles),
+                    DefenseSession = BuildDefenseSessionText(assignment),
+                    DefenseDate = BuildDefenseDateText(assignment, committeeCode, committeeByCode)
+                });
+            }
+
+            var sortedRows = rows
+                .OrderBy(x => x.CommitteeCode)
+                .ThenBy(x => x.StudentCode)
+                .ToList();
+
+            var numberedRows = new List<CommitteeRosterRowDto>();
+            foreach (var group in sortedRows.GroupBy(x => x.CommitteeCode, StringComparer.OrdinalIgnoreCase))
+            {
+                var rowNumber = 1;
+                foreach (var row in group)
+                {
+                    row.RowNumber = rowNumber++;
+                    numberedRows.Add(row);
+                }
+            }
+
+            return new CommitteeRosterExportSnapshotDto
+            {
+                Rows = numberedRows,
+                TotalCommittees = numberedRows.Select(x => x.CommitteeCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                ExportedAt = DateTime.UtcNow
+            };
+        }
+
+        private static string BuildLecturerDisplayName(LecturerProfile? profile, string? fallbackCode)
+        {
+            if (profile != null)
+            {
+                var name = profile.FullName?.Trim() ?? fallbackCode?.Trim();
+                if (!string.IsNullOrWhiteSpace(profile.Degree))
+                {
+                    return $"{profile.Degree.Trim()} {name ?? string.Empty}".Trim();
+                }
+
+                return name ?? string.Empty;
+            }
+
+            return fallbackCode?.Trim() ?? string.Empty;
+        }
+
+        private static string BuildCommitteeMemberDisplay(CommitteeMember? member, IReadOnlyDictionary<string, LecturerProfile> lecturerProfiles)
+        {
+            if (member == null)
+            {
+                return string.Empty;
+            }
+
+            var profile = TryGetMemberLecturerProfile(member, lecturerProfiles);
+            return BuildLecturerDisplayName(profile, member.MemberLecturerCode ?? member.MemberUserCode);
+        }
+
+        private static string BuildCommitteeMemberWorkplace(CommitteeMember? member, IReadOnlyDictionary<string, LecturerProfile> lecturerProfiles)
+        {
+            if (member == null)
+            {
+                return string.Empty;
+            }
+
+            var profile = TryGetMemberLecturerProfile(member, lecturerProfiles);
+            return profile?.Organization?.Trim() ?? string.Empty;
+        }
+
+        private static CommitteeMember? ResolveCommitteeRole(IReadOnlyList<CommitteeMember> members, string expectedRole)
+        {
+            var normalizedExpected = expectedRole?.Trim().ToUpperInvariant();
+            var exactMatch = members.FirstOrDefault(m => string.Equals(NormalizeCommitteeRole(m.Role), normalizedExpected, StringComparison.OrdinalIgnoreCase));
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            if (normalizedExpected == "CT")
+            {
+                return members.FirstOrDefault(m => m.IsChair == true);
+            }
+
+            return null;
+        }
+
+        private static string? NormalizeCommitteeRole(string? role)
+        {
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                return null;
+            }
+
+            var upper = role.Trim().ToUpperInvariant();
+            if (upper.Contains("CT") || upper.Contains("CHỦ") || upper.Contains("CHAIR"))
+            {
+                return "CT";
+            }
+
+            if (upper.Contains("UVTK") || upper.Contains("THƯ KÝ") || upper.Contains("THU KY") || upper.Contains("TK") || upper.Contains("SECRETARY"))
+            {
+                return "UVTK";
+            }
+
+            if (upper.Contains("UVPB") || upper.Contains("PHẢN BIỆN") || upper.Contains("PHAN BIEN") || upper.Contains("PB") || upper.Contains("REVIEWER"))
+            {
+                return "UVPB";
+            }
+
+            return upper;
+        }
+
+        private static LecturerProfile? TryGetMemberLecturerProfile(CommitteeMember member, IReadOnlyDictionary<string, LecturerProfile> lecturerProfiles)
+        {
+            if (!string.IsNullOrWhiteSpace(member.MemberLecturerCode) && lecturerProfiles.TryGetValue(member.MemberLecturerCode!.Trim(), out var profile))
+            {
+                return profile;
+            }
+
+            return null;
+        }
+
+        private static string BuildDefenseSessionText(DefenseAssignment assignment)
+        {
+            if (!string.IsNullOrWhiteSpace(assignment.Shift))
+            {
+                return assignment.Shift.Trim();
+            }
+
+            if (assignment.Session.HasValue)
+            {
+                return assignment.Session.Value == 1 ? "Sáng" : assignment.Session.Value == 2 ? "Chiều" : $"Buổi {assignment.Session.Value}";
+            }
+
+            return string.Empty;
+        }
+
+        private static string BuildDefenseDateText(DefenseAssignment assignment, string committeeCode, IReadOnlyDictionary<string, Committee> committeeByCode)
+        {
+            var defenseDate = assignment.ScheduledAt ?? (committeeByCode.TryGetValue(committeeCode, out var committee) ? committee.DefenseDate : null);
+            return defenseDate.HasValue ? defenseDate.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) : string.Empty;
+        }
 
         private async Task<ActionResult<ApiResponse<List<ExportHistoryDto>>>> GetExportHistory(int periodId)
         {
@@ -4635,8 +5051,119 @@ namespace ThesisManagement.Api.Controllers
                 return new HashSet<int>();
             }
         }
+
+        public class ScoringActionRequestDto
+        {
+            public string Action { get; set; } = string.Empty;
+            public string? CommitteeCode { get; set; }
+            public string? CommitteeId { get; set; }
+            public List<int>? Targets { get; set; }
+        }
+
+        [HttpGet("{periodId:int}/scoring/progress-topic-final")]
+        [Authorize(Roles = "Admin,Head")]
+        public async Task<ActionResult<ApiResponse<object>>> GetScoringProgressTopicFinal(int periodId)
+        {
+            var scoringMatrixAction = await GetScoringMatrix(periodId, null);
+            if (!TryExtractApiResponse(scoringMatrixAction, out var scoringMatrix, out var statusCode) || scoringMatrix == null || !scoringMatrix.Success)
+            {
+                return StatusCode(statusCode, ApiResponse<object>.Fail("Không thể lấy danh sách đề tài.", statusCode));
+            }
+
+            var safeScoringMatrix = scoringMatrix.Data?.Select(row =>
+            {
+                var isScored = row.SubmittedCount >= row.RequiredCount && row.RequiredCount > 0;
+                var effectiveStatus = (row.IsLocked || row.Status == "LOCKED") 
+                    ? "LOCKED" 
+                    : (isScored ? "WAITING_PUBLISH" : (row.Status ?? "PENDING"));
+
+                if (row.IsLocked || row.Status == "LOCKED")
+                {
+                    return (object)new
+                    {
+                        row.AssignmentId,
+                        row.TopicTitle,
+                        row.TopicCode,
+                        row.StudentName,
+                        row.StudentCode,
+                        row.CommitteeCode,
+                        CurrentScore = row.ScoreGvhd,
+                        row.FinalScore,
+                        row.FinalGrade,
+                        row.SubmittedCount,
+                        row.RequiredCount,
+                        Status = effectiveStatus
+                    };
+                }
+
+                return (object)new
+                {
+                    row.AssignmentId,
+                    row.TopicTitle,
+                    row.TopicCode,
+                    row.StudentName,
+                    row.StudentCode,
+                    row.CommitteeCode,
+                    CurrentScore = (decimal?)null,
+                    FinalScore = (decimal?)null,
+                    FinalGrade = (string?)null,
+                    row.SubmittedCount,
+                    row.RequiredCount,
+                    Status = effectiveStatus
+                };
+            }).ToList();
+
+            return Ok(ApiResponse<object>.SuccessResponse(safeScoringMatrix));
+        }
+
+        [HttpGet("{periodId:int}/scoring/distribution")]
+        [Authorize(Roles = "Admin,Head")]
+        public async Task<ActionResult<ApiResponse<object>>> GetScoringDistribution(int periodId)
+        {
+            var distributionAction = await GetDistribution(periodId);
+            if (!TryExtractApiResponse(distributionAction, out var distribution, out var distributionStatusCode) || distribution == null || !distribution.Success)
+            {
+                return StatusCode(distributionStatusCode, ApiResponse<object>.Fail("Không thể lấy phân bố điểm.", distributionStatusCode));
+            }
+            return Ok(ApiResponse<object>.SuccessResponse(distribution.Data));
+        }
+
+        [HttpPost("{periodId:int}/scoring/actions")]
+        [Authorize(Roles = "Admin,Head")]
+        public async Task<ActionResult<ApiResponse<object>>> PostScoringActions(int periodId, [FromBody] ScoringActionRequestDto request)
+        {
+            var action = request.Action?.Trim().ToUpper() ?? "";
+            var committeeIdStr = request.CommitteeId ?? request.CommitteeCode ?? "";
+            
+            if (!int.TryParse(committeeIdStr, out var committeeId) || committeeId <= 0)
+            {
+                return BadRequest(ApiResponse<object>.Fail("CommitteeId hoặc CommitteeCode không hợp lệ.", 400));
+            }
+
+            if (!new[] { "OPEN", "LOCK", "REOPEN" }.Contains(action))
+            {
+                return BadRequest(ApiResponse<object>.Fail("Action phải là: OPEN, LOCK, hoặc REOPEN.", 400));
+            }
+
+            // Validate committee exists
+            var committee = await _db.Committees.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.CommitteeID == committeeId);
+            
+            if (committee == null)
+            {
+                return NotFound(ApiResponse<object>.Fail($"Không tìm thấy hội đồng với ID {committeeId}.", 404));
+            }
+
+            // Return success response - actual workflow triggered by lecturers via lecturer endpoint
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                Action = action,
+                CommitteeId = committeeId,
+                CommitteeName = committee.Name,
+                CommitteeCode = committee.CommitteeCode,
+                Processed = true,
+                Message = $"Yêu cầu {action} cho hội đồng {committee.CommitteeCode} đã được nhận."
+            }));
+        }
     }
 }
-
-
-

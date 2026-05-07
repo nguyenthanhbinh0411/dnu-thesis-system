@@ -25,7 +25,6 @@ namespace ThesisManagement.Api.Controllers
         private readonly IGetLecturerMinutesQuery _getMinutesQuery;
         private readonly ISaveLecturerMinuteCommand _saveMinuteCommand;
         private readonly ISubmitLecturerIndependentScoreCommand _submitScoreCommand;
-        private readonly IRequestReopenScoreCommand _reopenScoreCommand;
         private readonly IOpenLecturerSessionCommand _openSessionCommand;
         private readonly ILockLecturerSessionCommand _lockSessionCommand;
         private readonly IGetLecturerRevisionQueueQuery _revisionQueueQuery;
@@ -49,7 +48,6 @@ namespace ThesisManagement.Api.Controllers
             IGetLecturerMinutesQuery getMinutesQuery,
             ISaveLecturerMinuteCommand saveMinuteCommand,
             ISubmitLecturerIndependentScoreCommand submitScoreCommand,
-            IRequestReopenScoreCommand reopenScoreCommand,
             IOpenLecturerSessionCommand openSessionCommand,
             ILockLecturerSessionCommand lockSessionCommand,
             IGetLecturerRevisionQueueQuery revisionQueueQuery,
@@ -69,7 +67,6 @@ namespace ThesisManagement.Api.Controllers
             _getMinutesQuery = getMinutesQuery;
             _saveMinuteCommand = saveMinuteCommand;
             _submitScoreCommand = submitScoreCommand;
-            _reopenScoreCommand = reopenScoreCommand;
             _openSessionCommand = openSessionCommand;
             _lockSessionCommand = lockSessionCommand;
             _revisionQueueQuery = revisionQueueQuery;
@@ -321,7 +318,7 @@ namespace ThesisManagement.Api.Controllers
                         revisionQueueResult.AllowedActions));
                 }
 
-                matrixResult = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId);
+                matrixResult = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId, isForLecturer: true);
                 if (!matrixResult.Success)
                 {
                     return FromResult(ApiResponse<object>.Fail(
@@ -496,6 +493,16 @@ namespace ThesisManagement.Api.Controllers
         {
             var normalizedTemplate = (template ?? string.Empty).Trim().ToLowerInvariant();
             var normalizedFormat = (format ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedFormat == "docx")
+            {
+                normalizedFormat = "word";
+            }
+
+            if (normalizedFormat != "word" && normalizedFormat != "pdf")
+            {
+                return BadRequest(ApiResponse<object>.Fail("Định dạng không hợp lệ. Chỉ hỗ trợ word hoặc pdf.", 400));
+            }
+
             ApiResponse<(byte[] Content, string FileName, string ContentType)> result;
 
             switch (normalizedTemplate)
@@ -608,22 +615,6 @@ namespace ThesisManagement.Api.Controllers
                     action);
             }
 
-            if (action == "REOPEN_REQUEST")
-            {
-                if (request.Reopen == null)
-                {
-                    return BadRequest(ApiResponse<object>.Fail("Thiếu payload reopen cho action REOPEN_REQUEST.", 400));
-                }
-
-                return WrapAsObject(
-                    await RequestReopenScore(
-                        periodId,
-                        request.CommitteeId,
-                        request.Reopen,
-                        request.IdempotencyKey),
-                    action);
-            }
-
             if (action == "LOCK_SESSION")
             {
                 return WrapAsObject(
@@ -638,7 +629,7 @@ namespace ThesisManagement.Api.Controllers
                     action);
             }
 
-            return BadRequest(ApiResponse<object>.Fail("Action không hợp lệ. Hỗ trợ: SUBMIT, REOPEN_REQUEST, OPEN_SESSION, LOCK_SESSION.", 400));
+            return BadRequest(ApiResponse<object>.Fail("Action không hợp lệ. Hỗ trợ: SUBMIT, OPEN_SESSION, LOCK_SESSION.", 400));
         }
 
         [HttpPost("revisions/actions")]
@@ -1264,19 +1255,6 @@ namespace ThesisManagement.Api.Controllers
             return FromResult(result);
         }
 
-        private async Task<ActionResult<ApiResponse<bool>>> RequestReopenScore(int periodId, int id, [FromBody] ReopenScoreRequestDto request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey = null)
-        {
-            var guard = await _getMinutesQuery.ExecuteAsync(id, periodId);
-            if (!guard.Success)
-            {
-                return StatusCode(guard.HttpStatusCode == 0 ? 400 : guard.HttpStatusCode, ApiResponse<bool>.Fail(guard.Message ?? "Không thể truy vấn biên bản hội đồng.", guard.HttpStatusCode == 0 ? 400 : guard.HttpStatusCode, guard.Errors, guard.Code));
-            }
-
-            var lecturerCode = GetRequestUserCode() ?? string.Empty;
-            var result = await _reopenScoreCommand.ExecuteAsync(id, request, lecturerCode, CurrentUserId, idempotencyKey);
-            return FromResult(result);
-        }
-
         private async Task<ActionResult<ApiResponse<bool>>> LockSession(int periodId, int id, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey = null)
         {
             var guard = await _getMinutesQuery.ExecuteAsync(id, periodId);
@@ -1299,7 +1277,7 @@ namespace ThesisManagement.Api.Controllers
 
         private async Task<ActionResult<ApiResponse<List<ScoringMatrixRowDto>>>> GetScoringMatrix(int periodId, [FromQuery] int? committeeId = null)
         {
-            var result = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId);
+            var result = await _scoringMatrixQuery.ExecuteAsync(periodId, committeeId, isForLecturer: true);
             return FromResult(result);
         }
 

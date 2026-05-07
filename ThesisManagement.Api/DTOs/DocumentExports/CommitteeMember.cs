@@ -33,13 +33,6 @@ public sealed class CommitteeMember
 
         var displayName = string.Join(' ', parts);
 
-        if (!string.IsNullOrWhiteSpace(Workplace))
-        {
-            displayName = string.IsNullOrWhiteSpace(displayName)
-                ? Workplace.Trim()
-                : $"{displayName} - {Workplace.Trim()}";
-        }
-
         return displayName;
     }
 }

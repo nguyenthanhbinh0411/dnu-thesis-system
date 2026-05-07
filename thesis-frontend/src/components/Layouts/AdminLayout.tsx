@@ -280,7 +280,7 @@ const AdminLayout: React.FC = () => {
               right: 0,
               top: 0,
               height: 72,
-              zIndex: 20,
+              zIndex: 60,
               transition: "left 0.28s ease",
             }}
           >

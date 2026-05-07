@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
     createConcurrencyToken,
@@ -54,6 +55,8 @@ import {
     Unlock,
     Users2,
     XCircle,
+    AlertTriangle,
+    ChevronDown,
 } from "lucide-react";
 import { getAccessToken } from "../../services/auth-session.service";
 
@@ -66,7 +69,7 @@ type Committee = {
     date: string | null;
     slot: string | null;
     studentCount: number;
-    status: "Sắp diễn ra" | "Đang họp" | "Đã khóa";
+    status: "Sắp diễn ra" | "Đang họp" | "Đã chốt" | "Đã đóng";
     normalizedRole: CommitteeRoleCode;
     roleCode: CommitteeRoleCode;
     roleLabel: string;
@@ -583,10 +586,20 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
                 chipBorder: "#f97316",
                 chipText: "#c2410c",
             };
-        case "Đã khóa":
+        case "Đã chốt":
+            return {
+                emoji: "🔒",
+                label: "Đã chốt",
+                cardBorder: "#6366f1",
+                cardGlow: "rgba(99, 102, 241, 0.18)",
+                chipBg: "#eef2ff",
+                chipBorder: "#6366f1",
+                chipText: "#4338ca",
+            };
+        case "Đã đóng":
             return {
                 emoji: "⚫",
-                label: "Đã khóa",
+                label: "Đã đóng",
                 cardBorder: "#cbd5e1",
                 cardGlow: "rgba(148, 163, 184, 0.18)",
                 chipBg: "#f8fafc",
@@ -606,10 +619,13 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
     }
 };
 
-const mapCommitteeStatus = (value: unknown): Committee["status"] => {
+const mapCommitteeStatus = (value: unknown): "Sắp diễn ra" | "Đang họp" | "Đã chốt" | "Đã đóng" => {
     const raw = String(value ?? "").trim().toUpperCase();
-    if (raw === "LOCKED" || raw === "COMPLETED" || raw === "FINALIZED") {
-        return "Đã khóa";
+    if (raw === "FINALIZED") {
+        return "Đã đóng";
+    }
+    if (raw === "LOCKED" || raw === "COMPLETED") {
+        return "Đã chốt";
     }
     if (raw === "LIVE" || raw === "ONGOING") {
         return "Đang họp";
@@ -856,13 +872,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 },
                 headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
             }),
-        reopenRequestByCommittee: (id: string | number, payload: Record<string, unknown>, idempotencyKey?: string) =>
+        closeSessionByCommittee: (id: string | number, idempotencyKey?: string) =>
             fetchData<ApiResponse<boolean>>(`${lecturerBase}/scoring/actions`, {
                 method: "POST",
                 body: {
-                    action: "REOPEN_REQUEST",
+                    action: "CLOSE_SESSION",
                     committeeId: Number(id),
-                    reopen: payload,
                     ...(idempotencyKey ? { idempotencyKey } : {}),
                 },
                 headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
@@ -1055,7 +1070,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const [joinedCommitteeId, setJoinedCommitteeId] = useState<string>("");
     const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTabKey>("scoring");
     const [loadingData, setLoadingData] = useState(false);
-    const [reopenReason, setReopenReason] = useState("");
+    const [rejectReason, setRejectReason] = useState("");
     const [assignmentConcurrencyToken, setAssignmentConcurrencyToken] = useState(
         createConcurrencyToken("lecturer-assignment")
     );
@@ -1206,7 +1221,6 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const [myScore, setMyScore] = useState("");
     const [myComment, setMyComment] = useState("");
     const [submitted, setSubmitted] = useState(false);
-    const [chairRequestedReopen, setChairRequestedReopen] = useState(false);
     const [sessionLocked, setSessionLocked] = useState(false);
 
     const [revision, setRevision] = useState<RevisionRequest>(EMPTY_REVISION);
@@ -1220,7 +1234,11 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const [gradingLoadingProgress, setGradingLoadingProgress] = useState(0);
     const [gradingLoadingReady, setGradingLoadingReady] = useState(false);
     const [previewModalType, setPreviewModalType] = useState<PreviewModalType | null>(null);
+    const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
     const [isDownloadingPreviewFile, setIsDownloadingPreviewFile] = useState(false);
+
+    const renderPortal = (node: React.ReactNode) =>
+        typeof document !== "undefined" ? createPortal(node, document.body) : null;
 
     useEffect(() => {
         if (gradingLoadingReady) return;
@@ -2243,7 +2261,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const committeeStats = useMemo(() => {
         const live = committees.filter((item) => item.status === "Đang họp").length;
         const upcoming = committees.filter((item) => item.status === "Sắp diễn ra").length;
-        const locked = committees.filter((item) => item.status === "Đã khóa").length;
+        const locked = committees.filter((item) => item.status === "Đã chốt" || item.status === "Đã đóng").length;
         const pendingRevision = revisionQueue.filter((item) => item.status === "pending").length;
         return { live, upcoming, locked, pendingRevision };
     }, [committees, revisionQueue]);
@@ -2443,7 +2461,14 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const canOpenSession = canOpenSessionByActions || isChairRole;
     const canSubmitScore = canSubmitScoreByActions || isChairRole || isSecretaryRole || isReviewerRole;
     const canRequestReopen = canRequestReopenByActions || isChairRole;
-    const canLockSession = canLockSessionByActions || isChairRole;
+    
+    const allTopicsGraded = useMemo(() => {
+        if (scoringMatrix.length === 0) return false;
+        // In backend, "COMPLETED" or "LOCKED" status means all required scores are present
+        return scoringMatrix.every(row => row.status === "COMPLETED" || row.status === "LOCKED");
+    }, [scoringMatrix]);
+
+    const canLockSession = (canLockSessionByActions || isChairRole) && allTopicsGraded;
 
 
     const canEditMinutesByActions = hasAllowedAction(
@@ -2485,11 +2510,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const canApproveRevision = canApproveRevisionByActions;
     const canRejectRevision = canRejectRevisionByActions;
     const isSessionOpened = selectedCommittee?.status === "Đang họp";
-    const isSessionClosed = selectedCommittee?.status === "Đã khóa";
-    // Committee status is the source of truth: if session is opened, it's NOT locked
-    // regardless of stale row.isLocked data from snapshot
-    const isCurrentSessionLocked = isSessionClosed || (sessionLocked && !isSessionOpened);
-    const canScoreNow = canSubmitScore && !isCurrentSessionLocked;
+    const isSessionLocked = selectedCommittee?.status === "Đã chốt";
+    const isSessionClosed = selectedCommittee?.status === "Đã đóng";
+    
+    // Committee status is the source of truth
+    const isCurrentSessionLocked = isSessionLocked || isSessionClosed;
+    const canScoreNow = canSubmitScore && isSessionOpened;
 
     const myRoleLabel = isChairRole
         ? "Chủ tịch"
@@ -2725,7 +2751,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
         );
 
         if (joinedCommitteeId === committeeId || selectedCommitteeId === committeeId) {
-            setSessionLocked(nextStatus === "Đã khóa");
+            setSessionLocked(nextStatus === "Đã chốt" || nextStatus === "Đã đóng");
         }
     };
 
@@ -2738,7 +2764,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             notifyInfo("Phiên của hội đồng này đang mở sẵn.");
             return;
         }
-        if (committee.status === "Đã khóa") {
+        if (committee.status === "Đã chốt" || committee.status === "Đã đóng") {
             notifyInfo("Phiên đã khóa, không thể mở lại từ danh sách này.");
             return;
         }
@@ -2780,7 +2806,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 return;
             }
 
-            syncCommitteeSessionStatus(committee.id, "Đã khóa");
+            syncCommitteeSessionStatus(committee.id, "Đã chốt");
             pushTrace("lock-session", `[Chair] Đóng phiên hội đồng ${committee.id}.`);
 
             if (selectedCommitteeId === committee.id) {
@@ -2840,7 +2866,6 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 return;
             }
             setSubmitted(true);
-            setChairRequestedReopen(false);
 
             // Optimistic UI update: immediately reflect submitted score in the grid
             const submittedScoreValue = Number(myScore);
@@ -3468,15 +3493,169 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                 >
                                     <ArrowRight size={14} /> Rời phòng
                                 </button>
+                                {/* Chair actions moved to header: Open / Lock / Unlock / Close session buttons */}
+                                {isChairRole && (
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        {selectedCommittee?.status === "Sắp diễn ra" && (
+                                            <button
+                                                type="button"
+                                                className="lec-primary"
+                                                disabled={!canOpenSession}
+                                                onClick={async () => {
+                                                    try {
+                                                        const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-open");
+                                                        const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
+                                                        if (notifyApiFailure(response as ApiResponse<unknown>, "Mở phiên chấm thất bại.")) {
+                                                            return;
+                                                        }
+                                                        setCommittees((prev) =>
+                                                            prev.map((item) =>
+                                                                item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
+                                                            ),
+                                                        );
+                                                        setSessionLocked(false);
+                                                        pushTrace("open-session", "[UC3.1] Đã mở phiên chấm.");
+                                                        await refreshScoringData(selectedCommitteeNumericId);
+                                                        await refreshAllScoringRows();
+                                                        notifySuccess("Đã mở phiên hội đồng.");
+                                                    } catch {
+                                                        notifyError("Mở phiên chấm thất bại.");
+                                                    }
+                                                }}
+                                            >
+                                                <CalendarClock size={14} /> Mở phiên
+                                            </button>
+                                        )}
+
+                                        {selectedCommittee?.status === "Đang họp" && (
+                                            <button
+                                                type="button"
+                                                className="lec-primary"
+                                                disabled={!canLockSession || !allTopicsGraded}
+                                                onClick={async () => {
+                                                    if (!window.confirm("Bạn có chắc chắn muốn chốt điểm cho hội đồng này? Sau khi chốt, các thành viên chỉ có thể chỉnh sửa lại khi Chủ tịch mở chốt.")) {
+                                                        return;
+                                                    }
+                                                    try {
+                                                        const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-lock");
+                                                        const response = await lecturerApi.lockSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
+                                                        if (notifyApiFailure(response as ApiResponse<unknown>, "Chốt điểm thất bại.")) {
+                                                            return;
+                                                        }
+                                                        setSessionLocked(true);
+                                                        setCommittees((prev) =>
+                                                            prev.map((item) =>
+                                                                item.id === selectedCommitteeId ? { ...item, status: "Đã chốt" } : item,
+                                                            ),
+                                                        );
+                                                        pushTrace("lock-session", "[UC3.5] Đã chốt điểm hội đồng.");
+                                                        await refreshScoringData(selectedCommitteeNumericId);
+                                                        await refreshAllScoringRows();
+                                                        notifySuccess("Đã chốt điểm hội đồng thành công.");
+                                                    } catch (error) {
+                                                        const missingMembers = extractMissingMemberCodes(error);
+                                                        if (missingMembers.length > 0) {
+                                                            notifyError(`Thiếu điểm từ thành viên: ${missingMembers.join(", ")}`);
+                                                            return;
+                                                        }
+                                                        notifyError("Chốt điểm thất bại.");
+                                                    }
+                                                }}
+                                            >
+                                                <Lock size={14} /> Chốt điểm
+                                            </button>
+                                        )}
+
+                                        {selectedCommittee?.status === "Đã chốt" && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    style={{ padding: "0 14px", minHeight: 40, borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                                                    onClick={async () => {
+                                                        if (!window.confirm("Bạn có chắc chắn muốn mở chốt điểm? Các thành viên sẽ có thể chỉnh sửa điểm.")) {
+                                                            return;
+                                                        }
+                                                        try {
+                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-unlock");
+                                                            const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
+                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Mở chốt điểm thất bại.")) {
+                                                                return;
+                                                            }
+                                                            setSessionLocked(false);
+                                                            setSubmitted(false);
+                                                            setCommittees((prev) =>
+                                                                prev.map((item) =>
+                                                                    item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
+                                                                ),
+                                                            );
+                                                            pushTrace("unlock-session", "[UC3.5] Chủ tịch đã mở chốt điểm.");
+                                                            await refreshScoringData(selectedCommitteeNumericId);
+                                                            await refreshAllScoringRows();
+                                                            notifySuccess("Đã mở chốt điểm. Các thành viên có thể chỉnh sửa điểm.");
+                                                        } catch {
+                                                            notifyError("Mở chốt điểm thất bại.");
+                                                        }
+                                                    }}
+                                                >
+                                                    <Unlock size={14} /> Mở chốt điểm
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    className="lec-primary"
+                                                    style={{ background: "#1e293b", borderColor: "#1e293b" }}
+                                                    onClick={async () => {
+                                                        if (!window.confirm("Bạn có chắc chắn muốn đóng phiên bảo vệ? Sau khi đóng, hội đồng sẽ kết thúc hoàn toàn.")) {
+                                                            return;
+                                                        }
+                                                        try {
+                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-close");
+                                                            const response = await lecturerApi.closeSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
+                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Đóng phiên thất bại.")) {
+                                                                return;
+                                                            }
+                                                            setCommittees((prev) =>
+                                                                prev.map((item) =>
+                                                                    item.id === selectedCommitteeId ? { ...item, status: "Đã đóng" } : item,
+                                                                ),
+                                                            );
+                                                            setSessionLocked(true);
+                                                            pushTrace("close-session", "[UC3.5] Đã đóng phiên hội đồng.");
+                                                            await refreshScoringData(selectedCommitteeNumericId);
+                                                            await refreshAllScoringRows();
+                                                            notifySuccess("Đã đóng phiên bảo vệ thành công.");
+                                                        } catch {
+                                                            notifyError("Đóng phiên thất bại.");
+                                                        }
+                                                    }}
+                                                >
+                                                    <CheckCircle2 size={14} /> Đóng phiên
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         {!selectedCommittee ? (
                             <div style={{ fontSize: 13, color: "#475569" }}>Không tìm thấy dữ liệu hội đồng đã tham gia trong snapshot hiện tại.</div>
                         ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                
                             <div className="lec-workspace">
                                 <aside className="lec-left-pane">
-                                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Danh sách đề tài theo ca</div>
+                                    <div style={{ fontWeight: 800, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <span>Danh sách đề tài theo ca</span>
+                                        <button
+                                            type="button"
+                                            className="lec-soft"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 12, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff" }}
+                                            onClick={() => setPreviewModalType("scoreSheet")}
+                                        >
+                                            <Eye size={14} /> Xem bảng điểm
+                                        </button>
+                                    </div>
                                     <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
                                         {selectedCommittee.id} · {selectedCommittee.name}
                                     </div>
@@ -3679,7 +3858,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             </div>
                                             <div>
                                                 <span className="lec-kicker">Trạng thái khóa điểm</span>
-                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.isLocked ? "Đã khóa" : "Đang mở"}</div>
+                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.isLocked ? "Đã chốt" : "Đang mở"}</div>
                                             </div>
                                             <div>
                                                 <span className="lec-kicker">Điểm Giảng viên Hướng dẫn</span>
@@ -3704,6 +3883,24 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                         )}
                                                     </div>
                                                 </div>
+                                            </div>
+                                            <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4, borderTop: "1px solid #fed7aa", paddingTop: 10 }}>
+                                                <button
+                                                    type="button"
+                                                    className="lec-soft"
+                                                    style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                    onClick={() => setPreviewModalType("meeting")}
+                                                >
+                                                    <Eye size={14} /> Xem biên bản
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="lec-soft"
+                                                    style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                    onClick={() => setPreviewModalType("reviewer")}
+                                                >
+                                                    <Eye size={14} /> Xem nhận xét
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -3833,15 +4030,6 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                 </label>
                                             </div>
 
-                                            <label style={{ display: "grid", gap: 6 }}>
-                                                <span className="lec-kicker">Lý do yêu cầu mở lại chấm</span>
-                                                <textarea
-                                                    value={reopenReason}
-                                                    onChange={(event) => setReopenReason(event.target.value)}
-                                                    rows={3}
-                                                />
-                                            </label>
-
                                             {!isScoreValid && <div style={{ color: "#b91c1c", fontSize: 13 }}>Điểm phải trong khoảng từ 0 đến 10.</div>}
                                             {hasVarianceAlert && (
                                                 <div style={{ border: "1px solid #fecaca", borderRadius: 10, padding: 10, background: "#fff7ed", color: "#9a3412", fontSize: 13 }}>
@@ -3861,216 +4049,9 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                 >
                                                     <Save size={14} /> {submitted ? `Cập nhật điểm ${myRoleLabel}` : `Gửi điểm ${myRoleLabel}`}
                                                 </button>
-
-                                                <button
-                                                    type="button"
-                                                    className="lec-soft"
-                                                    disabled={!selectedAssignmentId}
-                                                    onClick={async () => {
-                                                        if (!selectedAssignmentId) {
-                                                            notifyError("Vui lòng chọn đề tài trước khi yêu cầu mở lại chấm.");
-                                                            return;
-                                                        }
-                                                        if (isChairRole) {
-                                                            // Chủ tịch mở lại phiên trực tiếp
-                                                            if (!window.confirm("Bạn (Chủ tịch) muốn mở lại phiên chấm điểm cho hội đồng này?")) {
-                                                                return;
-                                                            }
-                                                            try {
-                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "chair-reopen-session");
-                                                                const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Mở lại phiên chấm thất bại.")) {
-                                                                    return;
-                                                                }
-                                                                setCommittees((prev) =>
-                                                                    prev.map((item) =>
-                                                                        item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
-                                                                    ),
-                                                                );
-                                                                setSessionLocked(false);
-                                                                pushTrace("chair-reopen-session", "[Chair] Đã mở lại phiên chấm.");
-                                                                await refreshScoringData(selectedCommitteeNumericId);
-                                                                await refreshAllScoringRows();
-                                                                notifySuccess("Đã mở lại phiên chấm thành công.");
-                                                            } catch {
-                                                                notifyError("Mở lại phiên chấm thất bại.");
-                                                            }
-                                                        } else {
-                                                            // Thành viên gửi yêu cầu mở lại cho Chủ tịch
-                                                            const reason = reopenReason.trim() || "Cần mở lại chấm để cập nhật đánh giá.";
-                                                            if (!window.confirm(`Gửi yêu cầu mở lại chấm tới Chủ tịch?\nLý do: ${reason}`)) {
-                                                                return;
-                                                            }
-                                                            try {
-                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-score-reopen");
-                                                                const response = await lecturerApi.reopenRequestByCommittee(
-                                                                    selectedCommitteeNumericId,
-                                                                    {
-                                                                        assignmentId: selectedAssignmentId,
-                                                                        reason,
-                                                                    },
-                                                                    idempotencyKey,
-                                                                );
-                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không gửi được yêu cầu mở lại chấm.")) {
-                                                                    return;
-                                                                }
-                                                                setChairRequestedReopen(true);
-                                                                setSubmitted(false);
-                                                                pushTrace("reopen-score", "[UC3.3] Đã gửi yêu cầu mở lại chấm.");
-                                                                setAssignmentConcurrencyToken(createConcurrencyToken("lecturer-assignment"));
-                                                                await refreshScoringData(selectedCommitteeNumericId);
-                                                                await refreshAllScoringRows();
-                                                                notifySuccess("Đã gửi yêu cầu mở lại chấm cho Chủ tịch.");
-                                                            } catch {
-                                                                notifyError("Không gửi được yêu cầu mở lại chấm.");
-                                                            }
-                                                        }
-                                                    }}
-                                                >
-                                                    <MessageSquareText size={14} /> {isChairRole ? "Mở lại phiên chấm" : "Yêu cầu mở lại chấm"}
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    className="lec-soft"
-                                                    disabled={!canOpenSession || isSessionOpened || isSessionClosed}
-                                                    onClick={async () => {
-                                                        try {
-                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-open");
-                                                            const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Mở phiên chấm thất bại.")) {
-                                                                return;
-                                                            }
-                                                            setCommittees((prev) =>
-                                                                prev.map((item) =>
-                                                                    item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
-                                                                ),
-                                                            );
-                                                            setSessionLocked(false);
-                                                            pushTrace("open-session", "[UC3.1] Đã mở phiên chấm.");
-                                                            await refreshScoringData(selectedCommitteeNumericId);
-                                                            await refreshAllScoringRows();
-                                                        } catch {
-                                                            notifyError("Mở phiên chấm thất bại.");
-                                                        }
-                                                    }}
-                                                >
-                                                    <CalendarClock size={14} /> Mở phiên
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    className="lec-primary"
-                                                    disabled={!canLockSession || isCurrentSessionLocked || !isSessionOpened}
-                                                    onClick={async () => {
-                                                        if (!window.confirm("Bạn có chắc chắn muốn chốt điểm cho hội đồng này? Sau khi chốt, các thành viên sẽ không thể chỉnh sửa điểm.")) {
-                                                            return;
-                                                        }
-                                                        try {
-                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-lock");
-                                                            const response = await lecturerApi.lockSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Chốt điểm thất bại.")) {
-                                                                return;
-                                                            }
-                                                            setSessionLocked(true);
-                                                            setCommittees((prev) =>
-                                                                prev.map((item) =>
-                                                                    item.id === selectedCommitteeId ? { ...item, status: "Đã khóa" } : item,
-                                                                ),
-                                                            );
-                                                            pushTrace("lock-session", "[UC3.5] Đã chốt điểm hội đồng.");
-                                                            await refreshScoringData(selectedCommitteeNumericId);
-                                                            await refreshAllScoringRows();
-                                                            notifySuccess("Đã chốt điểm thành công.");
-                                                        } catch (error) {
-                                                            const missingMembers = extractMissingMemberCodes(error);
-                                                            if (missingMembers.length > 0) {
-                                                                notifyError(`Thiếu điểm từ thành viên: ${missingMembers.join(", ")}`);
-                                                                return;
-                                                            }
-                                                            notifyError("Chốt điểm thất bại.");
-                                                        }
-                                                    }}
-                                                >
-                                                    <Lock size={14} /> Chốt điểm hội đồng
-                                                </button>
-
-                                                {isChairRole && isCurrentSessionLocked && (
-                                                        <button
-                                                        type="button"
-                                                        style={{ 
-                                                            padding: "0 14px", 
-                                                            minHeight: 40, 
-                                                            borderRadius: 10, 
-                                                            border: "1px solid #fecaca", 
-                                                            background: "#fef2f2", 
-                                                            color: "#dc2626", 
-                                                            fontWeight: 700, 
-                                                            fontSize: 13, 
-                                                            display: "inline-flex", 
-                                                            alignItems: "center", 
-                                                            gap: 8, 
-                                                            cursor: "pointer" 
-                                                        }}
-                                                        onClick={async () => {
-                                                            if (!window.confirm("Bạn có chắc chắn muốn mở chốt điểm? Các thành viên sẽ có thể chỉnh sửa điểm.")) {
-                                                                return;
-                                                            }
-                                                            try {
-                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-unlock");
-                                                                const response = await lecturerApi.openSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Mở chốt điểm thất bại.")) {
-                                                                    return;
-                                                                }
-                                                                setSessionLocked(false);
-                                                                setSubmitted(false);
-                                                                setCommittees((prev) =>
-                                                                    prev.map((item) =>
-                                                                        item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
-                                                                    ),
-                                                                );
-                                                                pushTrace("unlock-session", "[UC3.5] Chủ tịch đã mở chốt điểm.");
-                                                                await refreshScoringData(selectedCommitteeNumericId);
-                                                                await refreshAllScoringRows();
-                                                                notifySuccess("Đã mở chốt điểm. Các thành viên có thể chỉnh sửa điểm.");
-                                                            } catch {
-                                                                notifyError("Mở chốt điểm thất bại.");
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Unlock size={14} /> Mở chốt điểm hội đồng
-                                                    </button>
-                                                )}
-
-                                                {isChairRole && selectedCommitteeNumericId > 0 && (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            className="lec-soft"
-                                                            onClick={() => setPreviewModalType("meeting")}
-                                                        >
-                                                            <Eye size={14} /> Xem biên bản
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="lec-soft"
-                                                            onClick={() => setPreviewModalType("reviewer")}
-                                                        >
-                                                            <Eye size={14} /> Xem nhận xét
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="lec-soft"
-                                                            onClick={() => setPreviewModalType("scoreSheet")}
-                                                        >
-                                                            <Eye size={14} /> Xem bảng điểm
-                                                        </button>
-                                                    </>
-                                                )}
                                             </div>
 
-                                            {submitted && <div style={{ fontSize: 13, color: "#166534" }}>Đã gửi điểm thành công.</div>}
-                                            {chairRequestedReopen && <div style={{ fontSize: 13, color: "#9a3412" }}>Đã gửi yêu cầu mở lại chấm.</div>}
+                                            {submitted && <div style={{ fontSize: 13, color: "#166534" }}>Đã lưu điểm thành công. Bạn vẫn có thể chỉnh sửa lại điểm nếu cần.</div>}
                                         </div>
                                     )}
 
@@ -4619,7 +4600,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                         className="lec-soft"
                                                         disabled={!canRejectRevision || !selectedRevisionItem.revisionId}
                                                         onClick={async () => {
-                                                            if (!reopenReason.trim()) {
+                                                            if (!rejectReason.trim()) {
                                                                 notifyError(ucError("UC4.2-REJECT_REASON_REQUIRED"));
                                                                 return;
                                                             }
@@ -4630,7 +4611,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                             }
                                                             try {
                                                                 const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-reject-revision");
-                                                                const response = await lecturerApi.rejectRevision(revisionId, reopenReason.trim(), idempotencyKey);
+                                                                const response = await lecturerApi.rejectRevision(revisionId, rejectReason.trim(), idempotencyKey);
                                                                 if (notifyApiFailure(response as ApiResponse<unknown>, "Không từ chối được bản chỉnh sửa.")) {
                                                                     return;
                                                                 }
@@ -4669,21 +4650,20 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             </div>
                                         </div>
                                     )}
-
                                 </div>
                             </div>
+                        </div>
                         )}
                     </section>
                 )}
-            </div>
 
-            {previewModalType && (
+            {previewModalType && renderPortal(
                 <div
                     style={{
                         position: "fixed",
                         inset: 0,
                         background: "rgba(15, 23, 42, 0.45)",
-                        zIndex: 3300,
+                        zIndex: 100000,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -4721,25 +4701,57 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                             : "Xem trước theo dữ liệu đã nhập của đề tài đang chọn trước khi tải file."}
                                 </div>
                             </div>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                    type="button"
-                                    className="lec-soft"
-                                    disabled={isDownloadingPreviewFile}
-                                    onClick={() => void downloadPreviewDocument(previewModalType, "word")}
-                                >
-                                    <Download size={14} /> Tải Word
-                                </button>
-                                <button
-                                    type="button"
-                                    className="lec-soft"
-                                    disabled={isDownloadingPreviewFile}
-                                    onClick={() => void downloadPreviewDocument(previewModalType, "pdf")}
-                                >
-                                    <Download size={14} /> Tải PDF
-                                </button>
-                                <button type="button" className="lec-ghost" onClick={() => setPreviewModalType(null)}>
-                                    <XCircle size={14} /> Đóng
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                <div style={{ position: "relative" }}>
+                                    <button
+                                        type="button"
+                                        style={{ border: "1px solid #cbd5e1", background: "#0f172a", color: "#ffffff", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}
+                                        disabled={isDownloadingPreviewFile}
+                                        onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
+                                    >
+                                        <Download size={14} /> {isDownloadingPreviewFile ? "Đang xử lý..." : "Tải xuống"} <ChevronDown size={14} style={{ transform: showDownloadDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
+                                    </button>
+                                    {showDownloadDropdown && (
+                                        <div
+                                            style={{
+                                                position: "absolute",
+                                                top: "calc(100% + 6px)",
+                                                right: 0,
+                                                background: "#ffffff",
+                                                border: "1px solid #cbd5e1",
+                                                borderRadius: 10,
+                                                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                                                minWidth: 160,
+                                                zIndex: 4100,
+                                                overflow: "hidden",
+                                                display: "grid",
+                                                padding: 4,
+                                            }}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "word"); }}
+                                                style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
+                                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                                                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                                            >
+                                                <FileText size={14} color="#2563eb" /> Xuất bản Word (.docx)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "pdf"); }}
+                                                style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
+                                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                                                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                                            >
+                                                <Download size={14} color="#dc2626" /> Xuất bản PDF (.pdf)
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button type="button" style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }} onClick={() => { setPreviewModalType(null); setShowDownloadDropdown(false); }}>
+                                    Đóng
                                 </button>
                             </div>
                         </div>
@@ -4936,13 +4948,6 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                     <div style={{ fontSize: 12, fontWeight: "bold", marginTop: 4 }}>HỘI ĐỒNG SỐ: {selectedMatrixRow?.committeeCode ?? selectedCommittee?.name ?? "-"}   NGÀY BẢO VỆ: {formatDate(selectedCommittee?.date ?? null)}</div>
                                 </div>
 
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, border: "1px solid #000", padding: 8 }}>
-                                    <div><strong>Lớp:</strong> {selectedMatrixRow?.className ?? "-"}</div>
-                                    <div><strong>Khóa:</strong> {selectedMatrixRow?.cohortCode ?? "-"}</div>
-                                    <div><strong>Người hướng dẫn:</strong> {selectedMatrixRow?.supervisorLecturerName ?? "-"}</div>
-                                    <div><strong>Nơi công tác:</strong> {selectedMatrixRow?.supervisorOrganization ?? "-"}</div>
-                                </div>
-
                                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 8 }}>
                                     <tbody>
                                         <tr>
@@ -5023,13 +5028,13 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 </div>
             )}
 
-            {detailCommittee && (
+            {detailCommittee && renderPortal(
                 <div
                     style={{
                         position: "fixed",
                         inset: 0,
                         background: "rgba(15, 23, 42, 0.45)",
-                        zIndex: 3200,
+                        zIndex: 100000,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -5249,6 +5254,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                     </div>
                 </div>
             )}
+            </div>
         </div>
     );
 };
