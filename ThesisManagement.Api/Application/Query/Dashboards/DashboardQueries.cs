@@ -11,6 +11,12 @@ namespace ThesisManagement.Api.Application.Query.Dashboards
         Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerReviewQueueAsync(string? lecturerCode, int limit);
         Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerScoringProgressAsync(string? lecturerCode, int limit);
         Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerDeadlineRiskAsync(string? lecturerCode, int limit);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerDefenseScheduleAsync(string? lecturerCode, int limit);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerCommitteesAsync(string? lecturerCode, int limit);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerProgressStatusBreakdownAsync(string? lecturerCode);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerOverdueTrendAsync(string? lecturerCode, int days);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerTopicTypeBreakdownAsync(string? lecturerCode);
+        Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerReviewStatusBreakdownAsync(string? lecturerCode);
 
         Task<IReadOnlyList<Dictionary<string, object?>>> GetStudentServiceOverviewAsync();
         Task<IReadOnlyList<Dictionary<string, object?>>> GetStudentServiceAtRiskAsync(int limit);
@@ -44,33 +50,59 @@ namespace ThesisManagement.Api.Application.Query.Dashboards
         public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerOverviewAsync(string? lecturerCode)
         {
             var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
-            var sql = "SELECT * FROM VW_DASH_LECTURER_OVERVIEW";
+            var sql = @"
+                SELECT v.*, 
+                       d.CURRENTGUIDINGCOUNT,
+                       (SELECT COUNT(*) 
+                        FROM DEFENSEASSIGNMENTS da 
+                        JOIN COMMITTEEMEMBERS cm ON da.COMMITTEEID = cm.COMMITTEEID 
+                        WHERE cm.MEMBERLECTURERCODE = v.LECTURERCODE) as CURRENT_DEFENSE_COUNT
+                FROM VW_DASH_LECTURER_OVERVIEW v
+                LEFT JOIN V_LECTURER_DASHBOARD d ON v.LECTURERCODE = d.LECTURERCODE";
             var parameters = new List<(string Name, object? Value)>();
 
             if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
             {
-                sql += " WHERE LECTURERCODE = :P_LECTURER_CODE";
+                sql += " WHERE v.LECTURERCODE = :P_LECTURER_CODE";
                 parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
             }
 
-            sql += " ORDER BY LECTURERCODE";
+            sql += " ORDER BY v.LECTURERCODE";
             return await QueryRowsAsync(sql, parameters);
         }
 
         public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerReviewQueueAsync(string? lecturerCode, int limit)
         {
             var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
-            var innerSql = "SELECT * FROM VW_DASH_LECTURER_REVIEW_QUEUE";
+            var innerSql = @"
+                SELECT 
+                    s.*,
+                    st.FULLNAME as STUDENTFULLNAME,
+                    st.STUDENTCODE,
+                    t.TITLE as TOPICTITLE,
+                    t.TOPICCODE,
+                    mt.NAME as MILESTONENAME,
+                    mt.NAME as CATEGORY,
+                    s.LECTURERSTATE as STATUS,
+                    s.LECTURERSTATE as STATE,
+                    (CASE WHEN UPPER(s.LECTURERSTATE) = 'PENDING' 
+                          THEN ROUND((SYSDATE - CAST(s.SUBMITTEDAT AS DATE)) * 24, 2) 
+                          ELSE 0 END) as HOURS_WAITING_REVIEW
+                FROM PROGRESSSUBMISSIONS s
+                LEFT JOIN STUDENTPROFILES st ON s.STUDENTPROFILECODE = st.STUDENTCODE
+                LEFT JOIN PROGRESSMILESTONES m ON s.MILESTONEID = m.MILESTONEID
+                LEFT JOIN TOPICS t ON m.TOPICID = t.TOPICID
+                LEFT JOIN MILESTONETEMPLATES mt ON m.MILESTONETEMPLATECODE = mt.MILESTONETEMPLATECODE";
             var parameters = new List<(string Name, object? Value)>();
 
             if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
             {
-                innerSql += " WHERE LECTURERCODE = :P_LECTURER_CODE";
+                innerSql += " WHERE s.LECTURERCODE = :P_LECTURER_CODE";
                 parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
             }
 
-            innerSql += " ORDER BY HOURS_WAITING_REVIEW DESC, SUBMITTEDAT ASC";
-            parameters.Add(("P_LIMIT", ClampLimit(limit, 100)));
+            innerSql += " ORDER BY (CASE WHEN UPPER(s.LECTURERSTATE) = 'PENDING' THEN 0 ELSE 1 END), s.SUBMITTEDAT DESC";
+            parameters.Add(("P_LIMIT", ClampLimit(limit, 10)));
 
             var sql = $"SELECT * FROM ({innerSql}) WHERE ROWNUM <= :P_LIMIT";
             return await QueryRowsAsync(sql, parameters);
@@ -98,16 +130,82 @@ namespace ThesisManagement.Api.Application.Query.Dashboards
         public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerDeadlineRiskAsync(string? lecturerCode, int limit)
         {
             var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
-            var innerSql = "SELECT * FROM VW_DASH_LECTURER_DEADLINE_RISK";
+            var innerSql = @"
+                SELECT 
+                    v.*, 
+                    t.TITLE as TOPICTITLE, 
+                    st.FULLNAME as STUDENTFULLNAME,
+                    st.STUDENTCODE
+                FROM VW_DASH_LECTURER_DEADLINE_RISK v
+                LEFT JOIN TOPICS t ON v.TOPICCODE = t.TOPICCODE
+                LEFT JOIN STUDENTPROFILES st ON t.PROPOSERSTUDENTCODE = st.STUDENTCODE";
             var parameters = new List<(string Name, object? Value)>();
 
             if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
             {
-                innerSql += " WHERE LECTURERCODE = :P_LECTURER_CODE";
+                innerSql += " WHERE v.LECTURERCODE = :P_LECTURER_CODE";
                 parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
             }
 
-            innerSql += " ORDER BY CASE RISK_LEVEL WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, HOURS_OVERDUE DESC";
+            innerSql += " ORDER BY CASE v.RISK_LEVEL WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, v.HOURS_OVERDUE DESC";
+            parameters.Add(("P_LIMIT", ClampLimit(limit, 100)));
+
+            var sql = $"SELECT * FROM ({innerSql}) WHERE ROWNUM <= :P_LIMIT";
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerDefenseScheduleAsync(string? lecturerCode, int limit)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var innerSql = @"
+                SELECT 
+                    c.NAME as COMMITTEENAME,
+                    c.DEFENSEDATE,
+                    c.ROOM as ROOMCODE,
+                    t.TITLE as TOPICTITLE,
+                    st.FULLNAME as STUDENTFULLNAME,
+                    cm.ROLE as LECTURERROLE
+                FROM COMMITTEEMEMBERS cm
+                JOIN COMMITTEES c ON cm.COMMITTEEID = c.COMMITTEEID
+                JOIN DEFENSEASSIGNMENTS da ON c.COMMITTEEID = da.COMMITTEEID
+                JOIN TOPICS t ON da.TOPICID = t.TOPICID
+                LEFT JOIN STUDENTPROFILES st ON t.PROPOSERSTUDENTCODE = st.STUDENTCODE";
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                innerSql += " WHERE cm.MEMBERLECTURERCODE = :P_LECTURER_CODE";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            innerSql += " ORDER BY c.DEFENSEDATE ASC";
+            parameters.Add(("P_LIMIT", ClampLimit(limit, 100)));
+
+            var sql = $"SELECT * FROM ({innerSql}) WHERE ROWNUM <= :P_LIMIT";
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerCommitteesAsync(string? lecturerCode, int limit)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var innerSql = @"
+                SELECT 
+                    c.COMMITTEECODE,
+                    c.NAME as COMMITTEENAME,
+                    c.DEFENSEDATE,
+                    cm.ROLE,
+                    (SELECT COUNT(*) FROM DEFENSEASSIGNMENTS da WHERE da.COMMITTEEID = c.COMMITTEEID) as TOPIC_COUNT
+                FROM COMMITTEEMEMBERS cm
+                JOIN COMMITTEES c ON cm.COMMITTEEID = c.COMMITTEEID";
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                innerSql += " WHERE cm.MEMBERLECTURERCODE = :P_LECTURER_CODE";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            innerSql += " ORDER BY c.DEFENSEDATE DESC";
             parameters.Add(("P_LIMIT", ClampLimit(limit, 100)));
 
             var sql = $"SELECT * FROM ({innerSql}) WHERE ROWNUM <= :P_LIMIT";
@@ -198,6 +296,148 @@ namespace ThesisManagement.Api.Application.Query.Dashboards
             }
 
             sql += " ORDER BY SNAP_DATE DESC, LECTURERCODE";
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerProgressStatusBreakdownAsync(string? lecturerCode)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var sql = @"
+                SELECT 
+                    'NOT_SUBMITTED' as STATUS,
+                    COUNT(DISTINCT m.MILESTONEID) as COUNT
+                FROM PROGRESSMILESTONES m
+                LEFT JOIN PROGRESSSUBMISSIONS s ON m.MILESTONEID = s.MILESTONEID
+                WHERE s.MILESTONEID IS NULL";
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND m.TOPICID IN (SELECT TOPICID FROM TOPICS WHERE SUPERVISORLECTURERCODE = :P_LECTURER_CODE)";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            sql += @"
+                UNION ALL
+                SELECT 
+                    'SUBMITTED' as STATUS,
+                    COUNT(*) as COUNT
+                FROM PROGRESSSUBMISSIONS s
+                WHERE 1=1";
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND s.LECTURERCODE = :P_LECTURER_CODE";
+                // Note: parameter already added above if needed
+            }
+
+            sql += @"
+                UNION ALL
+                SELECT 
+                    CASE 
+                        WHEN UPPER(s.LECTURERSTATE) = 'PENDING' THEN 'PENDING_REVIEW'
+                        WHEN UPPER(s.LECTURERSTATE) = 'APPROVED' THEN 'APPROVED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'REJECTED' THEN 'REJECTED'
+                        ELSE 'OTHER'
+                    END as STATUS,
+                    COUNT(*) as COUNT
+                FROM PROGRESSSUBMISSIONS s
+                WHERE 1=1";
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND s.LECTURERCODE = :P_LECTURER_CODE";
+            }
+
+            sql += @" GROUP BY CASE 
+                        WHEN UPPER(s.LECTURERSTATE) = 'PENDING' THEN 'PENDING_REVIEW'
+                        WHEN UPPER(s.LECTURERSTATE) = 'APPROVED' THEN 'APPROVED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'REJECTED' THEN 'REJECTED'
+                        ELSE 'OTHER'
+                    END";
+
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerOverdueTrendAsync(string? lecturerCode, int days)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var sql = @"
+                SELECT 
+                    TRUNC(s.SUBMITTEDAT) AS ""DATE"",
+                    SUM(CASE WHEN m.DEADLINE IS NOT NULL AND m.DEADLINE < s.SUBMITTEDAT THEN 1 ELSE 0 END) AS OVERDUE_COUNT,
+                    COUNT(*) AS TOTAL_COUNT
+                FROM PROGRESSSUBMISSIONS s
+                LEFT JOIN PROGRESSMILESTONES m ON s.MILESTONEID = m.MILESTONEID
+                WHERE s.SUBMITTEDAT >= (TRUNC(SYSDATE) - :P_DAYS)";
+            var parameters = new List<(string Name, object? Value)> { ("P_DAYS", ClampDays(days)) };
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND s.LECTURERCODE = :P_LECTURER_CODE";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            sql += @" GROUP BY TRUNC(s.SUBMITTEDAT)
+                ORDER BY TRUNC(s.SUBMITTEDAT) DESC";
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerTopicTypeBreakdownAsync(string? lecturerCode)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var sql = @"
+                SELECT 
+                    t.""Type"" as TOPIC_TYPE,
+                    t.STATUS as TOPIC_STATUS,
+                    COUNT(*) as COUNT
+                FROM TOPICS t
+                WHERE 1=1";
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND t.SUPERVISORLECTURERCODE = :P_LECTURER_CODE";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            sql += @" GROUP BY t.""Type"", t.STATUS
+                ORDER BY t.""Type"", t.STATUS";
+            return await QueryRowsAsync(sql, parameters);
+        }
+
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> GetLecturerReviewStatusBreakdownAsync(string? lecturerCode)
+        {
+            var effectiveLecturerCode = await ResolveLecturerCodeAsync(lecturerCode);
+            var sql = @"
+                SELECT 
+                    CASE 
+                        WHEN UPPER(s.LECTURERSTATE) = 'PENDING' THEN 'PENDING'
+                        WHEN UPPER(s.LECTURERSTATE) = 'APPROVED' THEN 'APPROVED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'REJECTED' THEN 'REJECTED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'NEEDS_REVISION' OR UPPER(s.LECTURERSTATE) LIKE '%REVISION%' THEN 'NEEDS_REVISION'
+                        ELSE 'OTHER'
+                    END as REVIEW_STATUS,
+                    COUNT(*) as COUNT,
+                    ROUND(AVG(CASE WHEN s.SUBMITTEDAT IS NOT NULL THEN SYSDATE - CAST(s.SUBMITTEDAT AS DATE) ELSE NULL END), 2) as AVG_DAYS_WAITING
+                FROM PROGRESSSUBMISSIONS s
+                WHERE 1=1";
+            var parameters = new List<(string Name, object? Value)>();
+
+            if (!string.IsNullOrWhiteSpace(effectiveLecturerCode))
+            {
+                sql += " AND s.LECTURERCODE = :P_LECTURER_CODE";
+                parameters.Add(("P_LECTURER_CODE", effectiveLecturerCode));
+            }
+
+            sql += @" GROUP BY CASE 
+                        WHEN UPPER(s.LECTURERSTATE) = 'PENDING' THEN 'PENDING'
+                        WHEN UPPER(s.LECTURERSTATE) = 'APPROVED' THEN 'APPROVED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'REJECTED' THEN 'REJECTED'
+                        WHEN UPPER(s.LECTURERSTATE) = 'NEEDS_REVISION' OR UPPER(s.LECTURERSTATE) LIKE '%REVISION%' THEN 'NEEDS_REVISION'
+                        ELSE 'OTHER'
+                    END
+                ORDER BY COUNT DESC";
             return await QueryRowsAsync(sql, parameters);
         }
 
