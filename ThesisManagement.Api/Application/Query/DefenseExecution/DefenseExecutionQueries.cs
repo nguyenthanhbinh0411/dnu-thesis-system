@@ -72,6 +72,7 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
     public interface IBuildDefenseReportQuery
     {
         Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExecuteAsync(int periodId, string reportType, string format, int? councilId, CancellationToken cancellationToken = default);
+        Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExecuteAsync(DefensePeriodReportExportRequestDto request, int periodId, CancellationToken cancellationToken = default);
     }
 
     public interface IGetDefenseExportHistoryQuery
@@ -194,6 +195,8 @@ namespace ThesisManagement.Api.Application.Query.DefenseExecution
         public BuildDefenseReportQuery(IDefensePeriodQueryProcessor processor) => _processor = processor;
         public Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExecuteAsync(int periodId, string reportType, string format, int? councilId, CancellationToken cancellationToken = default)
             => _processor.BuildReportAsync(periodId, reportType, format, councilId, cancellationToken);
+        public Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> ExecuteAsync(DefensePeriodReportExportRequestDto request, int periodId, CancellationToken cancellationToken = default)
+            => _processor.BuildReportAsync(periodId, request, cancellationToken);
     }
 
     public class GetDefenseExportHistoryQuery : IGetDefenseExportHistoryQuery

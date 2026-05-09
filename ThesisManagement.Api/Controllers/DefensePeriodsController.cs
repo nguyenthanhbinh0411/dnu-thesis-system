@@ -1658,6 +1658,34 @@ namespace ThesisManagement.Api.Controllers
             return BadRequest(ApiResponse<object>.Fail("reportType không hợp lệ. Hỗ trợ: council-summary, scoreboard, minutes, review, form-1, final-term, committee-roster, sync-errors.", 400));
         }
 
+        [HttpPost("{periodId:int}/reports/export")]
+        [Authorize]
+        public async Task<IActionResult> ExportReportCustom(int periodId, [FromBody] DefensePeriodReportExportRequestDto request)
+        {
+            if (request == null)
+            {
+                return BadRequest(ApiResponse<object>.Fail("Thiếu payload export.", 400));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ReportType))
+            {
+                return BadRequest(ApiResponse<object>.Fail("ReportType là bắt buộc.", 400));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Format))
+            {
+                return BadRequest(ApiResponse<object>.Fail("Format là bắt buộc.", 400));
+            }
+
+            var result = await _reportQuery.ExecuteAsync(request, periodId, HttpContext.RequestAborted);
+            if (!result.Success)
+            {
+                return StatusCode(result.HttpStatusCode == 0 ? 400 : result.HttpStatusCode, result);
+            }
+
+            return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
+        }
+
         private ActionResult<ApiResponse<object>> WrapAsObject<T>(ActionResult<ApiResponse<T>> actionResult, string action)
         {
             if (!TryExtractApiResponse(actionResult, out var response, out var statusCode) || response == null)

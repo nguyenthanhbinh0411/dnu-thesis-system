@@ -50,6 +50,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         Task<ApiResponse<List<TopicFinalScoreProgressDto>>> GetTopicFinalScoreProgressAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<ScoringAlertDto>>> GetScoringAlertsAsync(int periodId, int? committeeId = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> BuildReportAsync(int periodId, string reportType, string format, int? councilId, CancellationToken cancellationToken = default);
+        Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> BuildReportAsync(int periodId, DefensePeriodReportExportRequestDto request, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<ExportHistoryDto>>> GetExportHistoryAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<PublishHistoryDto>>> GetPublishHistoryAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<CouncilAuditHistoryDto>>> GetCouncilAuditHistoryAsync(int periodId, int? councilId, CancellationToken cancellationToken = default);
@@ -77,7 +78,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         private sealed class CouncilSummaryRow
         {
             public int CouncilId { get; set; }
+            public string CommitteeCode { get; set; } = string.Empty;
             public string Room { get; set; } = string.Empty;
+            public string DefenseDate { get; set; } = string.Empty;
             public int StudentCount { get; set; }
             public decimal Avg { get; set; }
             public decimal Max { get; set; }
@@ -87,7 +90,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         private sealed class ScoreRowData
         {
             public int CouncilId { get; set; }
+            public string CommitteeCode { get; set; } = string.Empty;
             public string? Room { get; set; }
+            public DateTime? DefenseDate { get; set; }
             public string Session { get; set; } = string.Empty;
             public string StudentCode { get; set; } = string.Empty;
             public string StudentName { get; set; } = string.Empty;
@@ -95,6 +100,8 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             public decimal? Score { get; set; }
             public string? Grade { get; set; }
         }
+
+        private sealed record ReportColumnDefinition(string Key, string Header);
 
         private sealed class CommitteeAssignmentSnapshotRow
         {
@@ -2394,6 +2401,61 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 "text/csv; charset=utf-8"));
         }
 
+        public async Task<ApiResponse<(byte[] Content, string FileName, string ContentType)>> BuildReportAsync(
+            int periodId,
+            DefensePeriodReportExportRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request == null)
+            {
+                return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail("Thiếu payload export.", 400);
+            }
+
+            var normalizedType = NormalizeExportReportType(request.ReportType);
+            var normalizedFormat = (request.Format ?? "xlsx").Trim().ToLowerInvariant();
+            if (normalizedFormat == "excel")
+            {
+                normalizedFormat = "xlsx";
+            }
+
+            var rows = await GetScoreRowsAsync(periodId, cancellationToken);
+            if (request.CouncilId.HasValue)
+            {
+                rows = rows.Where(r => r.CouncilId == request.CouncilId.Value).ToList();
+            }
+
+            if (normalizedType == "scoreboard")
+            {
+                return await BuildReportAsync(periodId, request.ReportType, request.Format ?? "xlsx", request.CouncilId, cancellationToken);
+            }
+
+            if (normalizedFormat != "xlsx" && normalizedFormat != "pdf" && normalizedFormat != "csv")
+            {
+                return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail(
+                    "Định dạng export chỉ hỗ trợ: xlsx, pdf, csv.",
+                    400);
+            }
+
+            var fileStem = BuildFlexibleReportStem(normalizedType, periodId, request.CouncilId);
+            var selectedFields = request.SelectedFields ?? new List<string>();
+
+            return normalizedFormat switch
+            {
+                "xlsx" => ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                    BuildFlexibleXlsxContent(rows, normalizedType, selectedFields),
+                    $"{fileStem}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                "pdf" => ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                    BuildFlexiblePdfContent(rows, normalizedType, selectedFields),
+                    $"{fileStem}.pdf",
+                    "application/pdf")),
+                _ => ApiResponse<(byte[] Content, string FileName, string ContentType)>.SuccessResponse((
+                    BuildFlexibleCsvContent(rows, normalizedType, selectedFields),
+                    $"{fileStem}.csv",
+                    "text/csv; charset=utf-8"))
+            };
+        }
+
         public async Task<ApiResponse<List<ExportHistoryDto>>> GetExportHistoryAsync(int periodId, CancellationToken cancellationToken = default)
         {
             var rows = await _db.ExportFiles.AsNoTracking()
@@ -2512,7 +2574,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .Select(x => new ScoreRowData
                 {
                     CouncilId = x.x.c.CommitteeID,
+                    CommitteeCode = x.x.c.CommitteeCode ?? string.Empty,
                     Room = x.x.c.Room,
+                    DefenseDate = x.x.c.DefenseDate,
                     Session = ToSessionCode(x.x.a.Session),
                     StudentCode = x.x.t.ProposerStudentCode ?? string.Empty,
                     StudentName = _db.StudentProfiles.Where(s => s.StudentCode == x.x.t.ProposerStudentCode).Select(s => s.FullName).FirstOrDefault() ?? (x.x.t.ProposerStudentCode ?? string.Empty),
@@ -3278,10 +3342,13 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .Select(g =>
                 {
                     var vals = g.Where(x => x.Score.HasValue).Select(x => x.Score!.Value).ToList();
+                    var first = g.First();
                     return new CouncilSummaryRow
                     {
                         CouncilId = g.Key.CouncilId,
+                        CommitteeCode = first.CommitteeCode,
                         Room = g.Key.Room,
+                        DefenseDate = first.DefenseDate.HasValue ? first.DefenseDate.Value.ToString("dd/MM/yyyy") : string.Empty,
                         StudentCount = g.Count(),
                         Avg = vals.Count == 0 ? 0 : Math.Round(vals.Average(), 1),
                         Max = vals.Count == 0 ? 0 : vals.Max(),
@@ -3290,6 +3357,377 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 })
                 .OrderBy(x => x.CouncilId)
                 .ToList();
+        }
+
+        private static string BuildFlexibleReportStem(string normalizedType, int periodId, int? councilId)
+        {
+            var baseName = normalizedType switch
+            {
+                "council-summary" => "bang-diem-theo-hoi-dong",
+                "final-term" => "bang-diem-toan-dot",
+                "minutes" => "bien-ban",
+                "review" => "nhan-xet",
+                _ => normalizedType
+            };
+
+            return councilId.HasValue
+                ? $"{baseName}_{periodId}_c{councilId.Value}"
+                : $"{baseName}_{periodId}";
+        }
+
+        private static string GetFlexibleReportTitle(string normalizedType)
+        {
+            return normalizedType switch
+            {
+                "council-summary" => "BANG DIEM THEO DANH SACH HOI DONG",
+                "final-term" => "BANG DIEM TOAN DOT",
+                "minutes" => "BANG TONG HOP BIEN BAN",
+                "review" => "BANG NHAN XET",
+                _ => "BAO CAO XUAT FILE"
+            };
+        }
+
+        private static List<ReportColumnDefinition> ResolveFlexibleColumns(string normalizedType, IReadOnlyCollection<string>? selectedFields)
+        {
+            var defaults = normalizedType == "council-summary"
+                ? new List<ReportColumnDefinition>
+                {
+                    new("CouncilId", "CouncilId"),
+                    new("CommitteeCode", "Ma Hoi Dong"),
+                    new("Room", "Phong"),
+                    new("StudentCount", "So De Tai"),
+                    new("Avg", "Diem TB"),
+                    new("Max", "Diem Cao Nhat"),
+                    new("Min", "Diem Thap Nhat")
+                }
+                : new List<ReportColumnDefinition>
+                {
+                    new("CouncilId", "CouncilId"),
+                    new("CommitteeCode", "Ma Hoi Dong"),
+                    new("Room", "Phong"),
+                    new("DefenseDate", "Ngay Bao Ve"),
+                    new("Session", "Buoi"),
+                    new("StudentCode", "MSSV"),
+                    new("StudentName", "Ho va ten"),
+                    new("TopicTitle", "Ten de tai"),
+                    new("Score", "Diem"),
+                    new("Grade", "Diem chu")
+                };
+
+            if (selectedFields == null || selectedFields.Count == 0)
+            {
+                return defaults;
+            }
+
+            var defaultMap = defaults.ToDictionary(x => x.Key, x => x, StringComparer.OrdinalIgnoreCase);
+            var resolved = new List<ReportColumnDefinition>();
+
+            foreach (var field in selectedFields)
+            {
+                var key = (field ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(key) || !defaultMap.TryGetValue(key, out var column))
+                {
+                    continue;
+                }
+
+                if (resolved.All(x => !string.Equals(x.Key, column.Key, StringComparison.OrdinalIgnoreCase)))
+                {
+                    resolved.Add(column);
+                }
+            }
+
+            return resolved.Count > 0 ? resolved : defaults;
+        }
+
+        private static string GetFlexibleRowValue(ScoreRowData row, string key)
+        {
+            return key switch
+            {
+                "CouncilId" => row.CouncilId.ToString(),
+                "CommitteeCode" => row.CommitteeCode,
+                "Room" => row.Room ?? string.Empty,
+                "DefenseDate" => row.DefenseDate.HasValue ? row.DefenseDate.Value.ToString("dd/MM/yyyy") : string.Empty,
+                "Session" => row.Session,
+                "StudentCode" => row.StudentCode,
+                "StudentName" => row.StudentName,
+                "TopicTitle" => row.TopicTitle,
+                "Score" => row.Score.HasValue ? row.Score.Value.ToString("0.0") : string.Empty,
+                "Grade" => row.Grade ?? string.Empty,
+                _ => string.Empty
+            };
+        }
+
+        private static string GetFlexibleSummaryValue(CouncilSummaryRow row, string key)
+        {
+            return key switch
+            {
+                "CouncilId" => row.CouncilId.ToString(),
+                "CommitteeCode" => row.CommitteeCode,
+                "Room" => row.Room,
+                "DefenseDate" => row.DefenseDate,
+                "StudentCount" => row.StudentCount.ToString(),
+                "Avg" => row.Avg.ToString("0.0"),
+                "Max" => row.Max.ToString("0.0"),
+                "Min" => row.Min.ToString("0.0"),
+                _ => string.Empty
+            };
+        }
+
+        private static byte[] BuildFlexibleCsvContent(List<ScoreRowData> rows, string reportType, IReadOnlyCollection<string>? selectedFields)
+        {
+            var normalizedType = NormalizeExportReportType(reportType);
+            var columns = ResolveFlexibleColumns(normalizedType, selectedFields);
+            var summaryRows = normalizedType == "council-summary" ? BuildCouncilSummary(rows) : new List<CouncilSummaryRow>();
+            var sb = new StringBuilder();
+
+            sb.AppendLine($"# TRUONG DAI HOC DAI NAM");
+            sb.AppendLine($"# KHOA CONG NGHE THONG TIN");
+            sb.AppendLine($"# {GetFlexibleReportTitle(normalizedType)}");
+            sb.AppendLine($"# Ngay xuat: {DateTime.Now:dd/MM/yyyy HH:mm}");
+
+            sb.AppendLine(string.Join(",", columns.Select(x => EscapeCsv(x.Header))));
+
+            if (normalizedType == "council-summary")
+            {
+                foreach (var row in summaryRows)
+                {
+                    sb.AppendLine(string.Join(",", columns.Select(x => EscapeCsv(GetFlexibleSummaryValue(row, x.Key)))));
+                }
+            }
+            else
+            {
+                foreach (var row in rows.OrderBy(r => r.CouncilId).ThenBy(r => r.Session).ThenBy(r => r.StudentCode))
+                {
+                    sb.AppendLine(string.Join(",", columns.Select(x => EscapeCsv(GetFlexibleRowValue(row, x.Key)))));
+                }
+
+                if (normalizedType == "final-term")
+                {
+                    var numeric = rows.Where(r => r.Score.HasValue).Select(r => r.Score!.Value).ToList();
+                    if (numeric.Count > 0)
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine($"# Highest,{numeric.Max():0.0}");
+                        sb.AppendLine($"# Lowest,{numeric.Min():0.0}");
+                    }
+                }
+            }
+
+            sb.AppendLine($"# NGUOI LAP BIEU,{DateTime.Now:dd/MM/yyyy}");
+            sb.AppendLine("# TRUONG KHOA");
+
+            return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+        }
+
+        private static byte[] BuildFlexibleXlsxContent(List<ScoreRowData> rows, string reportType, IReadOnlyCollection<string>? selectedFields)
+        {
+            var normalizedType = NormalizeExportReportType(reportType);
+            var columns = ResolveFlexibleColumns(normalizedType, selectedFields);
+            var summaryRows = normalizedType == "council-summary" ? BuildCouncilSummary(rows) : new List<CouncilSummaryRow>();
+
+            using var workbook = new XLWorkbook();
+            var sheet = workbook.AddWorksheet("Report");
+            var columnCount = Math.Max(columns.Count, 1);
+
+            sheet.Style.Font.FontName = "Times New Roman";
+            sheet.Style.Font.FontSize = 13;
+            sheet.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            sheet.Style.Alignment.WrapText = true;
+
+            for (var col = 1; col <= columnCount; col++)
+            {
+                sheet.Column(col).Width = col == 1 ? 8 : 18;
+            }
+
+            var headerEndColumn = columnCount;
+            sheet.Range(1, 1, 1, Math.Min(headerEndColumn, 4)).Merge().Value = "TRƯỜNG ĐẠI HỌC ĐẠI NAM";
+            sheet.Range(2, 1, 2, Math.Min(headerEndColumn, 4)).Merge().Value = "KHOA CÔNG NGHỆ THÔNG TIN";
+            sheet.Range(1, Math.Max(1, headerEndColumn - 3), 1, headerEndColumn).Merge().Value = "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
+            sheet.Range(2, Math.Max(1, headerEndColumn - 3), 2, headerEndColumn).Merge().Value = "Độc lập - Tự do - Hạnh phúc";
+            sheet.Range(4, 1, 4, headerEndColumn).Merge().Value = GetFlexibleReportTitle(normalizedType);
+            sheet.Range(5, 1, 5, headerEndColumn).Merge().Value = "NGÀNH CÔNG NGHỆ THÔNG TIN";
+
+            sheet.Range(1, 1, 5, headerEndColumn).Style.Font.Bold = true;
+            sheet.Range(4, 1, 5, headerEndColumn).Style.Font.FontSize = 14;
+            sheet.Range(1, 1, 2, headerEndColumn).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+            sheet.Range(1, Math.Max(1, headerEndColumn - 3), 2, headerEndColumn).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+            sheet.Range(4, 1, 5, headerEndColumn).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            var headerRow = 7;
+            for (var i = 0; i < columns.Count; i++)
+            {
+                sheet.Cell(headerRow, i + 1).Value = columns[i].Header;
+            }
+
+            var currentRow = headerRow + 1;
+            if (normalizedType == "council-summary")
+            {
+                foreach (var row in summaryRows)
+                {
+                    for (var i = 0; i < columns.Count; i++)
+                    {
+                        sheet.Cell(currentRow, i + 1).Value = GetFlexibleSummaryValue(row, columns[i].Key);
+                    }
+                    currentRow++;
+                }
+            }
+            else
+            {
+                foreach (var row in rows.OrderBy(r => r.CouncilId).ThenBy(r => r.Session).ThenBy(r => r.StudentCode))
+                {
+                    for (var i = 0; i < columns.Count; i++)
+                    {
+                        sheet.Cell(currentRow, i + 1).Value = GetFlexibleRowValue(row, columns[i].Key);
+                    }
+                    currentRow++;
+                }
+            }
+
+            var lastDataRow = Math.Max(currentRow - 1, headerRow);
+            var tableRange = sheet.Range(headerRow, 1, lastDataRow, columnCount);
+            tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            sheet.Range(headerRow, 1, headerRow, columnCount).Style.Font.Bold = true;
+
+            if (normalizedType == "final-term")
+            {
+                var numeric = rows.Where(r => r.Score.HasValue).Select(r => r.Score!.Value).ToList();
+                if (numeric.Count > 0)
+                {
+                    var summaryRow = lastDataRow + 2;
+                    sheet.Range(summaryRow, 1, summaryRow, Math.Min(2, columnCount)).Merge().Value = "Diem cao nhat";
+                    sheet.Cell(summaryRow, Math.Min(3, columnCount)).Value = numeric.Max();
+                    sheet.Range(summaryRow + 1, 1, summaryRow + 1, Math.Min(2, columnCount)).Merge().Value = "Diem thap nhat";
+                    sheet.Cell(summaryRow + 1, Math.Min(3, columnCount)).Value = numeric.Min();
+                }
+            }
+
+            var footerRow = lastDataRow + 6;
+            sheet.Range(footerRow, 1, footerRow, Math.Max(1, columnCount / 2)).Merge().Value = "NGƯỜI LẬP BIỂU";
+            sheet.Range(footerRow, Math.Max(2, columnCount / 2 + 1), footerRow, columnCount).Merge().Value = "TRƯỞNG KHOA";
+            sheet.Range(footerRow, 1, footerRow, columnCount).Style.Font.Bold = true;
+            sheet.Range(footerRow + 1, Math.Max(2, columnCount / 2 + 1), footerRow + 1, columnCount).Merge().Value = $"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}";
+
+            using var ms = new MemoryStream();
+            workbook.SaveAs(ms);
+            return ms.ToArray();
+        }
+
+        private static byte[] BuildFlexiblePdfContent(List<ScoreRowData> rows, string reportType, IReadOnlyCollection<string>? selectedFields)
+        {
+            QuestPDF.Settings.License = LicenseType.Community;
+            var normalizedType = NormalizeExportReportType(reportType);
+            var columns = ResolveFlexibleColumns(normalizedType, selectedFields);
+            var summaryRows = normalizedType == "council-summary" ? BuildCouncilSummary(rows) : new List<CouncilSummaryRow>();
+
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Margin(20);
+                    page.Size(PageSizes.A4.Landscape());
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily("Times New Roman"));
+
+                    page.Header().Column(column =>
+                    {
+                        column.Spacing(2);
+                        column.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(left =>
+                            {
+                                left.Item().Text("TRƯỜNG ĐẠI HỌC ĐẠI NAM").Bold().FontSize(12);
+                                left.Item().Text("KHOA CÔNG NGHỆ THÔNG TIN").Bold().FontSize(12);
+                            });
+
+                            row.RelativeItem().AlignRight().Column(right =>
+                            {
+                                right.Item().Text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM").Bold().FontSize(12);
+                                right.Item().Text("Độc lập - Tự do - Hạnh phúc").Bold().FontSize(12);
+                            });
+                        });
+
+                        column.Item().PaddingTop(6).AlignCenter().Text(GetFlexibleReportTitle(normalizedType)).Bold().FontSize(14);
+                        column.Item().AlignCenter().Text("NGÀNH CÔNG NGHỆ THÔNG TIN").Bold().FontSize(12);
+                        column.Item().AlignRight().Text($"Ngày xuất: {DateTime.Now:dd/MM/yyyy HH:mm}").FontSize(9);
+                    });
+
+                    page.Content().PaddingTop(10).Column(column =>
+                    {
+                        if (columns.Count == 0)
+                        {
+                            column.Item().Text("Không có cột hợp lệ để xuất.");
+                            return;
+                        }
+
+                        column.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(definition =>
+                            {
+                                definition.ConstantColumn(30);
+                                for (var i = 1; i < columns.Count; i++)
+                                {
+                                    definition.RelativeColumn();
+                                }
+                            });
+
+                            table.Header(header =>
+                            {
+                                for (var i = 0; i < columns.Count; i++)
+                                {
+                                    header.Cell().Background(Colors.Grey.Lighten2).Border(0.5f).Padding(4).AlignCenter().Text(columns[i].Header).Bold();
+                                }
+                            });
+
+                            if (normalizedType == "council-summary")
+                            {
+                                foreach (var row in summaryRows)
+                                {
+                                    for (var i = 0; i < columns.Count; i++)
+                                    {
+                                        table.Cell().Border(0.5f).Padding(3).AlignCenter().Text(GetFlexibleSummaryValue(row, columns[i].Key));
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                foreach (var row in rows.OrderBy(r => r.CouncilId).ThenBy(r => r.Session).ThenBy(r => r.StudentCode))
+                                {
+                                    for (var i = 0; i < columns.Count; i++)
+                                    {
+                                        table.Cell().Border(0.5f).Padding(3).AlignCenter().Text(GetFlexibleRowValue(row, columns[i].Key));
+                                    }
+                                }
+                            }
+                        });
+
+                        if (normalizedType == "final-term")
+                        {
+                            var numeric = rows.Where(r => r.Score.HasValue).Select(r => r.Score!.Value).ToList();
+                            if (numeric.Count > 0)
+                            {
+                                column.Item().PaddingTop(8).Text($"Diem cao nhat: {numeric.Max():0.0} | Diem thap nhat: {numeric.Min():0.0}").SemiBold();
+                            }
+                        }
+
+                        column.Item().PaddingTop(14).Row(row =>
+                        {
+                            row.RelativeItem().Column(left =>
+                            {
+                                left.Item().AlignCenter().Text("NGƯỜI LẬP BIỂU").Bold();
+                                left.Item().AlignCenter().PaddingTop(28).Text("(Ký, ghi rõ họ tên)");
+                            });
+
+                            row.RelativeItem().Column(right =>
+                            {
+                                right.Item().AlignCenter().Text($"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}").Italic();
+                                right.Item().AlignCenter().Text("TRƯỞNG KHOA").Bold();
+                                right.Item().AlignCenter().PaddingTop(28).Text("(Ký, ghi rõ họ tên)");
+                            });
+                        });
+                    });
+                });
+            }).GeneratePdf();
         }
 
         private static string NormalizeCommitteeRole(string? role)

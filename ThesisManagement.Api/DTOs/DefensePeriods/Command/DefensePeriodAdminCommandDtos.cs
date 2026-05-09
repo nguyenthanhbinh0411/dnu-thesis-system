@@ -66,6 +66,23 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public List<string> SelectedLecturerCodes { get; set; } = new();
 
         public List<string> SelectedRooms { get; set; } = new();
+        
+        /// <summary>
+        /// Ngày bắt đầu tạo hội đồng (nếu null thì dùng StartDate của đợt bảo vệ)
+        /// </summary>
+        public DateTime? GenerationStartDate { get; set; }
+        
+        /// <summary>
+        /// Ngày kết thúc tạo hội đồng (nếu null thì dùng EndDate của đợt bảo vệ)
+        /// </summary>
+        public DateTime? GenerationEndDate { get; set; }
+        
+        /// <summary>
+        /// Số lượng hội đồng tối đa mỗi ngày (nếu 0 thì không giới hạn)
+        /// </summary>
+        [Range(0, 100)]
+        public int MaxCouncilsPerDay { get; set; } = 0;
+        
         public List<string> Tags { get; set; } = new();
         public GenerateCouncilStrategyDto Strategy { get; set; } = new();
         public GenerateCouncilConstraintsDto Constraints { get; set; } = new();
@@ -101,6 +118,19 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public bool AvoidSupervisorConflict { get; set; } = true;
         public bool AvoidLecturerOverlap { get; set; } = true;
         public List<string> RequireRoles { get; set; } = new() { "CT", "UVTK", "UVPB" };
+    }
+
+    public class DefensePeriodReportExportRequestDto
+    {
+        [Required]
+        public string ReportType { get; set; } = "final-term";
+
+        [Required]
+        public string Format { get; set; } = "xlsx";
+
+        public int? CouncilId { get; set; }
+
+        public List<string> SelectedFields { get; set; } = new();
     }
 
     public class CouncilUpsertDto

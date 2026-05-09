@@ -698,7 +698,13 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
                 }
 
                 config.CouncilIds = new List<int>();
-                var defenseDates = BuildDefenseDateRange(period);
+                
+                // Validate and build defense date range from request or period config
+                var generationStartDate = request.GenerationStartDate ?? period.StartDate;
+                var generationEndDate = request.GenerationEndDate ?? period.EndDate;
+                ValidateDefensePeriodWindow(generationStartDate, generationEndDate);
+                
+                var defenseDates = BuildDefenseDateRange(generationStartDate, generationEndDate);
                 var occupiedRoomDateSlots = (await _db.Committees.AsNoTracking()
                         .Where(x => x.DefenseTermId == periodId
                             && x.DefenseDate.HasValue
@@ -708,6 +714,9 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
                         .ToListAsync(cancellationToken))
                     .Select(x => BuildRoomDateSlotKey(NormalizeRoomCode(x.Room!, "UC2.2.ROOM_INVALID"), x.DefenseDate!.Value.Date))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                
+                // Track councils per day for daily limit enforcement (key format: yyyy-MM-dd)
+                var councilsPerDay = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
                 var requestTags = NormalizeTagCodes(request.Tags).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var configuredTags = NormalizeTagCodes(config.CouncilConfig.Tags).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -747,6 +756,31 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
                                 DateRange = new { From = defenseDates.First(), To = defenseDates.Last() },
                                 AssignedCouncils = councils.Count
                             });
+                    }
+                    
+                    // Check daily council limit if specified
+                    if (request.MaxCouncilsPerDay > 0)
+                    {
+                        var defenseDayKey = defenseDate.Date.ToString("yyyy-MM-dd");
+                        if (!councilsPerDay.ContainsKey(defenseDayKey))
+                        {
+                            councilsPerDay[defenseDayKey] = 0;
+                        }
+                        
+                        if (councilsPerDay[defenseDayKey] >= request.MaxCouncilsPerDay)
+                        {
+                            throw new BusinessRuleException(
+                                $"Vượt quá giới hạn {request.MaxCouncilsPerDay} hội đồng/ngày vào {defenseDayKey}.",
+                                "UC2.2.DAILY_COUNCIL_LIMIT_EXCEEDED",
+                                new
+                                {
+                                    Day = defenseDayKey,
+                                    MaxCouncilsPerDay = request.MaxCouncilsPerDay,
+                                    CurrentCount = councilsPerDay[defenseDayKey]
+                                });
+                        }
+                        
+                        councilsPerDay[defenseDayKey]++;
                     }
 
                     var generatedCode = await GenerateUniqueCommitteeCodeAsync(periodId, request.IdempotencyKey, cancellationToken);
@@ -4036,6 +4070,24 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods
         {
             var start = period.StartDate.Date;
             var end = (period.EndDate ?? period.StartDate).Date;
+            if (end < start)
+            {
+                end = start;
+            }
+
+            var dates = new List<DateTime>();
+            for (var date = start; date <= end; date = date.AddDays(1))
+            {
+                dates.Add(date);
+            }
+
+            return dates;
+        }
+
+        private static List<DateTime> BuildDefenseDateRange(DateTime startDate, DateTime? endDate)
+        {
+            var start = startDate.Date;
+            var end = (endDate ?? startDate).Date;
             if (end < start)
             {
                 end = start;
