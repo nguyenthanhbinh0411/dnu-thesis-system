@@ -86,7 +86,7 @@ type DashboardSupervisor = {
 
 type StudentDashboardItem = {
   student: DashboardStudent;
-  topic: DashboardTopic;
+  topic?: DashboardTopic | null;
   topicTags: DashboardTag[];
   currentMilestone: DashboardMilestone | null;
   supervisor: DashboardSupervisor | null;
@@ -291,6 +291,7 @@ function mapApiStatusToDisplay(apiStatus?: string): RowStatus {
   if (status.includes("đã duyệt")) return "approved";
   if (status.includes("từ chối")) return "rejected";
   if (status.includes("cần sửa")) return "revision";
+  if (!apiStatus) return "none";
   return "pending";
 }
 
@@ -303,6 +304,7 @@ function getStatusText(status: RowStatus | string): string {
   if (status === "approved") return "Đã duyệt";
   if (status === "rejected") return "Từ chối";
   if (status === "revision") return "Cần sửa đổi";
+  if (status === "none") return "Chưa đăng ký";
   return "Chờ duyệt";
 }
 
@@ -380,7 +382,7 @@ const StudentProfilesManagement: React.FC = () => {
     return items.filter((item): item is StudentDashboardItem => {
       if (!item || typeof item !== "object") return false;
       const source = item as Partial<StudentDashboardItem>;
-      return Boolean(source.student && source.topic);
+      return Boolean(source.student);
     });
   };
 
@@ -826,7 +828,7 @@ const StudentProfilesManagement: React.FC = () => {
             ) : (
               rowsView.map((row) => (
                 <tr
-                  key={`${row.student.studentProfileID}-${row.topic.topicID}`}
+                  key={`${row.student.studentProfileID}-${row.topic?.topicID || 'none'}`}
                   className="spm-row"
                 >
                   <td>
@@ -866,9 +868,9 @@ const StudentProfilesManagement: React.FC = () => {
 
                   <td>
                     <div className="spm-table-topic-title">
-                      {row.topic.title}
+                      {row.topic?.title || "Chưa có đề tài"}
                     </div>
-                    <div className="spm-subtle">{row.topic.topicCode}</div>
+                    <div className="spm-subtle">{row.topic?.topicCode || "--"}</div>
                   </td>
 
                   <td>
@@ -885,6 +887,7 @@ const StudentProfilesManagement: React.FC = () => {
                       {row.__status === "committee-assigned" && (
                         <BookOpen size={14} />
                       )}
+                      {row.__status === "none" && <Circle size={14} />}
                       {getStatusText(row.__status)}
                     </span>
                   </td>
@@ -901,7 +904,7 @@ const StudentProfilesManagement: React.FC = () => {
                     </div>
                   </td>
 
-                  <td>{formatDate(row.topic.createdAt)}</td>
+                  <td>{row.topic ? formatDate(row.topic.createdAt) : "--"}</td>
 
                   <td>
                     <div className="spm-action-buttons">
@@ -1269,66 +1272,73 @@ const StudentProfilesManagement: React.FC = () => {
                     {detailTab === "topic" && (
                       <div className="spm-progress-panel">
                         <div className="spm-detail-section spm-topic-hero">
-                          <div className="spm-topic-panel">
-                            <strong className="spm-detail-topic-title">
-                              {detailModal.row.topic.title}
-                            </strong>
+                          {detailModal.row.topic ? (
+                            <div className="spm-topic-panel">
+                              <strong className="spm-detail-topic-title">
+                                {detailModal.row.topic.title}
+                              </strong>
 
-                            <div className="spm-topic-layout">
-                              <div className="spm-topic-layout-left">
-                                <div className="spm-topic-field">
-                                  <span className="spm-topic-field-label">
-                                    Mã đề tài:
-                                  </span>
-                                  <strong>
-                                    {detailModal.row.topic.topicCode}
-                                  </strong>
-                                </div>
-
-                                <div className="spm-topic-field spm-topic-field-summary">
-                                  <span className="spm-topic-field-label">
-                                    Mô tả:
-                                  </span>
-                                  <p>{detailModal.row.topic.summary || "--"}</p>
-                                </div>
-                              </div>
-
-                              <div className="spm-topic-layout-right">
-                                <div className="spm-topic-meta-row">
-                                  <span className="spm-topic-meta-label">
-                                    Trạng thái:
-                                  </span>
-                                  <span
-                                    className={`spm-status spm-status-${detailModal.row.__status}`}
-                                  >
-                                    {detailModal.row.topic.status}
-                                  </span>
-                                </div>
-
-                                <div className="spm-topic-meta-row">
-                                  <span className="spm-topic-meta-label">
-                                    Tags:
-                                  </span>
-                                  {detailTopicTags.length > 0 ? (
-                                    <div className="spm-tag-wrap spm-tag-wrap-compact">
-                                      {detailTopicTags.map((tag) => (
-                                        <span
-                                          key={tag.tagCode}
-                                          className="spm-tag"
-                                        >
-                                          {tag.tagName}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span className="spm-topic-meta-empty">
-                                      --
+                              <div className="spm-topic-layout">
+                                <div className="spm-topic-layout-left">
+                                  <div className="spm-topic-field">
+                                    <span className="spm-topic-field-label">
+                                      Mã đề tài:
                                     </span>
-                                  )}
+                                    <strong>
+                                      {detailModal.row.topic.topicCode}
+                                    </strong>
+                                  </div>
+
+                                  <div className="spm-topic-field spm-topic-field-summary">
+                                    <span className="spm-topic-field-label">
+                                      Mô tả:
+                                    </span>
+                                    <p>{detailModal.row.topic.summary || "--"}</p>
+                                  </div>
+                                </div>
+
+                                <div className="spm-topic-layout-right">
+                                  <div className="spm-topic-meta-row">
+                                    <span className="spm-topic-meta-label">
+                                      Trạng thái:
+                                    </span>
+                                    <span
+                                      className={`spm-status spm-status-${detailModal.row.__status}`}
+                                    >
+                                      {detailModal.row.topic.status}
+                                    </span>
+                                  </div>
+
+                                  <div className="spm-topic-meta-row">
+                                    <span className="spm-topic-meta-label">
+                                      Tags:
+                                    </span>
+                                    {detailTopicTags.length > 0 ? (
+                                      <div className="spm-tag-wrap spm-tag-wrap-compact">
+                                        {detailTopicTags.map((tag) => (
+                                          <span
+                                            key={tag.tagCode}
+                                            className="spm-tag"
+                                          >
+                                            {tag.tagName}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="spm-topic-meta-empty">
+                                        --
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="spm-topic-empty-state">
+                              <BookOpen size={48} className="spm-empty-icon" />
+                              <p>Sinh viên này hiện chưa đăng ký đề tài tốt nghiệp.</p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="spm-detail-section">

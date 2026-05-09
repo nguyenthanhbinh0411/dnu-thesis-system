@@ -258,6 +258,9 @@ export async function fetchData<TResponse = unknown>(
       contentType.includes(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       ) ||
+      contentType.includes(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ) ||
       contentType.includes("application/vnd.ms-excel")
     ) {
       parsed = await response.arrayBuffer();

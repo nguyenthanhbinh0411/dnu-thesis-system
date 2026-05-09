@@ -84,6 +84,7 @@ namespace ThesisManagement.Api.Controllers
         private readonly IGetRevisionAuditTrailQuery _revisionAuditTrailQuery;
         private readonly IDefenseOperationsExportService _operationsExportService;
         private readonly ICommitteeRosterExportService _committeeRosterExportService;
+        private readonly Services.DefenseDocuments.IDefenseTemplateExportService _templateExportService;
         private readonly ICreateDefenseTermStudentCommand _createDefenseTermStudentCommand;
         private readonly IUpdateDefenseTermStudentCommand _updateDefenseTermStudentCommand;
         private readonly IDeleteDefenseTermStudentCommand _deleteDefenseTermStudentCommand;
@@ -147,6 +148,7 @@ namespace ThesisManagement.Api.Controllers
             IGetRevisionAuditTrailQuery revisionAuditTrailQuery,
             IDefenseOperationsExportService operationsExportService,
             ICommitteeRosterExportService committeeRosterExportService,
+            Services.DefenseDocuments.IDefenseTemplateExportService templateExportService,
             ICreateDefenseTermStudentCommand createDefenseTermStudentCommand,
             IUpdateDefenseTermStudentCommand updateDefenseTermStudentCommand,
             IDeleteDefenseTermStudentCommand deleteDefenseTermStudentCommand,
@@ -206,6 +208,7 @@ namespace ThesisManagement.Api.Controllers
             _revisionAuditTrailQuery = revisionAuditTrailQuery;
             _operationsExportService = operationsExportService;
             _committeeRosterExportService = committeeRosterExportService;
+            _templateExportService = templateExportService;
             _createDefenseTermStudentCommand = createDefenseTermStudentCommand;
             _updateDefenseTermStudentCommand = updateDefenseTermStudentCommand;
             _deleteDefenseTermStudentCommand = deleteDefenseTermStudentCommand;
@@ -1606,14 +1609,62 @@ namespace ThesisManagement.Api.Controllers
         }
 
         [HttpGet("{periodId:int}/reports/export")]
-        [Authorize]
+        [Authorize(Roles = "Admin,Head,Secretary,Lecturer")]
         public async Task<IActionResult> ExportReportCompact(
             int periodId,
             [FromQuery] string reportType = "final-term",
             [FromQuery] string format = "csv",
-            [FromQuery] int? councilId = null)
+            [FromQuery] int? councilId = null,
+            [FromQuery] int? assignmentId = null)
         {
             var normalized = (reportType ?? string.Empty).Trim().ToLowerInvariant();
+
+            // Handle template-based exports for minutes and reviews
+            if (normalized == "minutes" || normalized == "review")
+            {
+                if (!councilId.HasValue)
+                {
+                    return BadRequest(ApiResponse<object>.Fail($"reportType={normalized} yêu cầu councilId.", 400));
+                }
+
+                // If assignmentId is not provided, try to find the first assignment for this council
+                if (!assignmentId.HasValue)
+                {
+                    assignmentId = await _db.DefenseAssignments.AsNoTracking()
+                        .Where(x => x.CommitteeID == councilId.Value)
+                        .OrderBy(x => x.OrderIndex)
+                        .Select(x => (int?)x.AssignmentID)
+                        .FirstOrDefaultAsync();
+                }
+
+                if (!assignmentId.HasValue)
+                {
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy phân công (assignment) cho hội đồng này.", 404));
+                }
+
+                var isPdf = string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase);
+                ApiResponse<(byte[] Content, string FileName, string ContentType)> result;
+
+                if (normalized == "minutes")
+                {
+                    result = isPdf 
+                        ? await _templateExportService.ExportMeetingMinutesPdfAsync(periodId, councilId.Value, assignmentId.Value)
+                        : await _templateExportService.ExportMeetingMinutesAsync(periodId, councilId.Value, assignmentId.Value);
+                }
+                else // review
+                {
+                    result = isPdf
+                        ? await _templateExportService.ExportReviewerCommentsPdfAsync(periodId, councilId.Value, assignmentId.Value)
+                        : await _templateExportService.ExportReviewerCommentsAsync(periodId, councilId.Value, assignmentId.Value);
+                }
+
+                if (!result.Success || result.Data.Content == null)
+                {
+                    return StatusCode(result.HttpStatusCode == 0 ? 500 : result.HttpStatusCode, result);
+                }
+
+                return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
+            }
 
             if (normalized == "council-summary")
             {
@@ -1630,7 +1681,7 @@ namespace ThesisManagement.Api.Controllers
                 return await ExportCouncilPackage(periodId, "scoreboard", councilId.Value, format);
             }
 
-            if (normalized == "scoreboard" || normalized == "minutes" || normalized == "review")
+            if (normalized == "scoreboard")
             {
                 if (!councilId.HasValue)
                 {
@@ -1655,7 +1706,18 @@ namespace ThesisManagement.Api.Controllers
                 return await ExportSyncErrors(periodId, format);
             }
 
-            return BadRequest(ApiResponse<object>.Fail("reportType không hợp lệ. Hỗ trợ: council-summary, scoreboard, minutes, review, form-1, final-term, committee-roster, sync-errors.", 400));
+            // Fallback for any other types
+            var fallback = await _reportQuery.ExecuteAsync(periodId, normalized, format, councilId);
+            if (!fallback.Success)
+            {
+                if (fallback.HttpStatusCode == 400 || fallback.HttpStatusCode == 404)
+                {
+                     return BadRequest(ApiResponse<object>.Fail($"reportType '{reportType}' không hợp lệ hoặc không tìm thấy dữ liệu.", 400));
+                }
+                return StatusCode(fallback.HttpStatusCode == 0 ? 400 : fallback.HttpStatusCode, fallback);
+            }
+
+            return File(fallback.Data.Content, fallback.Data.ContentType, fallback.Data.FileName);
         }
 
         private ActionResult<ApiResponse<object>> WrapAsObject<T>(ActionResult<ApiResponse<T>> actionResult, string action)

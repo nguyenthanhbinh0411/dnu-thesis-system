@@ -1280,7 +1280,7 @@ const CommitteeOperationsManagement: React.FC = () => {
     setExportModalOpen(false);
   };
 
-  const downloadCommitteeReport = (committeeRow: CommitteeSummary, reportTypeValue: CommitteeExportType, format: ReportFormat) => {
+  const downloadCommitteeReport = async (committeeRow: CommitteeSummary, reportTypeValue: CommitteeExportType, format: ReportFormat) => {
     if (!periodId) {
       notifyWarning("Chua chon dot bao ve. Vui long chon dot tai module Quan ly dot.");
       return;
@@ -1298,8 +1298,37 @@ const CommitteeOperationsManagement: React.FC = () => {
       councilId: String(councilId),
     });
 
-    window.open(`${defensePeriodBase}/reports/export?${params.toString()}`, "_blank", "noopener,noreferrer");
-    notifyInfo(`Đã mở file ${reportTypeValue} cho ${committeeRow.code}.`);
+    try {
+      const endpoint = `${defensePeriodBase}/reports/export?${params.toString()}`;
+      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET" });
+      
+      if (!data || data.byteLength < 100) {
+          throw new Error("Dữ liệu file không hợp lệ hoặc quá nhỏ.");
+      }
+
+      const blob = new Blob([data], { 
+        type: format === "pdf" ? "application/pdf" : 
+              format === "word" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" :
+              format === "excel" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : 
+              format === "zip" ? "application/zip" : "text/csv"
+      });
+      
+      const extension = format === "pdf" ? "pdf" : format === "word" ? "docx" : format === "excel" ? "xlsx" : format === "zip" ? "zip" : "csv";
+      const fileName = `${reportTypeValue}_${committeeRow.code}_${Date.now()}.${extension}`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      notifySuccess(`Tải file ${reportTypeValue} thành công.`);
+    } catch (err: any) {
+      console.error("Download error:", err);
+      notifyError(`Không thể tải file ${reportTypeValue}. Vui lòng kiểm tra lại quyền truy cập hoặc kết nối mạng.`);
+    }
   };
 
   const downloadPreviewDocument = async (template: PreviewModalType, format: "word" | "pdf") => {
@@ -1317,16 +1346,40 @@ const CommitteeOperationsManagement: React.FC = () => {
         return;
       }
 
+      const reportType = template === "meeting" ? "minutes" : template === "reviewer" ? "review" : "scoreboard";
       const params = new URLSearchParams({
-        reportType: template === "meeting" ? "minutes" : template === "reviewer" ? "review" : "scoreboard",
+        reportType,
         format,
         councilId: String(councilId),
+        ...(selectedTopic?.assignmentId ? { assignmentId: String(selectedTopic.assignmentId) } : {}),
+        ...(selectedTopic?.studentCode ? { studentCode: selectedTopic.studentCode } : {}),
       });
 
-      window.open(`${defensePeriodBase}/reports/export?${params.toString()}`, "_blank", "noopener,noreferrer");
-      notifySuccess("Yêu cầu tải file đã được gửi.");
-    } catch {
-      notifyError("Không thể tải tài liệu.");
+      const endpoint = `${defensePeriodBase}/reports/export?${params.toString()}`;
+      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET" });
+      
+      if (!data || data.byteLength < 100) {
+          throw new Error("Dữ liệu file không hợp lệ hoặc quá nhỏ.");
+      }
+
+      const blob = new Blob([data], { 
+        type: format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+      });
+      
+      const fileName = `${reportType}_${selectedTopic?.studentCode || "export"}_${Date.now()}.${format === "pdf" ? "pdf" : "docx"}`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      notifySuccess("Tải tài liệu thành công.");
+    } catch (error) {
+      console.error("Download error:", error);
+      notifyError("Không thể tải tài liệu. Vui lòng kiểm tra lại quyền truy cập hoặc kết nối mạng.");
     } finally {
       setIsDownloadingPreviewFile(false);
     }
@@ -1543,13 +1596,13 @@ const CommitteeOperationsManagement: React.FC = () => {
   }, [committeeOperationalRows, pipeline?.scoredTopics, pipeline?.totalTopics, pipeline?.waitingPublicTopics, postDefense?.items, scoringMatrix, scoresPublished]);
 
   const topTopic = useMemo(
-    () => (scoresPublished ? scoringMatrix.filter((row) => row.finalScore != null && Number(row.finalScore) > 0).sort((left, right) => Number(right.finalScore) - Number(left.finalScore))[0] ?? null : null),
-    [scoringMatrix, scoresPublished],
+    () => (scoringMatrix.filter((row) => row.finalScore != null && Number(row.finalScore) > 0).sort((left, right) => Number(right.finalScore) - Number(left.finalScore))[0] ?? null),
+    [scoringMatrix],
   );
 
   const lowTopic = useMemo(
-    () => (scoresPublished ? scoringMatrix.filter((row) => row.finalScore != null && Number(row.finalScore) > 0).sort((left, right) => Number(left.finalScore) - Number(right.finalScore))[0] ?? null : null),
-    [scoringMatrix, scoresPublished],
+    () => (scoringMatrix.filter((row) => row.finalScore != null && Number(row.finalScore) > 0).sort((left, right) => Number(left.finalScore) - Number(right.finalScore))[0] ?? null),
+    [scoringMatrix],
   );
 
   const selectedCommittee = useMemo(() => {
@@ -1704,12 +1757,11 @@ const CommitteeOperationsManagement: React.FC = () => {
       const rightValue = Number(right.delayLabel.replace(/[^\d.]/g, "")) || 0;
       return rightValue - leftValue;
     });
-
     return {
-      highest: scoresPublished && topTopic
+      highest: topTopic
         ? { label: "Điểm cao nhất", title: topTopic.studentName ?? "-", score: String(topTopic.finalScore ?? "-"), committee: topTopic.committeeCode ?? "-", detail: topTopic.topicTitle ?? "-" }
         : null,
-      lowest: scoresPublished && lowTopic
+      lowest: lowTopic
         ? { label: "Điểm thấp nhất", title: lowTopic.studentName ?? "-", score: String(lowTopic.finalScore ?? "-"), committee: lowTopic.committeeCode ?? "-", detail: lowTopic.topicTitle ?? "-" }
         : null,
       strictest: completionSorted[completionSorted.length - 1]
@@ -1728,7 +1780,7 @@ const CommitteeOperationsManagement: React.FC = () => {
   }, [committeeOperationalRows, lowTopic, scoresPublished, topTopic]);
 
   const committeeScoreStats = useMemo(() => {
-    if (!scoresPublished) {
+    if (scoringMatrix.length === 0) {
       return [];
     }
 
@@ -1752,7 +1804,7 @@ const CommitteeOperationsManagement: React.FC = () => {
       map.set(code, current);
     });
 
-    return Array.from(map.values())
+    const results = Array.from(map.values())
       .map((item) => ({
         code: item.code,
         avgScore: item.count > 0 ? item.total / item.count : 0,
@@ -1760,6 +1812,8 @@ const CommitteeOperationsManagement: React.FC = () => {
         sample: item.count,
       }))
       .sort((left, right) => right.avgScore - left.avgScore);
+
+    return results;
   }, [scoringMatrix, scoresPublished]);
 
   const scorePeak = useMemo(
@@ -1777,8 +1831,8 @@ const CommitteeOperationsManagement: React.FC = () => {
   const completionTrend = useMemo(() => committeeOperationalRows.slice(0, 8).map((row) => row.progressPercent), [committeeOperationalRows]);
 
   const [scoreSort, setScoreSort] = React.useState<"score" | "name" | "topic">("score");
-  const publishedAnalyticsTopics = useMemo(() => (scoresPublished ? analyticsTopics : []), [analyticsTopics, scoresPublished]);
-  const publishedScoringRows = useMemo(() => (scoresPublished ? scoringMatrix.filter((row) => row.finalScore != null && Number(row.finalScore) > 0) : []), [scoringMatrix, scoresPublished]);
+  const publishedAnalyticsTopics = useMemo(() => analyticsTopics, [analyticsTopics]);
+  const publishedScoringRows = useMemo(() => scoringMatrix.filter((row) => (row.finalScore != null && Number(row.finalScore) > 0) || (row.currentScore != null && Number(row.currentScore) > 0)), [scoringMatrix]);
 
   const sortedScores = useMemo(() => {
     const arr = (publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows).slice();
@@ -1792,8 +1846,15 @@ const CommitteeOperationsManagement: React.FC = () => {
     return arr;
   }, [publishedAnalyticsTopics, publishedScoringRows, scoreSort]);
 
-  const topHigh10 = useMemo(() => (scoresPublished ? (publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows).slice().sort((a, b) => Number(b.finalScore ?? b.currentScore ?? 0) - Number(a.finalScore ?? a.currentScore ?? 0)).slice(0, 10) : []), [publishedAnalyticsTopics, publishedScoringRows, scoresPublished]);
-  const topLow10 = useMemo(() => (scoresPublished ? (publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows).slice().sort((a, b) => Number(a.finalScore ?? a.currentScore ?? 0) - Number(b.finalScore ?? b.currentScore ?? 0)).slice(0, 10) : []), [publishedAnalyticsTopics, publishedScoringRows, scoresPublished]);
+  const topHigh10 = useMemo(() => {
+    const source = publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows;
+    return source.slice().sort((a, b) => Number(b.finalScore ?? b.currentScore ?? 0) - Number(a.finalScore ?? a.currentScore ?? 0)).slice(0, 10);
+  }, [publishedAnalyticsTopics, publishedScoringRows]);
+
+  const topLow10 = useMemo(() => {
+    const source = publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows;
+    return source.slice().sort((a, b) => Number(a.finalScore ?? a.currentScore ?? 0) - Number(b.finalScore ?? b.currentScore ?? 0)).slice(0, 10);
+  }, [publishedAnalyticsTopics, publishedScoringRows]);
 
   const getTopicScoreDisplay = (row: ScoringMatrixRow) => {
     const hasAnyScore = row.finalScore != null || row.currentScore != null;
@@ -2572,7 +2633,7 @@ const CommitteeOperationsManagement: React.FC = () => {
       {activeTab === "analytics" && (
         <section style={{ display: "grid", gap: 12 }}>
           {/* ANALYTICS TAB: Charts and insights */}
-          {!scoresPublished && (
+          {(!scoresPublished && distributionTotal === 0) && (
             <section style={cardStyle}>
               <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Thống kê điểm</div>
               <div style={{ fontSize: 13, color: "#475569", marginTop: 8 }}>
@@ -2788,7 +2849,7 @@ const CommitteeOperationsManagement: React.FC = () => {
               </div>
             </section>
 
-            {scoresPublished && (
+            {(scoresPublished || distributionTotal > 0) && (
               <>
                 <section style={cardStyle}>
                   <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Trung bình theo hội đồng</div>
@@ -2879,7 +2940,7 @@ const CommitteeOperationsManagement: React.FC = () => {
           </section>
 
           {/* Top Insights */}
-          {scoresPublished && (
+          {(scoresPublished || distributionTotal > 0) && (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
                 {[leaderboardEntries.highest, leaderboardEntries.lowest, leaderboardEntries.fastest, leaderboardEntries.delayed].map((entry) => renderLeaderboardCard(entry))}
@@ -3726,7 +3787,7 @@ const CommitteeOperationsManagement: React.FC = () => {
                     <div style={{ display: "grid", gap: 12 }}>
                       <div style={{ fontWeight: "bold" }}>I. Nội dung nhận xét chung:</div>
                       <div style={{ whiteSpace: "pre-wrap", padding: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-                        {selectedTopic.commentTk || "Chưa có nội dung biên bản chi tiết."}
+                        {selectedTopic.commentTk || selectedTopic.commentCt || (selectedTopic as any).minutes || (selectedTopic as any).commentSecretary || "Chưa có nội dung biên bản chi tiết."}
                       </div>
                       <div style={{ fontWeight: "bold" }}>II. Điểm thành phần:</div>
                       <div style={{ display: "flex", gap: 20 }}>
@@ -3740,7 +3801,7 @@ const CommitteeOperationsManagement: React.FC = () => {
                     <div style={{ display: "grid", gap: 12 }}>
                       <div style={{ fontWeight: "bold" }}>Nội dung nhận xét phản biện:</div>
                       <div style={{ whiteSpace: "pre-wrap", padding: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-                        {selectedTopic.commentPb || "Chưa có nội dung nhận xét phản biện chi tiết."}
+                        {selectedTopic.commentPb || (selectedTopic as any).reviewNote || (selectedTopic as any).commentReviewer || "Chưa có nội dung nhận xét phản biện chi tiết."}
                       </div>
                     </div>
                   )}

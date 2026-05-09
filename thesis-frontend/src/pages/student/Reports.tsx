@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Upload,
   FileText,
@@ -7,17 +7,18 @@ import {
   Download,
   User as UserIcon,
   BookOpen,
-  Mail,
   Award,
-  Users,
-  Hash,
-  Tag as TagIcon,
   CheckCircle2,
-  AlertCircle,
   X,
-  Building,
   Eye,
   MessageSquare,
+  ChevronRight,
+  TrendingUp,
+  Target,
+  CheckCircle,
+  LayoutGrid,
+  AlertCircle,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "../../context/useToast";
 import { fetchData, normalizeUrl } from "../../api/fetchData";
@@ -29,7 +30,7 @@ import type { SubmissionFile } from "../../types/submissionFile";
 import type { Report } from "../../types/report";
 import type { Topic } from "../../types/topic";
 import type { LecturerProfile } from "../../types/lecturer";
-import type { Tag } from "../../types/tag";
+import type { MilestoneTemplate } from "../../types/milestoneTemplate";
 import type {
   ReportAggregateTag,
   StudentDashboardPayload,
@@ -40,14 +41,6 @@ import type {
   StudentReportAggregateSupervisor,
   StudentReportAggregateTopic,
 } from "../../types/report-aggregate";
-
-const mapAggregateTagToTag = (tag: ReportAggregateTag): Tag => ({
-  tagID: 0,
-  tagCode: tag.tagCode,
-  tagName: tag.tagName,
-  description: "",
-  createdAt: "",
-});
 
 const mapAggregateTopicToTopic = (
   topic: StudentReportAggregateTopic,
@@ -132,2733 +125,413 @@ const Reports: React.FC = () => {
   const [reportTitle, setReportTitle] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [canSubmit, setCanSubmit] = useState(true);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
-  const [lecturerProfile, setLecturerProfile] =
-    useState<LecturerProfile | null>(null);
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [topicTags, setTopicTags] = useState<Tag[]>([]);
-  const [lecturerTagNames, setLecturerTagNames] = useState<string[]>([]);
-  const [currentMilestone, setCurrentMilestone] =
-    useState<StudentReportAggregateMilestone | null>(null);
+  const [lecturerProfile, setLecturerProfile] = useState<LecturerProfile | null>(null);
+  const [currentMilestone, setCurrentMilestone] = useState<StudentReportAggregateMilestone | null>(null);
+  const [milestoneTemplates, setMilestoneTemplates] = useState<MilestoneTemplate[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [showLecturerTagTooltip, setShowLecturerTagTooltip] = useState(false);
-  const [showTopicTagTooltip, setShowTopicTagTooltip] = useState(false);
   const [showReportDetailModal, setShowReportDetailModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
-  const [validationErrors, setValidationErrors] = useState<{
-    [key: string]: string;
-  }>({});
+  const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
   const navigate = useNavigate();
 
   const loadStudentDashboard = useCallback(async (userCode: string) => {
-    const dashboardRes = (await fetchData(
-      `/reports/student/dashboard?userCode=${encodeURIComponent(userCode)}`,
-    )) as ApiResponse<StudentDashboardPayload>;
+    try {
+      const dashboardRes = (await fetchData(
+        `/reports/student/dashboard?userCode=${encodeURIComponent(userCode)}`,
+      )) as ApiResponse<StudentDashboardPayload>;
+      if (dashboardRes.success && dashboardRes.data) {
+        const dashboard = dashboardRes.data;
+        setTopic(dashboard.topic ? mapAggregateTopicToTopic(dashboard.topic) : null);
+        setCurrentMilestone(dashboard.currentMilestone || null);
+        setLecturerProfile(dashboard.supervisor ? mapAggregateSupervisorToLecturer(dashboard.supervisor) : null);
+        setCanSubmit(Boolean(dashboard.canSubmit));
+        setSubmitMessage(dashboard.blockReason || null);
+      }
+    } catch (err) { console.error("Error loading dashboard:", err); }
+  }, []);
 
-    if (!dashboardRes.success || !dashboardRes.data) {
-      setTopic(null);
-      setTopicTags([]);
-      setCurrentMilestone(null);
-      setLecturerProfile(null);
-      setTags([]);
-      setLecturerTagNames([]);
-      setCanSubmit(false);
-      setSubmitMessage(
-        dashboardRes.message ||
-          "Không thể tải dữ liệu tổng quan báo cáo của sinh viên.",
+  const loadMilestoneTemplates = useCallback(async () => {
+    try {
+      const res = await fetchData<{ data?: MilestoneTemplate[] }>(
+        "/MilestoneTemplates/get-list?Page=0&PageSize=10",
       );
-      return;
-    }
-
-    const dashboard = dashboardRes.data;
-    setTopic(
-      dashboard.topic ? mapAggregateTopicToTopic(dashboard.topic) : null,
-    );
-    setTopicTags((dashboard.topicTags || []).map(mapAggregateTagToTag));
-    setCurrentMilestone(dashboard.currentMilestone || null);
-    setLecturerProfile(
-      dashboard.supervisor
-        ? mapAggregateSupervisorToLecturer(dashboard.supervisor)
-        : null,
-    );
-    setTags((dashboard.supervisorTags || []).map(mapAggregateTagToTag));
-    setLecturerTagNames(
-      (dashboard.supervisorTags || []).map((tag) => tag.tagName),
-    );
-    setCanSubmit(Boolean(dashboard.canSubmit));
-    setSubmitMessage(dashboard.blockReason || null);
+      if (res.data) setMilestoneTemplates(res.data);
+    } catch (err) { console.error("Error loading milestones:", err); }
   }, []);
 
   const loadProgressHistory = useCallback(async (userCode: string) => {
-    const historyRes = (await fetchData(
-      `/reports/student/progress-history?userCode=${encodeURIComponent(userCode)}&page=1&pageSize=50`,
-    )) as ApiResponse<StudentProgressHistoryPayload>;
-
-    if (!historyRes.success || !historyRes.data) {
-      setReports([]);
-      return;
-    }
-
-    const items = historyRes.data.items || [];
-    const mappedReports = items
-      .map((item) => item.submission)
-      .filter(Boolean)
-      .map(mapHistorySubmissionToReport);
-    setReports(mappedReports);
+    try {
+      const historyRes = (await fetchData(
+        `/reports/student/progress-history?userCode=${encodeURIComponent(userCode)}&page=1&pageSize=50`,
+      )) as ApiResponse<StudentProgressHistoryPayload>;
+      if (historyRes.success && historyRes.data) {
+        const items = historyRes.data.items || [];
+        setReports(items.map((item) => mapHistorySubmissionToReport(item.submission)));
+      }
+    } catch (err) { console.error("Error loading history:", err); }
   }, []);
 
   useEffect(() => {
     const userCode = auth.user?.userCode;
-    if (!userCode) {
-      setLoading(false);
-      return;
-    }
-
+    if (!userCode) return;
     const bootstrap = async () => {
-      try {
-        setLoading(true);
-        await Promise.all([
-          loadStudentDashboard(userCode),
-          loadProgressHistory(userCode),
-        ]);
-      } catch (error) {
-        console.error("Error loading student reports:", error);
-        setReports([]);
-      } finally {
-        setLoading(false);
-      }
+      setLoading(true);
+      await Promise.all([loadStudentDashboard(userCode), loadProgressHistory(userCode), loadMilestoneTemplates()]);
+      setLoading(false);
     };
-
     bootstrap();
-  }, [auth.user?.userCode, loadProgressHistory, loadStudentDashboard]);
+  }, [auth.user?.userCode, loadProgressHistory, loadStudentDashboard, loadMilestoneTemplates]);
 
-  // Close tooltips when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      // Prevent unused variable warning
-      void event;
-      if (showLecturerTagTooltip || showTopicTagTooltip) {
-        setShowLecturerTagTooltip(false);
-        setShowTopicTagTooltip(false);
-      }
-    };
+  const milestoneViews = useMemo(() => {
+    const sorted = [...milestoneTemplates].sort((a, b) => a.ordinal - b.ordinal);
+    const currentOrdinal = currentMilestone?.ordinal ?? -1;
+    const currentState = currentMilestone?.state;
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showLecturerTagTooltip, showTopicTagTooltip]);
-
-  const getDepartmentName = (departmentCode: string) => {
-    return departmentCode || "N/A";
-  };
+    return sorted.map((m) => {
+      const isCompleted = m.ordinal < currentOrdinal || (m.ordinal === currentOrdinal && currentState === "COMPLETED");
+      const isCurrent = m.ordinal === currentOrdinal && currentState !== "COMPLETED";
+      return { ...m, isCompleted, isCurrent };
+    });
+  }, [milestoneTemplates, currentMilestone]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      validateAndSetFile(file);
-    }
+    if (e.target.files?.[0]) validateAndSetFile(e.target.files[0]);
   };
 
-  const handleDownloadFile = async (
-    file: SubmissionFile,
-    e?: React.MouseEvent,
-  ) => {
+  const handleDownloadFile = async (file: SubmissionFile, e?: React.MouseEvent) => {
     e?.preventDefault();
     try {
-      // Use the correct API endpoint for downloading files
-      const downloadUrl = `/api/SubmissionFiles/download/${file.fileID}`;
-      const url = normalizeUrl(downloadUrl);
-
+      const url = normalizeUrl(`/api/SubmissionFiles/download/${file.fileID}`);
       const token = getAccessToken();
-      const resp = await fetch(url, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-
-      if (!resp.ok) {
-        // If server responds with unauthorized or redirect to login, send user to login
-        if (resp.status === 401 || resp.status === 302 || resp.status === 403) {
-          navigate("/login");
-          return;
-        }
-        throw new Error(`Download failed with status ${resp.status}`);
-      }
-
-      const contentType = resp.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        // Probably redirected to login page
-        navigate("/login");
-        return;
-      }
-
+      const resp = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      if (!resp.ok) throw new Error("Download failed");
       const blob = await resp.blob();
-      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = blobUrl;
+      a.href = URL.createObjectURL(blob);
       a.download = file.fileName || "download";
-      document.body.appendChild(a);
       a.click();
-      a.remove();
-      URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      console.error("Error downloading file:", err);
-      // Show simple feedback to user
-      addToast(
-        "Không thể tải file. Vui lòng thử lại hoặc đăng nhập lại.",
-        "error",
-      );
-    }
+    } catch (err) { addToast("Không thể tải file.", "error"); }
   };
 
   const validateAndSetFile = (file: File) => {
     const errors: { [key: string]: string } = {};
-
-    // Check file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
-      errors.file = "File không được vượt quá 10MB";
+    if (file.size > 10 * 1024 * 1024) errors.file = "File quá lớn (Tối đa 10MB)";
+    const allowed = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+    if (!allowed.includes(file.type)) {
+      errors.file = "Định dạng không hỗ trợ (Chỉ PDF, DOC, DOCX)";
     }
-
-    // Check file type
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    if (!allowedTypes.includes(file.type)) {
-      errors.file = "Chỉ chấp nhận file PDF, DOC, DOCX";
-    }
-
     setValidationErrors(errors);
-    if (Object.keys(errors).length === 0) {
-      setSelectedFile(file);
-    } else {
-      setSelectedFile(null);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      validateAndSetFile(file);
-    }
-  };
-
-  const removeFile = () => {
-    setSelectedFile(null);
-    setValidationErrors({});
+    setSelectedFile(Object.keys(errors).length === 0 ? file : null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedFile || !auth.user?.userCode) {
+      addToast("Vui lòng chọn file và đăng nhập.", "warning"); return;
+    }
     setSubmitting(true);
-    setSuccess(null);
-
-    if (!canSubmit) {
-      setSubmitting(false);
-      return;
-    }
-
-    if (!selectedFile || !auth.user?.userCode || !topic?.topicCode) {
-      setSubmitting(false);
-      return;
-    }
-
-    if (!currentMilestone?.milestoneCode) {
-      addToast(
-        "Không tìm thấy mốc tiến độ hiện tại để nộp báo cáo.",
-        "warning",
-      );
-      setSubmitting(false);
-      return;
-    }
-
     try {
       const formData = new FormData();
-      formData.append("topicCode", topic.topicCode);
-      formData.append("milestoneCode", currentMilestone.milestoneCode);
+      formData.append("topicCode", topic?.topicCode || "");
+      formData.append("milestoneCode", currentMilestone?.milestoneCode || "");
       formData.append("studentUserCode", auth.user.userCode);
       formData.append("lecturerCode", lecturerProfile?.lecturerCode || "");
       formData.append("reportTitle", reportTitle.trim());
       formData.append("reportDescription", reportDescription.trim());
       formData.append("files", selectedFile);
-
-      const submitRes = (await fetchData("/reports/student/progress-submit", {
-        method: "POST",
-        body: formData,
-      })) as ApiResponse<StudentProgressSubmitPayload>;
-
-      if (!submitRes.success) {
-        throw new Error(submitRes.message || "Submit progress report failed");
+      const res = (await fetchData("/reports/student/progress-submit", { method: "POST", body: formData })) as ApiResponse<any>;
+      if (res.success) {
+        addToast("Nộp báo cáo thành công", "success");
+        setReportTitle(""); setReportDescription(""); setSelectedFile(null);
+        if (auth.user?.userCode) await loadProgressHistory(auth.user.userCode);
       }
-
-      setSuccess("Nộp báo cáo thành công!");
-      setReportTitle("");
-      setReportDescription("");
-      setSelectedFile(null);
-
-      await Promise.all([
-        loadStudentDashboard(auth.user.userCode),
-        loadProgressHistory(auth.user.userCode),
-      ]);
-    } catch (err) {
-      console.error("Error submitting report:", err);
-      addToast("Không thể nộp báo cáo. Vui lòng thử lại.", "error");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch (err) { addToast("Lỗi khi nộp báo cáo", "error"); } finally { setSubmitting(false); }
   };
 
-  const getStatusColor = (lecturerState?: string) => {
-    switch (lecturerState?.toLowerCase()) {
-      case "đã duyệt":
-      case "approved":
-      case "accepted":
-        return "#22c55e";
-      case "chờ duyệt":
-      case "pending":
-        return "#f37021";
-      case "revision_required":
-      case "từ chối":
-      case "rejected":
-      case "revision":
-        return "#eab308"; // Yellow for revision
-      default:
-        return "#94a3b8";
-    }
+  const getStatusText = (s?: string) => {
+    const state = s?.toLowerCase();
+    if (["đã duyệt", "approved", "accepted"].includes(state!)) return "Đã duyệt";
+    if (["chờ duyệt", "pending"].includes(state!)) return "Chờ duyệt";
+    return "Cần sửa";
   };
 
-  const getStatusText = (lecturerState?: string) => {
-    switch (lecturerState?.toLowerCase()) {
-      case "đã duyệt":
-      case "approved":
-      case "accepted":
-        return "Đã duyệt";
-      case "chờ duyệt":
-      case "pending":
-        return "Chờ duyệt";
-      case "revision_required":
-        return "Cần sửa";
-      case "từ chối":
-      case "rejected":
-        return "Từ chối";
-      case "revision":
-        return "Cần sửa";
-      default:
-        return "Chờ duyệt";
-    }
+  const getStatusTone = (s?: string) => {
+    const state = s?.toLowerCase();
+    if (["đã duyệt", "approved", "accepted"].includes(state!)) return { bg: "#ecfdf5", color: "#10b981", border: "#10b981" };
+    if (["chờ duyệt", "pending"].includes(state!)) return { bg: "#fff7ed", color: "#F37021", border: "#fdba74" };
+    return { bg: "#fef9c3", color: "#a16207", border: "#fde047" };
   };
 
   const getFeedbackLevelText = (level?: string) => {
     switch (level?.toLowerCase()) {
-      case "good":
-        return "Tốt";
-      case "moderate":
-        return "Trung bình";
-      case "high":
-        return "Cao";
-      case "normal":
-        return "Bình thường";
-      case "medium":
-        return "Trung cấp";
-      case "low":
-        return "Thấp";
-      default:
-        return level || "";
+      case "good": return "Tốt";
+      case "moderate": return "Trung bình";
+      case "high": return "Cao";
+      case "normal": return "Bình thường";
+      case "medium": return "Trung cấp";
+      case "low": return "Thấp";
+      default: return level || "Chưa có";
     }
   };
 
+  const getMilestoneTone = (isCompleted: boolean, isCurrent: boolean) => {
+    if (isCompleted) return { bg: "#ecfdf5", color: "#10b981", border: "#10b981", dot: "#10B981" };
+    if (isCurrent) return { bg: "#fff7ed", color: "#F37021", border: "#fdba74", dot: "#F37021" };
+    return { bg: "#f8fafc", color: "#64748b", border: "#cbd5e1", dot: "#e2e8f0" };
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-[#003D82] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Đang tải dữ liệu...</p>
+      </div>
+    </div>;
+  }
+
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="min-h-screen bg-[#F8FAFC] p-4 lg:p-8 w-full flex flex-col gap-6">
       <style>
         {`
-          @keyframes shimmer {
-            0% {
-              background-position: -200px 0;
-            }
-            100% {
-              background-position: calc(200px + 100%) 0;
-            }
+          .unified-workspace {
+            display: grid; grid-template-columns: 1fr 450px; gap: 24px;
+            width: 100%; align-items: stretch;
           }
+          @media (max-width: 1400px) { .unified-workspace { grid-template-columns: 1fr; } }
+          .custom-table th {
+            text-align: left; padding: 12px 16px; background: #F8FAFC; color: #64748B;
+            font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+            position: sticky; top: 0; z-index: 20;
+          }
+          .custom-table td { padding: 14px 16px; border-bottom: 1px solid #F1F5F9; font-size: 12px; }
+          .custom-table tr:hover { background: #F8FAFC; }
         `}
       </style>
-      {/* Topic and Lecturer Info */}
-      {(topic || lecturerProfile) && (
-        <div
-          style={{
-            background: "linear-gradient(135deg, #ffffff 0%, #fefefe 100%)",
-            borderRadius: "20px",
-            padding: "40px",
-            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-            border: "1px solid #f1f5f9",
-            marginBottom: "32px",
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: "6px",
-              background:
-                "linear-gradient(90deg, #f37021, #ff8c42, #3b82f6, #6366f1)",
-              borderRadius: "20px 20px 0 0",
-            }}
-          />
-          <h2
-            style={{
-              fontSize: "24px",
-              fontWeight: "800",
-              color: "#1a1a1a",
-              marginBottom: "32px",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              textAlign: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                minWidth: "48px",
-                minHeight: "48px",
-                width: "48px",
-                height: "48px",
-                borderRadius: "16px",
-                background: "linear-gradient(135deg, #f37021, #ff8c42)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <FileText size={24} color="#fff" />
+
+      {/* --- QUICK STATS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+         <div className="bg-white p-5 rounded-[24px] shadow-sm border border-slate-100 flex items-center gap-5 group hover:shadow-md transition-all">
+            <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#F37021] flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
+            <div>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng số báo cáo</p>
+               <h3 className="text-xl font-black text-slate-900">{reports.length} bản ghi</h3>
             </div>
-            Thông tin đề tài và giảng viên hướng dẫn
-            <div
-              style={{
-                minWidth: "48px",
-                minHeight: "48px",
-                width: "48px",
-                height: "48px",
-                borderRadius: "16px",
-                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <UserIcon size={24} color="#fff" />
+         </div>
+         <div className="bg-white p-5 rounded-[24px] shadow-sm border border-slate-100 flex items-center gap-5 group hover:shadow-md transition-all">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#003D82] flex items-center justify-center group-hover:scale-110 transition-transform"><TrendingUp size={24} /></div>
+            <div>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đánh giá gần nhất</p>
+               <h3 className="text-xl font-black text-slate-900">{reports[0] ? getFeedbackLevelText(reports[0].feedbackLevel) : "Chưa có"}</h3>
             </div>
-          </h2>
+         </div>
+         <div className="bg-white p-5 rounded-[24px] shadow-sm border border-slate-100 flex items-center gap-5 group hover:shadow-md transition-all">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform"><Target size={24} /></div>
+            <div>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hạn chót tiếp theo</p>
+               <h3 className="text-xl font-black text-slate-900">{currentMilestone?.deadline ? new Date(currentMilestone.deadline).toLocaleDateString('vi-VN') : "Không có"}</h3>
+            </div>
+         </div>
+      </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "32px",
-            }}
-          >
-            {/* Topic Info */}
-            {topic && (
-              <div
-                style={{
-                  padding: "24px",
-                  background:
-                    "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                  borderRadius: "16px",
-                  border: "1px solid #e2e8f0",
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: "4px",
-                    background: "linear-gradient(90deg, #f37021, #ff8c42)",
-                  }}
-                />
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <div
-                    style={{
-                      minWidth: "40px",
-                      minHeight: "40px",
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "12px",
-                      background: "linear-gradient(135deg, #f37021, #ff8c42)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <BookOpen size={20} color="#fff" />
-                  </div>
-                  <div>
-                    <h3
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "700",
-                        color: "#1a1a1a",
-                        margin: 0,
-                      }}
-                    >
-                      Đề tài của bạn
-                    </h3>
-                    <p
-                      style={{
-                        fontSize: "12px",
-                        color: "#64748b",
-                        margin: "4px 0 0 0",
-                      }}
-                    >
-                      Thông tin chi tiết về đề tài nghiên cứu
-                    </p>
-                  </div>
-                </div>
+      {/* --- MAXIMUM STRETCH ROADMAP --- */}
+      <div className="bg-white p-10 lg:p-12 rounded-[24px] shadow-sm border border-slate-100 relative overflow-hidden">
+         <div className="flex justify-between items-start relative px-8">
+            {milestoneViews.map((m, idx) => {
+               const tone = getMilestoneTone(m.isCompleted, m.isCurrent);
+               const nextMilestone = milestoneViews[idx + 1] || null;
+               
+               let lineColor = "#E2E8F0";
+               if (nextMilestone) {
+                  if (nextMilestone.isCompleted) lineColor = "#10B981";
+                  else if (nextMilestone.isCurrent) lineColor = "#F37021";
+               }
 
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      padding: "12px",
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <TagIcon size={16} color="#f37021" />
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "600",
-                        }}
-                      >
-                        Tiêu đề
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#1a1a1a",
-                          fontWeight: "500",
-                        }}
-                      >
-                        {topic.title}
-                      </div>
-                    </div>
-                  </div>
+               return (
+                  <div key={m.milestoneTemplateID} className="flex-1 flex flex-col items-center relative group">
+                     {idx < milestoneViews.length - 1 && (
+                        <div className="absolute top-6 left-[50%] right-[-50%] h-[2px] z-0" style={{ backgroundColor: lineColor }}></div>
+                     )}
 
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "10px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <Hash size={14} color="#64748b" />
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Mã đề tài
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "13px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {topic.topicCode}
-                        </div>
-                      </div>
-                    </div>
+                     <div className={`w-12 h-12 rounded-full flex items-center justify-center border-4 transition-all duration-300 bg-white z-10
+                        ${m.isCompleted || m.isCurrent ? 'scale-110 shadow-lg' : ''}`}
+                        style={{ borderColor: tone.dot, color: tone.dot }}>
+                        {m.isCompleted ? <CheckCircle size={24} /> : <span className="font-black text-sm">{idx + 1}</span>}
+                     </div>
 
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "10px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <BookOpen size={14} color="#64748b" />
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Loại đề tài
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "13px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {topic.type}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "10px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      {topic.status === "Đã duyệt" ? (
-                        <CheckCircle2 size={14} color="#22c55e" />
-                      ) : (
-                        <AlertCircle size={14} color="#f59e0b" />
-                      )}
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Trạng thái
-                        </div>
-                        <span
-                          style={{
-                            padding: "3px 8px",
-                            backgroundColor:
-                              topic.status === "Đã duyệt"
-                                ? "#dcfce7"
-                                : "#fef3c7",
-                            color:
-                              topic.status === "Đã duyệt"
-                                ? "#166534"
-                                : "#92400e",
-                            borderRadius: "16px",
-                            fontSize: "11px",
-                            fontWeight: "600",
-                            display: "inline-block",
-                            marginTop: "2px",
-                          }}
-                        >
-                          {topic.status}
+                     <div className="mt-7 text-center px-2">
+                        <p className={`text-[12px] font-black mb-1 transition-colors ${m.isCurrent || m.isCompleted ? 'text-slate-900' : 'text-slate-400'}`}>
+                           {m.name}
+                        </p>
+                        <span className="text-[10px] font-bold text-slate-400 block mb-2">
+                           {m.deadline ? new Date(m.deadline).toLocaleDateString('vi-VN') : "Đang cập nhật"}
                         </span>
-                      </div>
-                    </div>
+                        <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider"
+                           style={{ background: tone.bg, color: tone.color, border: `1px solid ${tone.border}` }}>
+                           {m.isCompleted ? "Hoàn thành" : m.isCurrent ? "Đang thực hiện" : "Sắp tới"}
+                        </span>
+                     </div>
+                  </div>
+               );
+            })}
+         </div>
+      </div>
 
-                    {topicTags.length > 0 && (
-                      <div
-                        style={{
-                          flex: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          padding: "10px",
-                          background: "#fff",
-                          borderRadius: "8px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <TagIcon size={14} color="#8b5cf6" />
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "#64748b",
-                              fontWeight: "600",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Tags đề tài
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: "4px",
-                            }}
-                          >
-                            {topicTags.length > 0 ? (
-                              topicTags.slice(0, 2).map((tag) => (
-                                <span
-                                  key={tag.tagID}
-                                  style={{
-                                    padding: "2px 6px",
-                                    backgroundColor: "#f3e8ff",
-                                    color: "#7c3aed",
-                                    borderRadius: "8px",
-                                    fontSize: "10px",
-                                    fontWeight: "600",
-                                    border: "1px solid #d8b4fe",
-                                  }}
-                                >
-                                  {tag.tagName}
-                                </span>
-                              ))
-                            ) : (
-                              <span
-                                style={{
-                                  fontSize: "12px",
-                                  color: "#64748b",
-                                  fontStyle: "italic",
-                                }}
-                              >
-                                Chưa có tags
-                              </span>
-                            )}
-                            {topicTags.length > 2 && (
-                              <span
-                                onClick={() =>
-                                  setShowTopicTagTooltip(!showTopicTagTooltip)
-                                }
-                                style={{
-                                  fontSize: "10px",
-                                  color: "#64748b",
-                                  fontStyle: "italic",
-                                  cursor: "pointer",
-                                  position: "relative",
-                                  padding: "2px 4px",
-                                  borderRadius: "4px",
-                                  transition: "all 0.2s ease",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor =
-                                    "#f1f5f9";
-                                  e.currentTarget.style.color = "#475569";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor =
-                                    "transparent";
-                                  e.currentTarget.style.color = "#64748b";
-                                }}
-                              >
-                                +{topicTags.length - 2} khác
-                                {showTopicTagTooltip && (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      bottom: "100%",
-                                      left: "0",
-                                      backgroundColor: "#1f2937",
-                                      color: "#ffffff",
-                                      padding: "8px 12px",
-                                      borderRadius: "6px",
-                                      fontSize: "12px",
-                                      fontWeight: "500",
-                                      whiteSpace: "nowrap",
-                                      zIndex: 1000,
-                                      boxShadow:
-                                        "0 4px 12px rgba(0, 0, 0, 0.15)",
-                                      border: "1px solid #374151",
-                                      marginBottom: "4px",
-                                      maxWidth: "200px",
-                                      wordWrap: "break-word",
-                                    }}
-                                  >
-                                    {topicTags
-                                      .slice(2)
-                                      .map((tag) => tag.tagName)
-                                      .join(", ")}
-                                    <div
-                                      style={{
-                                        position: "absolute",
-                                        top: "100%",
-                                        left: "10px",
-                                        width: "0",
-                                        height: "0",
-                                        borderLeft: "6px solid transparent",
-                                        borderRight: "6px solid transparent",
-                                        borderTop: "6px solid #1f2937",
-                                      }}
-                                    />
-                                  </div>
-                                )}
-                              </span>
-                            )}
-                          </div>
+      <div className="unified-workspace">
+        {/* --- LEFT: SUBMISSION FORM --- */}
+        <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 p-6 lg:p-10 flex flex-col gap-8 h-full">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2"><Upload size={24} className="text-[#F37021]" />Nộp báo cáo tiến độ</h2>
+            </div>
+            {!canSubmit && <div className="px-4 py-2 bg-orange-50 border border-orange-100 rounded-xl text-orange-600 text-[10px] font-black uppercase">Cổng đang đóng</div>}
+          </div>
+          {!canSubmit ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 py-10">
+               <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300"><Clock size={32} /></div>
+               <p className="text-slate-400 font-bold italic text-sm max-w-xs text-center">{submitMessage || "Hiện tại không trong thời gian nộp bài."}</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 flex-1">
+                 <div className="space-y-6">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Tiêu đề báo cáo</label>
+                      <input type="text" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-[#003D82] focus:ring-4 focus:ring-blue-50 transition-all"
+                        placeholder="Nhập tiêu đề..." required />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Mô tả</label>
+                      <textarea value={reportDescription} onChange={(e) => setReportDescription(e.target.value)}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-[#003D82] focus:ring-4 focus:ring-blue-50 transition-all resize-none flex-1"
+                        placeholder="Mô tả nội dung..." rows={5} />
+                    </div>
+                 </div>
+                 <div className="flex flex-col h-full">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Tài liệu</label>
+                    <div className={`flex-1 border-2 border-dashed rounded-[24px] p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative
+                        ${isDragOver ? "border-[#003D82] bg-blue-50" : "border-slate-200 bg-slate-50 hover:bg-white hover:border-slate-300"}`}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setIsDragOver(false); if(e.dataTransfer.files?.[0]) validateAndSetFile(e.dataTransfer.files[0]); }}
+                      onClick={() => document.getElementById("file-input")?.click()}>
+                      
+                      <input type="file" id="file-input" className="hidden" onChange={handleFileChange} />
+                      
+                      {!selectedFile ? (
+                        <div className="flex flex-col items-center gap-4"><div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-400"><Upload size={24} /></div><p className="text-xs font-black text-slate-600 uppercase tracking-widest">Kéo thả file</p></div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 animate-in fade-in zoom-in duration-300">
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                             className="absolute top-4 right-4 p-2 bg-white/80 backdrop-blur-sm rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all shadow-sm border border-slate-100"
+                           >
+                             <X size={16} />
+                           </button>
+                           <div className="w-14 h-14 bg-[#003D82] rounded-2xl shadow-lg flex items-center justify-center text-white"><FileText size={24} /></div>
+                           <p className="text-xs font-black text-slate-800 truncate max-w-[200px]">{selectedFile.name}</p>
                         </div>
-                      </div>
+                      )}
+                    </div>
+                 </div>
+              </div>
+              <div className="pt-8 border-t border-slate-100 flex items-center justify-between">
+                 <div className="flex flex-col gap-1">
+                    {validationErrors.file ? (
+                       <p className="text-[10px] font-black text-red-500 uppercase flex items-center gap-1.5 animate-pulse"><AlertCircle size={14} /> {validationErrors.file}</p>
+                    ) : (
+                       <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1.5"><AlertCircle size={14} /> Định dạng: PDF, DOC, DOCX (Tối đa 10MB)</p>
                     )}
-                  </div>
-
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#64748b",
-                        fontWeight: "600",
-                        marginBottom: "8px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <FileText size={14} color="#64748b" />
-                      Tóm tắt đề tài
-                    </div>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "14px",
-                        color: "#374151",
-                        lineHeight: "1.6",
-                      }}
-                    >
-                      {topic.summary}
-                    </p>
-                  </div>
-                </div>
+                 </div>
+                 <button type="submit" disabled={submitting || !selectedFile}
+                   className={`px-12 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all
+                     ${submitting || !selectedFile ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-[#F37021] text-white shadow-xl shadow-orange-100 hover:bg-orange-600"}`}>
+                   {submitting ? "Đang xử lý..." : "Gửi báo cáo ngay"}
+                 </button>
               </div>
-            )}
-
-            {/* Lecturer Info */}
-            {lecturerProfile && (
-              <div
-                style={{
-                  padding: "24px",
-                  background:
-                    "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                  borderRadius: "16px",
-                  border: "1px solid #e2e8f0",
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: "4px",
-                    background: "linear-gradient(90deg, #3b82f6, #6366f1)",
-                  }}
-                />
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <div
-                    style={{
-                      minWidth: "40px",
-                      minHeight: "40px",
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "12px",
-                      background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <UserIcon size={20} color="#fff" />
-                  </div>
-                  <div>
-                    <h3
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "700",
-                        color: "#1a1a1a",
-                        margin: 0,
-                      }}
-                    >
-                      Giảng viên hướng dẫn
-                    </h3>
-                    <p
-                      style={{
-                        fontSize: "12px",
-                        color: "#64748b",
-                        margin: "4px 0 0 0",
-                      }}
-                    >
-                      Thông tin giảng viên phụ trách đề tài
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
-                  }}
-                >
-                  {/* Name and Email */}
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <UserIcon size={16} color="#3b82f6" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Họ và tên
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {lecturerProfile?.fullName || "Đang tải..."}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <Mail size={16} color="#3b82f6" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Email
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {lecturerProfile?.email || "Đang tải..."}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lecturer Code and Degree */}
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <Hash size={16} color="#64748b" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Mã giảng viên
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {lecturerProfile.lecturerCode}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <Award size={16} color="#64748b" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Học vị
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {lecturerProfile.degree}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Department and Lecturer Tags */}
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <Building size={16} color="#64748b" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Khoa
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1a1a1a",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {getDepartmentName(lecturerProfile.departmentCode)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        padding: "12px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <TagIcon size={16} color="#64748b" />
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          Chuyên môn
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "4px",
-                            marginTop: "4px",
-                          }}
-                        >
-                          {lecturerTagNames.length > 0 ? (
-                            lecturerTagNames
-                              .slice(0, 2)
-                              .map((tagName, index) => (
-                                <span
-                                  key={index}
-                                  style={{
-                                    padding: "2px 6px",
-                                    backgroundColor: "#f3e8ff",
-                                    color: "#7c3aed",
-                                    borderRadius: "8px",
-                                    fontSize: "10px",
-                                    fontWeight: "600",
-                                    border: "1px solid #d8b4fe",
-                                  }}
-                                >
-                                  {tagName}
-                                </span>
-                              ))
-                          ) : (
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                color: "#64748b",
-                                fontStyle: "italic",
-                              }}
-                            >
-                              Chưa cập nhật
-                            </span>
-                          )}
-                          {lecturerTagNames.length > 2 && (
-                            <span
-                              onClick={() =>
-                                setShowLecturerTagTooltip(
-                                  !showLecturerTagTooltip,
-                                )
-                              }
-                              style={{
-                                fontSize: "10px",
-                                color: "#64748b",
-                                fontStyle: "italic",
-                                cursor: "pointer",
-                                position: "relative",
-                                padding: "2px 4px",
-                                borderRadius: "4px",
-                                transition: "all 0.2s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor =
-                                  "#f1f5f9";
-                                e.currentTarget.style.color = "#475569";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor =
-                                  "transparent";
-                                e.currentTarget.style.color = "#64748b";
-                              }}
-                            >
-                              +{lecturerTagNames.length - 2} khác
-                              {showLecturerTagTooltip && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    bottom: "100%",
-                                    left: "0",
-                                    backgroundColor: "#1f2937",
-                                    color: "#ffffff",
-                                    padding: "8px 12px",
-                                    borderRadius: "6px",
-                                    fontSize: "12px",
-                                    fontWeight: "500",
-                                    whiteSpace: "nowrap",
-                                    zIndex: 1000,
-                                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                                    border: "1px solid #374151",
-                                    marginBottom: "4px",
-                                    maxWidth: "200px",
-                                    wordWrap: "break-word",
-                                  }}
-                                >
-                                  {lecturerTagNames.slice(2).join(", ")}
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "100%",
-                                      left: "10px",
-                                      width: "0",
-                                      height: "0",
-                                      borderLeft: "6px solid transparent",
-                                      borderRight: "6px solid transparent",
-                                      borderTop: "6px solid #1f2937",
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Guide Quota Progress */}
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "600",
-                        }}
-                      >
-                        <Users size={14} color="#64748b" />
-                        Hạn ngạch hướng dẫn
-                      </div>
-                      <span
-                        style={{
-                          fontSize: "12px",
-                          color: "#1a1a1a",
-                          fontWeight: "600",
-                        }}
-                      >
-                        {lecturerProfile.currentGuidingCount}/
-                        {lecturerProfile.guideQuota}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "6px",
-                        background: "#e2e8f0",
-                        borderRadius: "3px",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${Math.min(
-                            (lecturerProfile.currentGuidingCount /
-                              lecturerProfile.guideQuota) *
-                              100,
-                            100,
-                          )}%`,
-                          height: "100%",
-                          background:
-                            lecturerProfile.currentGuidingCount >=
-                            lecturerProfile.guideQuota
-                              ? "linear-gradient(90deg, #ef4444, #dc2626)"
-                              : "linear-gradient(90deg, #22c55e, #16a34a)",
-                          borderRadius: "3px",
-                          transition: "width 0.3s ease",
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color:
-                          lecturerProfile.currentGuidingCount >=
-                          lecturerProfile.guideQuota
-                            ? "#dc2626"
-                            : "#64748b",
-                        marginTop: "6px",
-                        textAlign: "center",
-                      }}
-                    >
-                      {lecturerProfile.currentGuidingCount >=
-                      lecturerProfile.guideQuota
-                        ? "Đã đạt hạn ngạch tối đa"
-                        : `${
-                            lecturerProfile.guideQuota -
-                            lecturerProfile.currentGuidingCount
-                          } vị trí còn trống`}
-                    </div>
-                  </div>
-
-                  {/* Tags */}
-                  {tags.length > 0 && (
-                    <div
-                      style={{
-                        padding: "16px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "600",
-                          marginBottom: "12px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <Users size={14} color="#64748b" />
-                        Chuyên môn
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: "8px",
-                        }}
-                      >
-                        {tags.map((tag) => (
-                          <span
-                            key={tag.tagID}
-                            style={{
-                              padding: "6px 12px",
-                              background:
-                                "linear-gradient(135deg, #3b82f6, #6366f1)",
-                              color: "#fff",
-                              borderRadius: "20px",
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            <TagIcon size={12} />
-                            {tag.tagName}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "24px",
-        }}
-      >
-        {/* Upload Form */}
-        <div
-          style={{
-            background: "linear-gradient(135deg, #ffffff 0%, #fefefe 100%)",
-            borderRadius: "20px",
-            padding: "40px",
-            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-            border: "1px solid #f1f5f9",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: "6px",
-              background:
-                "linear-gradient(90deg, #f37021, #ff8c42, #3b82f6, #6366f1)",
-              borderRadius: "20px 20px 0 0",
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              marginBottom: "32px",
-            }}
-          >
-            <div
-              style={{
-                minWidth: "56px",
-                minHeight: "56px",
-                width: "56px",
-                height: "56px",
-                borderRadius: "16px",
-                background: "linear-gradient(135deg, #f37021, #ff8c42)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Upload size={28} color="#fff" />
-            </div>
-            <div>
-              <h2
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "800",
-                  color: "#1a1a1a",
-                  margin: 0,
-                }}
-              >
-                Nộp báo cáo mới
-              </h2>
-              <p
-                style={{
-                  fontSize: "14px",
-                  color: "#64748b",
-                  margin: "4px 0 0 0",
-                }}
-              >
-                Tải lên báo cáo tiến độ của bạn
-              </p>
-            </div>
-          </div>
-
-          {success && (
-            <div
-              style={{
-                background: "linear-gradient(135deg, #dcfce7, #bbf7d0)",
-                border: "1px solid #22c55e",
-                borderRadius: "12px",
-                padding: "16px 20px",
-                marginBottom: "24px",
-                color: "#166534",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                boxShadow: "0 2px 8px rgba(34, 197, 94, 0.1)",
-              }}
-            >
-              <CheckCircle2 size={20} />
-              <div>
-                <div style={{ fontWeight: "600", marginBottom: "2px" }}>
-                  Thành công!
-                </div>
-                <div style={{ fontSize: "14px" }}>{success}</div>
-              </div>
-            </div>
+            </form>
           )}
-
-          {submitMessage && (
-            <div
-              style={{
-                background: "linear-gradient(135deg, #fef3c7, #fde68a)",
-                border: "1px solid #f59e0b",
-                borderRadius: "12px",
-                padding: "16px 20px",
-                marginBottom: "24px",
-                color: "#92400e",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                boxShadow: "0 2px 8px rgba(245, 158, 11, 0.1)",
-              }}
-            >
-              <Clock size={20} />
-              <div>
-                <div style={{ fontWeight: "600", marginBottom: "2px" }}>
-                  Thông báo
-                </div>
-                <div style={{ fontSize: "14px" }}>{submitMessage}</div>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: "24px" }}>
-              <label
-                style={{
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  color: "#374151",
-                  marginBottom: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <TagIcon size={16} color="#f37021" />
-                Tiêu đề báo cáo *
-              </label>
-              <input
-                type="text"
-                value={reportTitle}
-                onChange={(e) => setReportTitle(e.target.value)}
-                required
-                placeholder="Nhập tiêu đề báo cáo của bạn..."
-                style={{
-                  width: "100%",
-                  padding: "14px 16px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "12px",
-                  fontSize: "14px",
-                  fontFamily: "inherit",
-                  transition: "all 0.3s ease",
-                  backgroundColor: "#fff",
-                  outline: "none",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#f37021";
-                  e.currentTarget.style.boxShadow =
-                    "0 0 0 3px rgba(243, 112, 33, 0.1)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#e5e7eb";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "24px" }}>
-              <label
-                style={{
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  color: "#374151",
-                  marginBottom: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <FileText size={16} color="#3b82f6" />
-                Mô tả báo cáo
-              </label>
-              <textarea
-                value={reportDescription}
-                onChange={(e) => setReportDescription(e.target.value)}
-                placeholder="Mô tả ngắn gọn về nội dung báo cáo..."
-                rows={4}
-                style={{
-                  width: "100%",
-                  padding: "14px 16px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "12px",
-                  fontSize: "14px",
-                  fontFamily: "inherit",
-                  resize: "vertical",
-                  transition: "all 0.3s ease",
-                  backgroundColor: "#fff",
-                  outline: "none",
-                  lineHeight: "1.5",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#3b82f6";
-                  e.currentTarget.style.boxShadow =
-                    "0 0 0 3px rgba(59, 130, 246, 0.1)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#e5e7eb";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "32px" }}>
-              <label
-                style={{
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  color: "#374151",
-                  marginBottom: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <Upload size={16} color="#22c55e" />
-                Tải lên file báo cáo *
-              </label>
-
-              {!selectedFile ? (
-                <div
-                  style={{
-                    border: `2px dashed ${isDragOver ? "#f37021" : "#d1d5db"}`,
-                    borderRadius: "16px",
-                    padding: "40px 32px",
-                    textAlign: "center",
-                    backgroundColor: isDragOver ? "#fff5f0" : "#fafafa",
-                    cursor: "pointer",
-                    transition: "all 0.3s ease",
-                    position: "relative",
-                    overflow: "hidden",
-                  }}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => document.getElementById("file-input")?.click()}
-                >
-                  <div
-                    style={{
-                      minWidth: "64px",
-                      minHeight: "64px",
-                      width: "64px",
-                      height: "64px",
-                      borderRadius: "50%",
-                      background: isDragOver
-                        ? "linear-gradient(135deg, #f37021, #ff8c42)"
-                        : "linear-gradient(135deg, #e5e7eb, #d1d5db)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      margin: "0 auto 20px",
-                      transition: "all 0.3s ease",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Upload size={32} color={isDragOver ? "#fff" : "#6b7280"} />
-                  </div>
-                  <div style={{ marginBottom: "16px" }}>
-                    <p
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: isDragOver ? "#f37021" : "#374151",
-                        margin: "0 0 4px 0",
-                        transition: "color 0.3s ease",
-                      }}
-                    >
-                      {isDragOver
-                        ? "Thả file vào đây!"
-                        : "Kéo thả file vào đây"}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "14px",
-                        color: "#6b7280",
-                        margin: 0,
-                      }}
-                    >
-                      hoặc nhấn để chọn file
-                    </p>
-                  </div>
-                  <input
-                    id="file-input"
-                    type="file"
-                    onChange={handleFileChange}
-                    required
-                    accept=".pdf,.doc,.docx"
-                    style={{ display: "none" }}
-                  />
-                </div>
-              ) : (
-                <div
-                  style={{
-                    border: "2px solid #22c55e",
-                    borderRadius: "16px",
-                    padding: "20px",
-                    backgroundColor: "#f0fdf4",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "16px",
-                  }}
-                >
-                  <div
-                    style={{
-                      minWidth: "48px",
-                      minHeight: "48px",
-                      width: "48px",
-                      height: "48px",
-                      borderRadius: "12px",
-                      background: "linear-gradient(135deg, #22c55e, #16a34a)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FileText size={24} color="#fff" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        color: "#166534",
-                        margin: "0 0 4px 0",
-                      }}
-                    >
-                      {selectedFile.name}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "12px",
-                        color: "#6b7280",
-                        margin: 0,
-                      }}
-                    >
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB •{" "}
-                      {selectedFile.type || "Unknown type"}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={removeFile}
-                    style={{
-                      minWidth: "32px",
-                      minHeight: "32px",
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "8px",
-                      border: "none",
-                      backgroundColor: "#dc2626",
-                      color: "#fff",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.2s ease",
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#b91c1c";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#dc2626";
-                    }}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-
-              {validationErrors.file && (
-                <div
-                  style={{
-                    marginTop: "8px",
-                    padding: "8px 12px",
-                    backgroundColor: "#fef2f2",
-                    border: "1px solid #fca5a5",
-                    borderRadius: "8px",
-                    color: "#dc2626",
-                    fontSize: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }}
-                >
-                  <AlertCircle size={14} />
-                  {validationErrors.file}
-                </div>
-              )}
-
-              <div
-                style={{
-                  marginTop: "12px",
-                  padding: "12px",
-                  backgroundColor: "#f8fafc",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "12px",
-                    color: "#64748b",
-                    margin: 0,
-                    textAlign: "center",
-                  }}
-                >
-                  <strong>Hỗ trợ:</strong> PDF, DOC, DOCX •{" "}
-                  <strong>Tối đa:</strong> 10MB
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={
-                submitting || !canSubmit || !selectedFile || !reportTitle.trim()
-              }
-              style={{
-                width: "100%",
-                padding: "16px",
-                background:
-                  submitting ||
-                  !canSubmit ||
-                  !selectedFile ||
-                  !reportTitle.trim()
-                    ? "#9ca3af"
-                    : "linear-gradient(135deg, #f37021, #ff8c42)",
-                color: "#fff",
-                border: "none",
-                borderRadius: "12px",
-                fontSize: "16px",
-                fontWeight: "700",
-                cursor:
-                  submitting ||
-                  !canSubmit ||
-                  !selectedFile ||
-                  !reportTitle.trim()
-                    ? "not-allowed"
-                    : "pointer",
-                transition: "all 0.3s ease",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "12px",
-                boxShadow:
-                  submitting ||
-                  !canSubmit ||
-                  !selectedFile ||
-                  !reportTitle.trim()
-                    ? "none"
-                    : "0 4px 12px rgba(243, 112, 33, 0.3)",
-                transform: "translateY(0)",
-              }}
-              onMouseEnter={(e) => {
-                if (
-                  !(
-                    submitting ||
-                    !canSubmit ||
-                    !selectedFile ||
-                    !reportTitle.trim()
-                  )
-                ) {
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                  e.currentTarget.style.boxShadow =
-                    "0 6px 16px rgba(243, 112, 33, 0.4)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (
-                  !(
-                    submitting ||
-                    !canSubmit ||
-                    !selectedFile ||
-                    !reportTitle.trim()
-                  )
-                ) {
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.boxShadow =
-                    "0 4px 12px rgba(243, 112, 33, 0.3)";
-                }
-              }}
-              title={submitting ? "Đang nộp báo cáo..." : "Nộp báo cáo"}
-            >
-              {submitting ? <Clock size={24} /> : <Upload size={24} />}
-            </button>
-          </form>
         </div>
 
-        {/* Report History */}
-        <div
-          style={{
-            background: "linear-gradient(135deg, #ffffff 0%, #fefefe 100%)",
-            borderRadius: "20px",
-            padding: "40px",
-            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
-            border: "1px solid #f1f5f9",
-            position: "relative",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            maxHeight: "1000px",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: "6px",
-              background:
-                "linear-gradient(90deg, #3b82f6, #6366f1, #f37021, #ff8c42)",
-              borderRadius: "20px 20px 0 0",
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              marginBottom: "32px",
-            }}
-          >
-            <div
-              style={{
-                minWidth: "56px",
-                minHeight: "56px",
-                width: "56px",
-                height: "56px",
-                borderRadius: "16px",
-                background: "linear-gradient(135deg, #3b82f6, #6366f1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Calendar size={28} color="#fff" />
-            </div>
-            <div>
-              <h2
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "800",
-                  color: "#1a1a1a",
-                  margin: 0,
-                }}
-              >
-                Lịch sử nộp báo cáo
-              </h2>
-              <p
-                style={{
-                  fontSize: "14px",
-                  color: "#64748b",
-                  margin: "4px 0 0 0",
-                }}
-              >
-                Theo dõi tiến độ và trạng thái báo cáo
-              </p>
-            </div>
+        {/* --- RIGHT: HISTORY TABLE --- */}
+        <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 flex flex-col overflow-hidden h-full">
+          <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+             <h2 className="text-sm font-black text-slate-900 flex items-center gap-2"><Calendar size={16} className="text-[#003D82]" />Lịch sử ({reports.length})</h2>
           </div>
-
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              paddingRight: "8px",
-            }}
-          >
-            {loading ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                }}
-              >
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    style={{
-                      height: "140px",
-                      borderRadius: "16px",
-                      background:
-                        "linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)",
-                      backgroundSize: "200px 100%",
-                      animation: "shimmer 1.5s infinite",
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                }}
-              >
+          <div className="flex-1 overflow-y-auto">
+            <table className="w-full custom-table border-collapse">
+              <thead>
+                <tr>
+                  <th className="w-14">Lần</th>
+                  <th>Tiêu đề</th>
+                  <th className="w-24">Ngày nộp</th>
+                  <th className="w-24">Trạng thái</th>
+                  <th className="text-center w-20">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
                 {reports.length === 0 ? (
-                  <div
-                    style={{
-                      textAlign: "center",
-                      padding: "60px 20px",
-                      color: "#64748b",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "80px",
-                        height: "80px",
-                        borderRadius: "50%",
-                        background: "linear-gradient(135deg, #f1f5f9, #e2e8f0)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "0 auto 20px",
-                      }}
-                    >
-                      <FileText size={32} color="#94a3b8" />
-                    </div>
-                    <h3
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "600",
-                        color: "#374151",
-                        margin: "0 0 8px 0",
-                      }}
-                    >
-                      Chưa có báo cáo nào
-                    </h3>
-                    <p style={{ fontSize: "14px", margin: 0 }}>
-                      Bạn chưa nộp báo cáo nào. Hãy nộp báo cáo đầu tiên của
-                      bạn!
-                    </p>
-                  </div>
+                  <tr><td colSpan={5} className="text-center py-20 text-slate-400 font-bold italic text-[11px]">Chưa có dữ liệu.</td></tr>
                 ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "12px",
-                    }}
-                  >
-                    {reports.map((report) => (
-                      <div
-                        key={report.submissionID}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "16px 20px",
-                          background: "#fff",
-                          borderRadius: "12px",
-                          border: `1px solid ${getStatusColor(
-                            report.lecturerState,
-                          )}`,
-                          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04)",
-                          transition: "all 0.2s ease",
-                          position: "relative",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                          e.currentTarget.style.boxShadow =
-                            "0 4px 16px rgba(0, 0, 0, 0.08)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow =
-                            "0 2px 8px rgba(0, 0, 0, 0.04)";
-                        }}
-                      >
-                        <div style={{ flex: 1 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "12px",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                minWidth: "32px",
-                                minHeight: "32px",
-                                width: "32px",
-                                height: "32px",
-                                borderRadius: "8px",
-                                background: `linear-gradient(135deg, ${getStatusColor(
-                                  report.lecturerState,
-                                )}, ${getStatusColor(report.lecturerState)}dd)`,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                flexShrink: 0,
-                              }}
-                            >
-                              <FileText size={16} color="#fff" />
-                            </div>
-                            <div>
-                              <h4
-                                style={{
-                                  fontSize: "16px",
-                                  fontWeight: "600",
-                                  color: "#1a1a1a",
-                                  margin: 0,
-                                  marginBottom: "2px",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  maxWidth: "200px",
-                                }}
-                                title={report.reportTitle}
-                              >
-                                {report.reportTitle}
-                              </h4>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "12px",
-                                  fontSize: "12px",
-                                  color: "#64748b",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "4px",
-                                  }}
-                                >
-                                  <Calendar size={12} />
-                                  {new Date(
-                                    report.submittedAt,
-                                  ).toLocaleDateString("vi-VN", {
-                                    year: "numeric",
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
-                                </span>
-                                {report.attemptNumber && (
-                                  <span>Lần {report.attemptNumber}</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "12px",
-                          }}
-                        >
-                          <span
-                            style={{
-                              padding: "4px 12px",
-                              backgroundColor: getStatusColor(
-                                report.lecturerState,
-                              ),
-                              color: "#fff",
-                              borderRadius: "16px",
-                              fontSize: "11px",
-                              fontWeight: "600",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.3px",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {getStatusText(report.lecturerState)}
-                          </span>
-
-                          {report.files && report.files.length > 0 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (report.files && report.files[0]) {
-                                  handleDownloadFile(report.files[0]);
-                                }
-                              }}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                minWidth: "36px",
-                                minHeight: "36px",
-                                width: "36px",
-                                height: "36px",
-                                background:
-                                  "linear-gradient(135deg, #f37021, #ff8c42)",
-                                color: "#fff",
-                                border: "none",
-                                borderRadius: "8px",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                cursor: "pointer",
-                                transition: "all 0.2s ease",
-                                flexShrink: 0,
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background =
-                                  "linear-gradient(135deg, #d95f1a, #f37021)";
-                                e.currentTarget.style.transform =
-                                  "translateY(-1px)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background =
-                                  "linear-gradient(135deg, #f37021, #ff8c42)";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                              }}
-                              title="Tải xuống"
-                            >
-                              <Download size={16} />
-                            </button>
-                          )}
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedReport(report);
-                              setShowReportDetailModal(true);
-                            }}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minWidth: "36px",
-                              minHeight: "36px",
-                              width: "36px",
-                              height: "36px",
-                              background:
-                                "linear-gradient(135deg, #3b82f6, #6366f1)",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              flexShrink: 0,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background =
-                                "linear-gradient(135deg, #2563eb, #3b82f6)";
-                              e.currentTarget.style.transform =
-                                "translateY(-1px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background =
-                                "linear-gradient(135deg, #3b82f6, #6366f1)";
-                              e.currentTarget.style.transform = "translateY(0)";
-                            }}
-                            title="Xem chi tiết"
-                          >
-                            <Eye size={16} />
-                          </button>
-                        </div>
-
-                        {/* Feedback Badge */}
-                        {report.lecturerComment && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: "-8px",
-                              right: "-8px",
-                              background:
-                                "linear-gradient(135deg, #f37021, #ff8c42)",
-                              borderRadius: "50%",
-                              width: "24px",
-                              height: "24px",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              boxShadow: "0 2px 8px rgba(243, 112, 33, 0.3)",
-                              border: "2px solid #fff",
-                              zIndex: 10,
-                            }}
-                            title="Có nhận xét từ giảng viên"
-                          >
-                            <MessageSquare size={12} color="#fff" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  reports.map((report, idx) => {
+                    const tone = getStatusTone(report.lecturerState);
+                    return (
+                      <tr key={report.submissionID}>
+                        <td className="font-black text-slate-400">#{report.attemptNumber || reports.length - idx}</td>
+                        <td className="font-bold text-slate-800">
+                           <div className="truncate max-w-[150px]" title={report.reportTitle}>{report.reportTitle}</div>
+                        </td>
+                        <td className="text-slate-500 font-medium whitespace-nowrap">{new Date(report.submittedAt).toLocaleDateString("vi-VN")}</td>
+                        <td>
+                           <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider whitespace-nowrap"
+                              style={{ background: tone.bg, color: tone.color, border: `1px solid ${tone.border}` }}>
+                              {getStatusText(report.lecturerState)}
+                           </span>
+                        </td>
+                        <td>
+                           <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => { setSelectedReport(report); setShowReportDetailModal(true); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-[#003D82]" title="Xem"><Eye size={14} /></button>
+                              {report.files?.[0] && (
+                                <button onClick={(e) => handleDownloadFile(report.files![0], e)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-emerald-500" title="Tải"><Download size={14} /></button>
+                              )}
+                           </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
-              </div>
-            )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      {/* Report Detail Modal */}
       {showReportDetailModal && selectedReport && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "20px",
-              maxWidth: "800px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflow: "auto",
-              position: "relative",
-              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
-            }}
-            className="report-modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <style>
-              {`
-                /* Custom scrollbar for modal */
-                .report-modal-content::-webkit-scrollbar {
-                  width: 6px;
-                }
-                .report-modal-content::-webkit-scrollbar-track {
-                  background: rgba(243, 112, 33, 0.1);
-                  border-radius: 20px;
-                  margin: 20px 0;
-                }
-                .report-modal-content::-webkit-scrollbar-thumb {
-                  background: linear-gradient(135deg, rgba(243, 112, 33, 0.6), rgba(255, 140, 66, 0.6));
-                  border-radius: 20px;
-                  border: 1px solid rgba(243, 112, 33, 0.2);
-                }
-                .report-modal-content::-webkit-scrollbar-thumb:hover {
-                  background: linear-gradient(135deg, rgba(243, 112, 33, 0.8), rgba(255, 140, 66, 0.8));
-                }
-              `}
-            </style>
-            {/* Modal Header */}
-            <div
-              style={{
-                position: "sticky",
-                top: 0,
-                background: `linear-gradient(135deg, ${getStatusColor(
-                  selectedReport.lecturerState,
-                )}, ${getStatusColor(selectedReport.lecturerState)}dd)`,
-                padding: "24px",
-                borderRadius: "20px 20px 0 0",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <h2
-                  style={{
-                    fontSize: "24px",
-                    fontWeight: "700",
-                    margin: 0,
-                    marginBottom: "8px",
-                  }}
-                >
-                  {selectedReport.reportTitle}
-                </h2>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "16px",
-                    fontSize: "14px",
-                    opacity: 0.9,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <Calendar size={16} />
-                    {new Date(selectedReport.submittedAt).toLocaleDateString(
-                      "vi-VN",
-                      {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      },
-                    )}
-                  </span>
-                  {selectedReport.attemptNumber && (
-                    <span>Lần {selectedReport.attemptNumber}</span>
-                  )}
-                </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+           <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="bg-[#003D82] p-6 text-white flex justify-between items-center">
+                 <h3 className="text-sm font-black uppercase tracking-widest">Chi tiết báo cáo</h3>
+                 <button onClick={() => setShowReportDetailModal(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={20} /></button>
               </div>
-
-              {/* Status Badge in Header */}
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "16px" }}
-              >
-                <span
-                  style={{
-                    padding: "6px 16px",
-                    backgroundColor: "rgba(255, 255, 255, 0.2)",
-                    color: "#fff",
-                    borderRadius: "20px",
-                    fontSize: "13px",
-                    fontWeight: "700",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    border: "1px solid rgba(255, 255, 255, 0.3)",
-                    backdropFilter: "blur(10px)",
-                  }}
-                >
-                  {getStatusText(selectedReport.lecturerState)}
-                </span>
-
-                <button
-                  onClick={() => setShowReportDetailModal(false)}
-                  style={{
-                    background: "rgba(255, 255, 255, 0.2)",
-                    border: "none",
-                    borderRadius: "8px",
-                    minWidth: "40px",
-                    minHeight: "40px",
-                    width: "40px",
-                    height: "40px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background =
-                      "rgba(255, 255, 255, 0.3)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background =
-                      "rgba(255, 255, 255, 0.2)";
-                  }}
-                >
-                  <X size={20} color="#fff" />
-                </button>
+              <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+                 <div className="flex justify-between items-center">
+                    <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Mốc tiến độ</span><span className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-black text-slate-900 uppercase">{selectedReport.milestoneCode}</span></div>
+                    <div className="text-right"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ngày nộp</span><span className="text-xs font-bold text-slate-600">{new Date(selectedReport.submittedAt).toLocaleDateString('vi-VN')}</span></div>
+                 </div>
+                 <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Tiêu đề</span><p className="text-lg font-black text-slate-900 leading-tight">{selectedReport.reportTitle}</p></div>
+                 <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Mô tả</span><div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-sm text-slate-600 font-bold italic leading-relaxed">"{selectedReport.reportDescription}"</div></div>
+                 {selectedReport.lecturerComment && (
+                    <div><span className="text-[10px] font-black text-orange-500 uppercase tracking-widest block mb-2 flex items-center gap-2"><MessageSquare size={14} /> Phản hồi Giảng viên</span><div className="bg-orange-50 p-5 rounded-2xl border border-orange-100 text-sm text-slate-700 font-bold">{selectedReport.lecturerComment}</div></div>
+                 )}
               </div>
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: "24px" }}>
-              {/* Description */}
-              {selectedReport.reportDescription && (
-                <div style={{ marginBottom: "24px" }}>
-                  <h3
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: "600",
-                      color: "#1a1a1a",
-                      marginBottom: "12px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <FileText size={18} color="#64748b" />
-                    Mô tả báo cáo
-                  </h3>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "#f8fafc",
-                      borderRadius: "12px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: "14px",
-                        color: "#374151",
-                        lineHeight: "1.6",
-                        margin: 0,
-                      }}
-                    >
-                      {selectedReport.reportDescription}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Files */}
-              {selectedReport.files && selectedReport.files.length > 0 && (
-                <div>
-                  <h3
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: "600",
-                      color: "#1a1a1a",
-                      marginBottom: "12px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <Download size={18} color="#64748b" />
-                    File đính kèm ({selectedReport.files.length})
-                  </h3>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    {selectedReport.files.map((file) => (
-                      <div
-                        key={file.fileID}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "12px 16px",
-                          background: "#f8fafc",
-                          borderRadius: "8px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <div style={{ flex: 1 }}>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              color: "#1a1a1a",
-                              marginBottom: "2px",
-                            }}
-                          >
-                            {file.fileName}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748b",
-                            }}
-                          >
-                            {(file.fileSizeBytes / 1024).toFixed(1)} KB
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(file);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: "36px",
-                            minHeight: "36px",
-                            width: "36px",
-                            height: "36px",
-                            background:
-                              "linear-gradient(135deg, #f37021, #ff8c42)",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease",
-                            flexShrink: 0,
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background =
-                              "linear-gradient(135deg, #d95f1a, #f37021)";
-                            e.currentTarget.style.transform =
-                              "translateY(-1px)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background =
-                              "linear-gradient(135deg, #f37021, #ff8c42)";
-                            e.currentTarget.style.transform = "translateY(0)";
-                          }}
-                          title="Tải xuống"
-                        >
-                          <Download size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Status and Lecturer Feedback Combined */}
-              <div style={{ marginBottom: "24px" }}>
-                <h3
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: "600",
-                    color: "#1a1a1a",
-                    marginTop: "16px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <UserIcon size={18} color="#f37021" />
-                  Phản hồi từ giảng viên
-                  {selectedReport.feedbackLevel && (
-                    <div
-                      className="feedback-level-badge"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        padding: "4px 8px",
-                        backgroundColor: "#fef3c7",
-                        border: "1px solid #fde68a",
-                        borderRadius: "12px",
-                      }}
-                    >
-                      <Award size={14} color="#eab308" />
-                      <span
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#92400e",
-                        }}
-                      >
-                        {getFeedbackLevelText(selectedReport.feedbackLevel)}
-                      </span>
-                    </div>
-                  )}
-                </h3>
-
-                <div
-                  style={{
-                    padding: "20px",
-                    background:
-                      "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                    borderRadius: "12px",
-                    border: "1px solid #e2e8f0",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
-                    marginTop: "16px",
-                  }}
-                >
-                  {/* Lecturer Feedback */}
-                  {selectedReport.lecturerComment && (
-                    <div
-                      style={{
-                        padding: "16px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #fed7aa",
-                        borderLeft: "4px solid #f37021",
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: "14px",
-                          color: "#374151",
-                          lineHeight: "1.6",
-                          margin: 0,
-                        }}
-                      >
-                        {selectedReport.lecturerComment}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* No feedback message */}
-                  {!selectedReport.lecturerComment && (
-                    <div
-                      style={{
-                        padding: "16px",
-                        background: "#fff",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#64748b",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        Chưa có phản hồi từ giảng viên
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                 <button onClick={() => setShowReportDetailModal(false)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest">Đóng</button>
               </div>
-            </div>
-          </div>
+           </div>
         </div>
       )}
     </div>
