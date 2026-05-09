@@ -162,6 +162,7 @@ const UsersManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
+  const [selectedUserIDs, setSelectedUserIDs] = useState<number[]>([]);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -505,6 +506,60 @@ const UsersManagement: React.FC = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!canDelete || selectedUserIDs.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Bạn chắc chắn muốn xóa ${selectedUserIDs.length} tài khoản đã chọn?`
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedUserIDs.map((id) =>
+          requestApi<unknown>(`/Users/delete/${id}`, { method: "DELETE" })
+        )
+      );
+
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.length - succeeded;
+
+      if (succeeded > 0) {
+        addToast(`Đã xóa thành công ${succeeded} tài khoản.`, "success");
+      }
+      if (failed > 0) {
+        addToast(`Xóa thất bại ${failed} tài khoản.`, "error");
+      }
+
+      setSelectedUserIDs([]);
+      await loadUsers();
+    } catch (error) {
+      handleApiError(error, "Có lỗi xảy ra trong quá trình xóa hàng loạt.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleSelectRow = (userID: number) => {
+    setSelectedUserIDs((prev) =>
+      prev.includes(userID)
+        ? prev.filter((id) => id !== userID)
+        : [...prev, userID]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUserIDs.length === rows.length && rows.length > 0) {
+      setSelectedUserIDs([]);
+    } else {
+      const allIDs = rows
+        .map((r) => Number(r.userID ?? r.id ?? 0))
+        .filter((id) => id !== 0);
+      setSelectedUserIDs(allIDs);
+    }
+  };
+
   const resetDefaultPassword = async (row: UserRow) => {
     if (!canResetDefaultPassword) return;
 
@@ -665,10 +720,96 @@ const UsersManagement: React.FC = () => {
         )}
       </div>
 
+      {selectedUserIDs.length > 0 && (
+        <div
+          style={{
+            background: "#fff1f2",
+            border: "1px solid #fecaca",
+            padding: "12px 20px",
+            borderRadius: 12,
+            marginBottom: 20,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            animation: "slideDown 0.3s ease-out",
+            boxShadow: "0 4px 12px rgba(185, 28, 28, 0.08)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                background: "#b91c1c",
+                color: "#fff",
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              {selectedUserIDs.length}
+            </div>
+            <span style={{ color: "#991b1b", fontWeight: 600, fontSize: 14 }}>
+              Tài khoản đang được chọn
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setSelectedUserIDs([])}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#64748b",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: "pointer",
+                padding: "8px 12px",
+              }}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBulkDelete()}
+              style={{
+                background: "#b91c1c",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "8px 16px",
+                fontWeight: 700,
+                fontSize: 14,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(185, 28, 28, 0.2)",
+              }}
+            >
+              <Trash2 size={16} /> Xóa vĩnh viễn
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="recent-topics-section" style={{ overflowX: "auto" }}>
         <table className="topics-table">
           <thead>
             <tr>
+              <th style={{ width: 40, textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={
+                    rows.length > 0 && selectedUserIDs.length === rows.length
+                  }
+                  onChange={toggleSelectAll}
+                  style={{ width: 16, height: 16, cursor: "pointer" }}
+                />
+              </th>
               <th>userID</th>
               <th>userCode</th>
               <th>fullName</th>
@@ -690,7 +831,22 @@ const UsersManagement: React.FC = () => {
               rows.map((row) => {
                 const id = String(row.userID ?? row.id ?? "");
                 return (
-                  <tr key={id || String(row.userCode ?? Math.random())}>
+                  <tr
+                    key={id || String(row.userCode ?? Math.random())}
+                    style={{
+                      background: selectedUserIDs.includes(Number(id))
+                        ? "#fff7ed"
+                        : "transparent",
+                    }}
+                  >
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIDs.includes(Number(id))}
+                        onChange={() => toggleSelectRow(Number(id))}
+                        style={{ width: 16, height: 16, cursor: "pointer" }}
+                      />
+                    </td>
                     <td>{String(row.userID ?? row.id ?? "")}</td>
                     <td>{String(row.userCode ?? "")}</td>
                     <td>

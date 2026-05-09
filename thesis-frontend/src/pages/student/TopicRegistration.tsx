@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import /* useNavigate */ "react-router-dom";
 import { fetchData, FetchDataError, getAvatarUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
@@ -28,6 +28,10 @@ import {
   X,
   List,
   Grid2X2,
+  Clock,
+  Flame,
+  MessageCircle,
+  Phone,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import TopicRenameRequestModal from "../../components/workflow/TopicRenameRequestModal";
@@ -140,6 +144,19 @@ async function getCatalogTopicsWithTagsApi(input?: {
   ).data;
 }
 
+const formatDateLabel = (dateString: string | null | undefined) => {
+  if (!dateString) return "---";
+  try {
+    return new Date(dateString).toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch (e) {
+    return dateString;
+  }
+};
+
 const TopicRegistration: React.FC = () => {
   const auth = useAuth();
   // navigate removed; we now show a success modal instead of navigating
@@ -161,6 +178,9 @@ const TopicRegistration: React.FC = () => {
   const [defenseTerms, setDefenseTerms] = useState<DefenseTermOption[]>([]);
   const [selectedDefenseTermId, setSelectedDefenseTermId] =
     useState<DefensePeriodId | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+
+
   const [selectedTagInfo, setSelectedTagInfo] = useState<Tag | null>(null);
   const [selectedTagIDs, setSelectedTagIDs] = useState<number[]>([]);
   const [topicTags, setTopicTags] = useState<TopicTag[]>([]);
@@ -178,11 +198,11 @@ const TopicRegistration: React.FC = () => {
   const [catalogTagFilter, setCatalogTagFilter] = useState<string | null>(null);
   const [catalogViewMode, setCatalogViewMode] = useState<"card" | "table">("card");
   const [isTopicRenameModalOpen, setIsTopicRenameModalOpen] = useState(false);
-  
+
   const filteredCatalogTopics = useMemo(() => {
-    return catalogTopics.filter(t => 
-      (t.title.toLowerCase().includes(catalogSearchQuery.toLowerCase()) || 
-       t.catalogTopicCode.toLowerCase().includes(catalogSearchQuery.toLowerCase())) &&
+    return catalogTopics.filter(t =>
+      (t.title.toLowerCase().includes(catalogSearchQuery.toLowerCase()) ||
+        t.catalogTopicCode.toLowerCase().includes(catalogSearchQuery.toLowerCase())) &&
       (!catalogTagFilter || (t.tags && t.tags.some(tag => tag.tagCode === catalogTagFilter)))
     );
   }, [catalogTopics, catalogSearchQuery, catalogTagFilter]);
@@ -207,6 +227,13 @@ const TopicRegistration: React.FC = () => {
     departmentID: null,
     tagID: null,
   });
+
+  useEffect(() => {
+    if (titleRef.current) {
+      titleRef.current.style.height = "auto";
+      titleRef.current.style.height = `${titleRef.current.scrollHeight}px`;
+    }
+  }, [formData.title, editFormData.title]);
 
   // Fetch initial data
   // Extracted loader so we can call it again when refreshing UI after success
@@ -517,12 +544,12 @@ const TopicRegistration: React.FC = () => {
                 selectedFromMaster.length > 0
                   ? selectedFromMaster
                   : embeddedTags.map((item) => ({
-                      tagID: item.tagID,
-                      tagCode: item.tagCode,
-                      tagName: item.tagName,
-                      description: "",
-                      createdAt: "",
-                    }));
+                    tagID: item.tagID,
+                    tagCode: item.tagCode,
+                    tagName: item.tagName,
+                    description: "",
+                    createdAt: "",
+                  }));
 
               setSelectedTagInfo(resolvedTags[0] || null);
 
@@ -612,7 +639,7 @@ const TopicRegistration: React.FC = () => {
       console.error("Rollback error:", error);
       alert(
         "Rollback thất bại: " +
-          (error instanceof Error ? error.message : "Lỗi không xác định"),
+        (error instanceof Error ? error.message : "Lỗi không xác định"),
       );
     } finally {
       setSubmitting(false);
@@ -829,12 +856,12 @@ const TopicRegistration: React.FC = () => {
         selectedFromMaster.length > 0
           ? selectedFromMaster
           : embeddedTags.map((item) => ({
-              tagID: item.tagID,
-              tagCode: item.tagCode,
-              tagName: item.tagName,
-              description: "",
-              createdAt: "",
-            }));
+            tagID: item.tagID,
+            tagCode: item.tagCode,
+            tagName: item.tagName,
+            description: "",
+            createdAt: "",
+          }));
 
       if (resolvedTags.length === 0) {
         setError("Không tìm thấy thông tin thẻ");
@@ -964,8 +991,8 @@ const TopicRegistration: React.FC = () => {
         selectedTagIDs.length > 0
           ? selectedTagIDs
           : [formData.tagID, selectedTagInfo?.tagID].filter(
-              (id): id is number => typeof id === "number" && id > 0,
-            );
+            (id): id is number => typeof id === "number" && id > 0,
+          );
       const chosenTags = tags.filter((tag) =>
         effectiveTagIds.includes(tag.tagID),
       );
@@ -1063,8 +1090,8 @@ const TopicRegistration: React.FC = () => {
         selectedTagIDs.length > 0
           ? selectedTagIDs
           : [editFormData.tagID, selectedTagInfo?.tagID].filter(
-              (id): id is number => typeof id === "number" && id > 0,
-            );
+            (id): id is number => typeof id === "number" && id > 0,
+          );
       const chosenTags = tags.filter((tag) =>
         effectiveTagIds.includes(tag.tagID),
       );
@@ -1711,554 +1738,196 @@ const TopicRegistration: React.FC = () => {
     );
   }
 
-  // If student already has a pending or approved topic, show topic details
+  // If student already has a pending or approved topic, show unified dossier card
   if (existingTopic) {
+    const supervisor = lecturers.find(l => l.userCode === existingTopic.supervisorUserCode || l.lecturerCode === existingTopic.supervisorLecturerCode);
+    const isApproved = existingTopic.status === "Chấp thuận" || existingTopic.status === "Chính thức";
+    const isActionRequired = existingTopic.status === "Từ chối" || existingTopic.status === "Cần sửa đổi";
+
     return (
-      <div
-        style={{
-          padding: "24px",
-          maxWidth: "900px",
-          margin: "10px auto",
-          backgroundColor: "#fff",
-          minHeight: "100vh",
-        }}
-      >
+      <div className="max-w-[1400px] mx-auto p-4 lg:p-8">
         <style>
           {`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
+            .unified-container { 
+              background: #ffffff;
+              border-radius: 32px;
+              border: 1px solid #e2e8f0;
+              box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05);
+              overflow: hidden;
+            }
+            .status-banner {
+              padding: 12px 24px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.1em;
+              font-size: 12px;
+              display: flex;
+              align-items: center;
+              gap: 8px;
             }
           `}
         </style>
 
-        {/* Header */}
-        <div
-          style={{
-            marginBottom: "32px",
-            textAlign: "center",
-          }}
-        >
-          <h1
-            style={{
-              color: "#f37021",
-              fontSize: "28px",
-              fontWeight: "bold",
-              margin: "0 0 8px 0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "12px",
-            }}
-          >
-            <BookOpen size={32} />
-            {existingTopic.status === "Đang chờ"
-              ? "Đề tài của bạn đang được xét duyệt"
-              : "Đề tài của bạn"}
-          </h1>
-          <p
-            style={{
-              color: "#666",
-              fontSize: "16px",
-              margin: 0,
-            }}
-          >
-            {existingTopic.status === "Đang chờ"
-              ? "Vui lòng chờ quyết định từ giảng viên hướng dẫn và ban quản lý"
-              : "Đề tài của bạn đã được duyệt thành công"}
-          </p>
-        </div>
-
-        {/* Topic Details */}
-        <div
-          style={{
-            backgroundColor: "#fafafa",
-            padding: "32px",
-            borderRadius: "12px",
-            border: "1px solid #eee",
-          }}
-        >
-          <div style={{ marginBottom: "24px" }}>
-            <h2
-              style={{
-                color: "#f37021",
-                fontSize: "20px",
-                fontWeight: "bold",
-                margin: "0 0 16px 0",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <FileText size={20} />
-              Thông tin đề tài
-            </h2>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "16px",
-              }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Mã đề tài
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#666",
-                  }}
-                >
-                  {existingTopic.topicCode}
+        <div className="unified-container">
+          <div className="grid grid-cols-1 lg:grid-cols-10">
+            {/* --- LEFT: MAIN DOSSIER (Col 7) --- */}
+            <div className="lg:col-span-7 p-8 lg:p-12 border-b lg:border-b-0 lg:border-r border-slate-100">
+              <div className="mb-10">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <BookOpen size={20} />
+                    <span className="text-xs font-black uppercase tracking-widest">Hồ sơ đăng ký khóa luận</span>
+                  </div>
+                  <div className={`px-4 py-1.5 rounded-xl border font-black text-[11px] uppercase tracking-wider flex items-center gap-2 ${isApproved ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                    isActionRequired ? "bg-rose-50 text-rose-600 border-rose-100" :
+                      "bg-orange-50 text-[#F37021] border-orange-100"
+                    }`}>
+                    <div className={`w-2 h-2 rounded-full ${isApproved ? "bg-emerald-500" : isActionRequired ? "bg-rose-500" : "bg-orange-500"
+                      }`} />
+                    {getDisplayedTopicStatus(existingTopic.status)}
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Trạng thái
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor:
-                      existingTopic.status === "Đang chờ"
-                        ? "#fff3cd"
-                        : "#e8f5e8",
-                    border: `1px solid ${
-                      existingTopic.status === "Đang chờ"
-                        ? "#ffc107"
-                        : "#4caf50"
-                    }`,
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color:
-                      existingTopic.status === "Đang chờ"
-                        ? "#856404"
-                        : "#2e7d32",
-                    fontWeight: "500",
-                  }}
-                >
-                  {getDisplayedTopicStatus(existingTopic.status)}
-                </div>
-              </div>
-
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Tên đề tài
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
+                <h1 className="text-3xl lg:text-4xl font-black text-slate-900 leading-tight mb-6">
                   {existingTopic.title}
+                </h1>
+                <div className="flex flex-wrap gap-2 mb-8">
+                  <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[11px] font-black tracking-wider uppercase">ID: {existingTopic.topicCode}</span>
+                  <span className="px-3 py-1 bg-blue-50 text-[#003D82] rounded-lg text-[11px] font-black border border-blue-100 uppercase">{existingTopic.type === "CATALOG" ? "Danh mục khoa" : "Sinh viên đề xuất"}</span>
+                  {topicTagNames.map(tag => (
+                    <span key={tag.tagID} className="px-3 py-1 bg-orange-50 text-[#F37021] rounded-lg text-[11px] font-black border border-orange-100 uppercase">{tag.tagName}</span>
+                  ))}
                 </div>
               </div>
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Tóm tắt đề tài
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                    lineHeight: "1.5",
-                  }}
-                >
-                  {existingTopic.summary}
-                </div>
-              </div>
+              <div className="space-y-8">
+                <section>
+                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                    <FileText size={14} /> Nội dung tóm tắt
+                  </h3>
+                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
+                    <p className="text-slate-600 font-semibold leading-relaxed text-lg italic">
+                      "{existingTopic.summary || "Thông tin tóm tắt đề tài đang được cập nhật."}"
+                    </p>
+                  </div>
+                </section>
 
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Loại đề tài
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  {existingTopic.type === "CATALOG"
-                    ? "Chọn từ danh mục có sẵn"
-                    : "Tự đề xuất"}
-                </div>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Giảng viên hướng dẫn
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  {(() => {
-                    const supervisor = lecturers.find(
-                      (l) => l.userCode === existingTopic.supervisorUserCode,
-                    );
-                    return (
-                      supervisor?.fullName ||
-                      existingTopic.supervisorLecturerCode ||
-                      "Chưa có"
-                    );
-                  })()}
-                </div>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Khoa
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  {(() => {
-                    // Use default department name if it matches, otherwise show existing topic's department
-                    if (
-                      defaultDepartment &&
-                      defaultDepartment.departmentID ===
-                        existingTopic.departmentID
-                    ) {
-                      return defaultDepartment.name;
-                    }
-                    return existingTopic.departmentCode || "Chưa có";
-                  })()}
-                </div>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "600",
-                    color: "#333",
-                    fontSize: "14px",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Tags
-                </label>
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    backgroundColor: "#fff",
-                    border: "1px solid #ddd",
-                    borderRadius: "6px",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  {(() => {
-                    // Display tag names from topicTagNames API data
-                    if (topicTagNames.length > 0) {
-                      const tagNames = topicTagNames.map((tag) => tag.tagName);
-                      return tagNames.length > 0
-                        ? tagNames.join(", ")
-                        : "Chưa có";
-                    }
-
-                    // Fallback to old logic if topicTagNames is empty
-                    const byId = tags.find(
-                      (t) => t.tagID === existingTopic.tagID,
-                    )?.tagName;
-                    if (byId) return byId;
-                    const byCode = tags.find(
-                      (t) => t.tagCode === existingTopic.tagCode,
-                    )?.tagName;
-                    return byCode || existingTopic.tagCode || "Chưa có";
-                  })()}
-                </div>
-              </div>
-
-              {/* Lecturer Comment - only show for rejected or revision topics */}
-              {(existingTopic.status === "Từ chối" ||
-                existingTopic.status === "Cần sửa đổi") &&
-                existingTopic.lecturerComment && (
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "600",
-                        color: "#333",
-                        fontSize: "14px",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Nhận xét của giảng viên
-                    </label>
-                    <div
-                      style={{
-                        padding: "12px",
-                        backgroundColor: "#fff3cd",
-                        border: "1px solid #ffc107",
-                        borderRadius: "6px",
-                        fontSize: "14px",
-                        color: "#856404",
-                        lineHeight: "1.5",
-                      }}
-                    >
+                {isActionRequired && existingTopic.lecturerComment && (
+                  <section className="animate-pulse">
+                    <h3 className="text-[11px] font-black text-rose-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                      <MessageCircle size={14} /> Nhận xét từ giảng viên
+                    </h3>
+                    <div className="bg-rose-50 rounded-2xl p-6 border border-rose-100 text-rose-700 font-bold text-sm leading-relaxed">
                       {existingTopic.lecturerComment}
                     </div>
-                  </div>
+                  </section>
                 )}
-            </div>
-          </div>
 
-          {/* Status Message */}
-          <div
-            style={{
-              backgroundColor:
-                existingTopic.status === "Đang chờ"
-                  ? "#e3f2fd"
-                  : existingTopic.status === "Từ chối" ||
-                      existingTopic.status === "Cần sửa đổi"
-                    ? "#ffebee"
-                    : "#e8f5e8",
-              border: `1px solid ${
-                existingTopic.status === "Đang chờ"
-                  ? "#2196f3"
-                  : existingTopic.status === "Từ chối" ||
-                      existingTopic.status === "Cần sửa đổi"
-                    ? "#f44336"
-                    : "#4caf50"
-              }`,
-              borderRadius: "8px",
-              padding: "16px",
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                color:
-                  existingTopic.status === "Đang chờ"
-                    ? "#1976d2"
-                    : existingTopic.status === "Từ chối" ||
-                        existingTopic.status === "Cần sửa đổi"
-                      ? "#c62828"
-                      : "#2e7d32",
-                fontSize: "16px",
-                fontWeight: "500",
-                marginBottom: "8px",
-              }}
-            >
-              {existingTopic.status === "Đang chờ"
-                ? "Đề tài của bạn đang trong quá trình xét duyệt"
-                : existingTopic.status === "Từ chối"
-                  ? "Đề tài của bạn đã bị từ chối"
-                  : existingTopic.status === "Cần sửa đổi"
-                    ? "Đề tài của bạn cần được sửa đổi"
-                    : "Đề tài của bạn đã được duyệt thành công"}
-            </div>
-            <div
-              style={{
-                color: "#666",
-                fontSize: "14px",
-                marginBottom:
-                  existingTopic.status === "Từ chối" ||
-                  existingTopic.status === "Cần sửa đổi"
-                    ? "16px"
-                    : "0",
-              }}
-            >
-              {existingTopic.status === "Đang chờ"
-                ? "Bạn sẽ nhận được thông báo khi có kết quả. Trong thời gian này, bạn không thể đăng ký đề tài mới."
-                : existingTopic.status === "Từ chối"
-                  ? "Bạn có thể sửa đổi và đăng ký lại đề tài mới."
-                  : existingTopic.status === "Cần sửa đổi"
-                    ? "Vui lòng sửa đổi đề tài theo nhận xét của giảng viên và gửi lại."
-                    : "Chúc mừng! Bạn có thể bắt đầu thực hiện đề tài của mình."}
+                <div className="pt-10 mt-10 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngày phê duyệt</span>
+                    <p className="text-base font-black text-slate-800 flex items-center gap-2">
+                      <Calendar size={16} className="text-[#003D82]" />
+                      {formatDateLabel(existingTopic.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đơn vị quản lý</span>
+                    <p className="text-base font-black text-slate-800 flex items-center gap-2">
+                      <Building size={16} className="text-[#003D82]" />
+                      {defaultDepartment?.name || "Khoa CNTT"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-6 flex items-start gap-4">
+                  <div className="p-2.5 bg-white rounded-xl text-indigo-600 shadow-sm shrink-0">
+                    <Info size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-1">Lưu ý từ Văn phòng Khoa</h4>
+                    <p className="text-[13px] text-indigo-700/80 font-bold leading-relaxed">
+                      Sinh viên vui lòng chủ động liên hệ với Giảng viên hướng dẫn để thống nhất kế hoạch nghiên cứu và thực hiện các báo cáo tiến độ đúng thời hạn quy định trên hệ thống.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Edit Topic Button - only show for rejected or revision topics */}
-            {(existingTopic.status === "Từ chối" ||
-              existingTopic.status === "Cần sửa đổi") && (
-              <button
-                onClick={handleEditTopic}
-                style={{
-                  backgroundColor: "#f37021",
-                  color: "#fff",
-                  border: "none",
-                  padding: "10px 20px",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  fontWeight: "500",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  transition: "background-color 0.2s",
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.backgroundColor = "#d55a1b";
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f37021";
-                }}
-              >
-                <Edit size={16} />
-                Sửa đề tài
-              </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => setIsTopicRenameModalOpen(true)}
-              style={{
-                marginTop:
-                  existingTopic.status === "Từ chối" ||
-                  existingTopic.status === "Cần sửa đổi"
-                    ? "16px"
-                    : "0",
-                backgroundColor: "#fff",
-                color: "#f37021",
-                border: "1px solid #f37021",
-                padding: "10px 20px",
-                borderRadius: "6px",
-                fontSize: "14px",
-                fontWeight: "500",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                transition: "background-color 0.2s",
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = "#fff8f3";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = "#fff";
-              }}
-            >
-              <Edit size={16} />
-              Đơn xin đổi đề tài
-            </button>
+            {/* --- RIGHT: SUPERVISOR & ACTIONS (Col 3) --- */}
+            <div className="lg:col-span-3 bg-slate-50/50 p-8 lg:p-10 flex flex-col justify-between">
+              <div>
+                <div className="text-center mb-10">
+                  <div className="relative inline-block mb-6">
+                    <div className="w-28 h-28 rounded-3xl border-4 border-white shadow-xl overflow-hidden relative z-10">
+                      <img
+                        src={supervisor?.profileImage || `https://ui-avatars.com/api/?name=${encodeURIComponent(supervisor?.fullName || "GV")}&background=003D82&color=fff&size=200`}
+                        alt="Supervisor"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    {isApproved && (
+                      <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-xl border-4 border-slate-50 shadow-lg z-20">
+                        <Check size={14} />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 leading-tight mb-1">{supervisor?.fullName || "Giảng viên hướng dẫn"}</h3>
+                  <p className="text-xs font-black text-[#F37021] uppercase tracking-widest mb-1">{supervisor?.degree || "HỌC VỊ ĐANG CẬP NHẬT"}</p>
+                  <p className="text-[11px] font-semibold text-slate-400 mb-8">{supervisor?.email || "gv@dnu.edu.vn"}</p>
+                </div>
 
-            <button
-              type="button"
-              onClick={handleRollback}
-              disabled={submitting}
-              style={{
-                marginTop: "16px",
-                marginLeft: "12px",
-                backgroundColor: "#fff",
-                color: "#dc3545",
-                border: "1px solid #dc3545",
-                padding: "10px 20px",
-                borderRadius: "6px",
-                fontSize: "14px",
-                fontWeight: "500",
-                cursor: submitting ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                transition: "all 0.2s",
-                opacity: submitting ? 0.7 : 1,
-              }}
-              onMouseOver={(e) => {
-                if (!submitting) {
-                  e.currentTarget.style.backgroundColor = "#fff5f5";
-                }
-              }}
-              onMouseOut={(e) => {
-                if (!submitting) {
-                  e.currentTarget.style.backgroundColor = "#fff";
-                }
-              }}
-            >
-              <RotateCcw size={16} />
-              Rollback dữ liệu test
-            </button>
+                <div className="space-y-3 mb-10">
+                  <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group hover:border-[#003D82] transition-colors">
+                    <div className="flex items-center gap-3">
+                      <PersonIcon size={16} className="text-slate-400 group-hover:text-[#003D82]" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase">MSGV</span>
+                    </div>
+                    <span className="text-xs font-black text-slate-700">{supervisor?.lecturerCode || "---"}</span>
+                  </div>
+                  <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group hover:border-[#003D82] transition-colors">
+                    <div className="flex items-center gap-3">
+                      <Building size={16} className="text-slate-400 group-hover:text-[#003D82]" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase">Đơn vị</span>
+                    </div>
+                    <span className="text-xs font-black text-slate-700">{supervisor?.departmentCode || "Khoa CNTT"}</span>
+                  </div>
+                  <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group hover:border-[#003D82] transition-colors">
+                    <div className="flex items-center gap-3">
+                      <Phone size={16} className="text-slate-400 group-hover:text-[#003D82]" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase">SĐT</span>
+                    </div>
+                    <span className="text-xs font-black text-slate-700">{supervisor?.phoneNumber || "---"}</span>
+                  </div>
+                </div>
 
+                <div className="space-y-3 mb-10">
+                  <button
+                    onClick={() => (document.querySelector('button[aria-label="Mở tin nhắn"]') as HTMLButtonElement)?.click()}
+                    className="w-full py-4 bg-[#003D82] text-white rounded-2xl font-black text-[13px] tracking-wide flex items-center justify-center gap-3 shadow-lg shadow-blue-100 hover:bg-[#002a5a] transition-all"
+                  >
+                    <MessageCircle size={18} /> NHẮN TIN TRAO ĐỔI
+                  </button>
+                  <button className="w-full py-4 bg-white text-slate-700 border border-slate-200 rounded-2xl font-black text-[13px] tracking-wide flex items-center justify-center gap-3 hover:bg-slate-50 transition-all">
+                    <FileText size={18} /> TẢI BIỂU MẪU
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-8 border-t border-slate-200">
+                {isActionRequired && (
+                  <button onClick={handleEditTopic} className="w-full py-4 bg-[#F37021] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all flex items-center justify-center gap-2">
+                    <Edit size={16} /> Chỉnh sửa ngay
+                  </button>
+                )}
+                <button onClick={() => setIsTopicRenameModalOpen(true)} className="w-full py-3 bg-transparent text-[#003D82] font-black text-[11px] uppercase tracking-widest hover:underline flex items-center justify-center gap-2">
+                  <Edit size={14} /> Đơn xin đổi tên đề tài
+                </button>
+                <button onClick={handleRollback} disabled={submitting} className="w-full py-2 bg-transparent text-slate-300 font-bold text-[10px] uppercase tracking-widest hover:text-red-400 transition-colors">
+                  {submitting ? "Đang xử lý..." : "Rollback dữ liệu test"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <TopicRenameRequestModalView
@@ -2294,342 +1963,334 @@ const TopicRegistration: React.FC = () => {
         `}
       </style>
 
-      <div className="max-w-[1550px] mx-auto animate-[fadeIn_0.5s_ease-out] font-vietnam">
+      <div className="max-w-[1800px] mx-auto font-vietnam">
         <header className="mb-12 text-center">
-            <h1 className="text-5xl font-extrabold text-[#002855] tracking-tight mb-3 font-jakarta">Đăng ký Đề tài Tốt nghiệp</h1>
-            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.4em]">Thesis Registration Workspace</p>
+          <h1 className="text-5xl font-extrabold text-[#002855] tracking-tight mb-3 font-jakarta">Đăng ký Đề tài Tốt nghiệp</h1>
+          <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.4em]">Thesis Registration Workspace</p>
         </header>
 
         <form onSubmit={isEditing ? handleEditSubmit : handleSubmit} className="bg-white rounded-[48px] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.08)] border border-slate-200 overflow-hidden flex flex-col xl:flex-row min-h-[800px] items-stretch">
-          
+
           {/* SECTION 1: Parameters (32%) */}
           <div className="xl:w-[32%] bg-slate-50/50 p-12 border-r border-slate-200 flex flex-col">
             <div className="flex items-center gap-4 mb-12">
-                <div className="w-12 h-12 bg-[#002855] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-100">
-                    <LayoutGrid size={22} />
-                </div>
-                <div>
-                    <span className="font-black text-slate-900 uppercase tracking-widest text-[11px] block font-jakarta">Cấu hình Đề tài</span>
-                    <span className="text-slate-500 text-[10px] font-extrabold">Lựa chọn loại hình đăng ký</span>
-                </div>
+              <div className="w-12 h-12 bg-[#002855] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-100">
+                <LayoutGrid size={22} />
+              </div>
+              <div>
+                <span className="font-black text-slate-900 uppercase tracking-widest text-[11px] block font-jakarta">Cấu hình Đề tài</span>
+                <span className="text-slate-500 text-[10px] font-extrabold">Lựa chọn loại hình đăng ký</span>
+              </div>
             </div>
 
             {/* Mode Switcher */}
             <div className="bg-slate-200/40 p-1.5 rounded-3xl mb-12 flex">
-                <button
-                    type="button"
-                    onClick={() => handleRegistrationTypeChange("catalog")}
-                    className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "catalog" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
-                >
-                    Danh mục
-                </button>
-                <button
-                    type="button"
-                    onClick={() => handleRegistrationTypeChange("self")}
-                    className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "self" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
-                >
-                    Tự đề xuất
-                </button>
+              <button
+                type="button"
+                onClick={() => handleRegistrationTypeChange("catalog")}
+                className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "catalog" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                Danh mục
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRegistrationTypeChange("self")}
+                className={`flex-1 py-4 rounded-[22px] text-xs font-black uppercase tracking-wider transition-all duration-300 ${registrationType === "self" ? "bg-white text-[#F37021] shadow-xl shadow-orange-100/50 scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}
+              >
+                Tự đề xuất
+              </button>
             </div>
 
             <div className="space-y-10 flex-1">
-                <div>
-                    <div className="flex items-center justify-between mb-4">
-                        <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tiêu đề đề tài</label>
-                    </div>
-                    <div className="relative group">
-                        <input
-                            type="text"
-                            value={isEditing ? editFormData.title : formData.title}
-                            onChange={(e) => {
-                                if (registrationType === "self") {
-                                    isEditing ? setEditFormData({ ...editFormData, title: e.target.value }) : setFormData({ ...formData, title: e.target.value })
-                                }
-                            }}
-                            readOnly={registrationType === "catalog"}
-                            placeholder={registrationType === "catalog" ? "Nhấp vào đây hoặc kính lúp để chọn đề tài..." : "Nhập tên đề tài của bạn..."}
-                            className={`w-full px-6 py-5 border-2 rounded-[24px] text-[15px] transition-all duration-300 font-bold font-jakarta ${
-                                registrationType === "catalog" 
-                                    ? "bg-slate-50 border-slate-300 text-slate-600 cursor-pointer pr-16" 
-                                    : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
-                            }`}
-                            onClick={() => { if (registrationType === "catalog") setIsCatalogModalOpen(true); }}
-                        />
-                        {registrationType === "catalog" && (
-                            <button
-                                type="button"
-                                onClick={() => setIsCatalogModalOpen(true)}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-orange-50 text-[#F37021] rounded-xl hover:bg-[#F37021] hover:text-white transition-all shadow-sm z-10"
-                            >
-                                <Search size={18} />
-                            </button>
-                        )}
-                    </div>
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tiêu đề đề tài</label>
                 </div>
+                <div className="relative group">
+                  <textarea
+                    ref={titleRef}
+                    value={isEditing ? editFormData.title : formData.title}
+                    onChange={(e) => {
+                      if (registrationType === "self") {
+                        isEditing ? setEditFormData({ ...editFormData, title: e.target.value }) : setFormData({ ...formData, title: e.target.value })
+                      }
+                    }}
+                    readOnly={registrationType === "catalog"}
+                    placeholder={registrationType === "catalog" ? "Nhấn để chọn đề tài..." : "Nhập tên đề tài..."}
+                    rows={1}
+                    className={`w-full px-6 py-5 border-2 rounded-[24px] text-[16px] transition-all duration-300 font-bold leading-relaxed font-jakarta overflow-hidden resize-none ${registrationType === "catalog"
+                      ? "bg-slate-50 border-slate-300 text-slate-600 cursor-pointer pr-16"
+                      : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
+                      }`}
+                    onClick={() => { if (registrationType === "catalog") setIsCatalogModalOpen(true); }}
+                  />
+                  {registrationType === "catalog" && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCatalogModalOpen(true)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-orange-50 text-[#F37021] rounded-xl hover:bg-[#F37021] hover:text-white transition-all shadow-sm z-10"
+                    >
+                      <Search size={18} />
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-4 tracking-widest ml-1">Tóm tắt nội dung</label>
-                    <textarea
-                        value={isEditing ? editFormData.summary : formData.summary}
-                        onChange={(e) => {
-                            if (registrationType === "self") {
-                                isEditing ? setEditFormData({ ...editFormData, summary: e.target.value }) : setFormData({ ...formData, summary: e.target.value })
-                            }
-                        }}
-                        readOnly={registrationType === "catalog"}
-                        rows={11}
-                        placeholder={registrationType === "catalog" ? "Nội dung tóm tắt sẽ hiển thị sau khi chọn đề tài." : "Mô tả mục tiêu, công nghệ và phạm vi..."}
-                        className={`w-full px-6 py-5 border-2 rounded-[24px] text-[15px] transition-all duration-300 resize-none font-bold leading-relaxed font-jakarta ${
-                            registrationType === "catalog" 
-                                ? "bg-slate-50 border-slate-300 text-slate-500 cursor-default" 
-                                : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
-                        }`}
-                    />
-                </div>
+              <div>
+                <label className="block text-[11px] font-black text-slate-400 uppercase mb-4 tracking-widest ml-1">Tóm tắt nội dung</label>
+                <textarea
+                  value={isEditing ? editFormData.summary : formData.summary}
+                  onChange={(e) => {
+                    if (registrationType === "self") {
+                      isEditing ? setEditFormData({ ...editFormData, summary: e.target.value }) : setFormData({ ...formData, summary: e.target.value })
+                    }
+                  }}
+                  readOnly={registrationType === "catalog"}
+                  rows={11}
+                  placeholder={registrationType === "catalog" ? "Nội dung tóm tắt sẽ hiển thị sau khi chọn đề tài." : "Mô tả mục tiêu, công nghệ và phạm vi..."}
+                  className={`w-full px-6 py-5 border-2 rounded-[24px] text-[15px] transition-all duration-300 resize-none font-bold leading-relaxed font-jakarta ${registrationType === "catalog"
+                    ? "bg-slate-50 border-slate-300 text-slate-500 cursor-default"
+                    : "bg-white border-slate-400/50 text-slate-900 focus:outline-none focus:border-[#F37021] focus:ring-4 focus:ring-orange-500/10 shadow-sm"
+                    }`}
+                />
+              </div>
             </div>
           </div>
 
           {/* SECTION 2: Customization (43%) */}
           <div className="xl:w-[43%] pt-12 px-12 pb-4 flex flex-col">
             <div className="flex items-center gap-4 mb-12">
-                <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-[#F37021]">
-                    <GraduationCap size={24} />
-                </div>
-                <div>
-                    <span className="font-black text-slate-800 uppercase tracking-widest text-[11px] block font-jakarta">Lĩnh vực & Giảng viên</span>
-                    <span className="text-slate-400 text-[10px] font-bold">Phân loại và chọn người hướng dẫn</span>
-                </div>
+              <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-[#F37021]">
+                <GraduationCap size={24} />
+              </div>
+              <div>
+                <span className="font-black text-slate-800 uppercase tracking-widest text-[11px] block font-jakarta">Lĩnh vực & Giảng viên</span>
+                <span className="text-slate-400 text-[10px] font-bold">Phân loại và chọn người hướng dẫn</span>
+              </div>
             </div>
 
             <div className="space-y-12 flex-1">
-                <div>
-                    <div className="flex items-center justify-between mb-5">
-                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tags nhận diện</label>
-                        <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-3 py-1 rounded-full">Chọn ít nhất 1</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2.5 max-h-[160px] overflow-y-auto custom-scrollbar pr-2 py-1">
-                        {tags.map((tag) => (
-                            <button
-                                key={tag.tagID}
-                                type="button"
-                                onClick={() => {
-                                    const tagID = tag.tagID;
-                                    if (selectedTagIDs.includes(tagID)) {
-                                        setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
-                                    } else {
-                                        setSelectedTagIDs([...selectedTagIDs, tagID]);
-                                    }
-                                }}
-                                className={`px-5 py-3 rounded-2xl text-xs font-black transition-all duration-300 border-2 font-jakarta ${
-                                    selectedTagIDs.includes(tag.tagID)
-                                        ? "bg-[#F37021] border-[#F37021] text-white shadow-lg shadow-orange-100 scale-105"
-                                        : "bg-white border-slate-300 text-slate-500 hover:border-orange-200 hover:text-orange-500"
-                                }`}
-                            >
-                                {tag.tagName}
-                            </button>
-                        ))}
-                    </div>
+              <div>
+                <div className="flex items-center justify-between mb-5">
+                  <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest ml-1">Tags nhận diện</label>
+                  <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-3 py-1 rounded-full">Chọn ít nhất 1</span>
                 </div>
+                <div className="flex flex-wrap gap-2.5 max-h-[160px] overflow-y-auto custom-scrollbar pr-2 py-1">
+                  {tags.map((tag) => (
+                    <button
+                      key={tag.tagID}
+                      type="button"
+                      onClick={() => {
+                        const tagID = tag.tagID;
+                        if (selectedTagIDs.includes(tagID)) {
+                          setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
+                        } else {
+                          setSelectedTagIDs([...selectedTagIDs, tagID]);
+                        }
+                      }}
+                      className={`px-5 py-3 rounded-2xl text-xs font-black transition-all duration-300 border-2 font-jakarta ${selectedTagIDs.includes(tag.tagID)
+                        ? "bg-[#F37021] border-[#F37021] text-white shadow-lg shadow-orange-100 scale-105"
+                        : "bg-white border-slate-300 text-slate-500 hover:border-orange-200 hover:text-orange-500"
+                        }`}
+                    >
+                      {tag.tagName}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                <div className="flex-1 flex flex-col min-h-0">
-                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-5 tracking-widest ml-1">Giảng viên hướng dẫn</label>
-                    <div className="overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: "380px" }}>
-                        <table className="w-full border-separate border-spacing-y-3">
-                            <thead>
-                                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                    <th className="text-left px-6 pb-2">Giảng viên</th>
-                                    <th className="text-center pb-2">Hạn ngạch</th>
-                                    <th className="text-right px-6 pb-2"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredLecturers.length === 0 && (
-                                    <tr>
-                                        <td colSpan={3} className="px-6 py-10 text-center text-slate-400 text-xs font-bold italic bg-slate-50/50 rounded-[24px] border-2 border-dashed border-slate-200">
-                                            Vui lòng chọn lĩnh vực hoặc đề tài để xem danh sách giảng viên phù hợp
-                                        </td>
-                                    </tr>
+              <div className="flex-1 flex flex-col min-h-0">
+                <label className="block text-[11px] font-black text-slate-500 uppercase mb-5 tracking-widest ml-1">Giảng viên hướng dẫn</label>
+                <div className="overflow-y-auto custom-scrollbar pr-2 mt-4" style={{ maxHeight: "280px" }}>
+                  <table className="w-full border-separate border-spacing-y-2">
+                    <thead>
+                      <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        <th className="text-left px-6 pb-2">Giảng viên</th>
+                        <th className="text-center pb-2">Hạn ngạch</th>
+                        <th className="text-right px-6 pb-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLecturers.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-6 py-10 text-center text-slate-400 text-xs font-bold italic bg-slate-50/50 rounded-[24px] border-2 border-dashed border-slate-200">
+                            Vui lòng chọn lĩnh vực hoặc đề tài để xem danh sách giảng viên phù hợp
+                          </td>
+                        </tr>
+                      )}
+                      {filteredLecturers.map((lecturer) => {
+                        const isSelected = (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID) === lecturer.lecturerProfileID;
+                        return (
+                          <tr
+                            key={lecturer.lecturerProfileID}
+                            onClick={() => isEditing
+                              ? setEditFormData({ ...editFormData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
+                              : setFormData({ ...formData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
+                            }
+                            className={`group cursor-pointer transition-all duration-300 ${isSelected ? "bg-orange-50/50" : "hover:bg-slate-50"
+                              }`}
+                          >
+                            <td className={`px-4 py-3 rounded-l-[18px] border-y-2 border-l-2 transition-all ${isSelected ? "border-[#F37021]" : "border-slate-300"
+                              }`}>
+                              <div className="flex items-center gap-4">
+                                <div className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-sm transition-colors overflow-hidden shrink-0 ${isSelected ? "bg-[#F37021] text-white" : "bg-white text-slate-400 shadow-sm border border-slate-100"
+                                  }`}>
+                                  {lecturer.profileImage ? (
+                                    <img
+                                      src={getAvatarUrl(lecturer.profileImage)}
+                                      alt={lecturer.fullName}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                        (e.target as HTMLImageElement).parentElement!.innerText = lecturer.fullName?.charAt(0) || "?";
+                                      }}
+                                    />
+                                  ) : (
+                                    lecturer.fullName?.charAt(0)
+                                  )}
+                                </div>
+                                <div className="overflow-hidden">
+                                  <p className="text-[14px] font-black text-slate-800 truncate font-jakarta">{lecturer.fullName}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{lecturer.degree}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className={`py-3 border-y-2 transition-all ${isSelected ? "border-[#F37021]" : "border-slate-300"
+                              }`}>
+                              <div className="flex flex-col items-center gap-1.5 min-w-[100px]">
+                                <span className={`text-[11px] font-black ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "text-red-500" : "text-[#F37021]"}`}>
+                                  {lecturer.currentGuidingCount} / {lecturer.guideQuota}
+                                </span>
+                                <div className="h-1.5 w-20 bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-1000 ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "bg-red-500" : "bg-[#F37021]"}`}
+                                    style={{ width: `${Math.min(100, (lecturer.currentGuidingCount / lecturer.guideQuota) * 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 rounded-r-[18px] border-y-2 border-r-2 transition-all ${isSelected ? "border-[#F37021]" : "border-slate-300"
+                              }`}>
+                              <div className="flex justify-end">
+                                {isSelected ? (
+                                  <div className="w-6 h-6 rounded-full bg-[#F37021] text-white flex items-center justify-center shadow-lg shadow-orange-200">
+                                    <Check size={14} strokeWidth={4} />
+                                  </div>
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full border-2 border-slate-100 group-hover:border-orange-200 transition-colors" />
                                 )}
-                                {filteredLecturers.slice(0, 3).map((lecturer) => {
-                                    const isSelected = (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID) === lecturer.lecturerProfileID;
-                                    return (
-                                        <tr 
-                                            key={lecturer.lecturerProfileID}
-                                            onClick={() => isEditing 
-                                                ? setEditFormData({ ...editFormData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
-                                                : setFormData({ ...formData, supervisorLecturerProfileID: lecturer.lecturerProfileID })
-                                            }
-                                            className={`group cursor-pointer transition-all duration-300 ${
-                                                isSelected ? "bg-orange-50/50" : "hover:bg-slate-50"
-                                            }`}
-                                        >
-                                            <td className={`px-6 py-4 rounded-l-[24px] border-y-2 border-l-2 transition-all ${
-                                                isSelected ? "border-[#F37021]" : "border-slate-300"
-                                            }`}>
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-sm transition-colors overflow-hidden shrink-0 ${
-                                                        isSelected ? "bg-[#F37021] text-white" : "bg-white text-slate-400 shadow-sm border border-slate-100"
-                                                    }`}>
-                                                        {lecturer.profileImage ? (
-                                                            <img 
-                                                                src={getAvatarUrl(lecturer.profileImage)} 
-                                                                alt={lecturer.fullName}
-                                                                className="w-full h-full object-cover"
-                                                                onError={(e) => {
-                                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                                    (e.target as HTMLImageElement).parentElement!.innerText = lecturer.fullName?.charAt(0) || "?";
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            lecturer.fullName?.charAt(0)
-                                                        )}
-                                                    </div>
-                                                    <div className="overflow-hidden">
-                                                        <p className="text-[14px] font-black text-slate-800 truncate font-jakarta">{lecturer.fullName}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{lecturer.degree}</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className={`py-4 border-y-2 transition-all ${
-                                                isSelected ? "border-[#F37021]" : "border-slate-300"
-                                            }`}>
-                                                <div className="flex flex-col items-center gap-1.5 min-w-[100px]">
-                                                    <span className={`text-[11px] font-black ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "text-red-500" : "text-[#F37021]"}`}>
-                                                        {lecturer.currentGuidingCount} / {lecturer.guideQuota}
-                                                    </span>
-                                                    <div className="h-1.5 w-20 bg-slate-100 rounded-full overflow-hidden">
-                                                        <div 
-                                                            className={`h-full transition-all duration-1000 ${lecturer.currentGuidingCount >= lecturer.guideQuota ? "bg-red-500" : "bg-[#F37021]"}`}
-                                                            style={{ width: `${Math.min(100, (lecturer.currentGuidingCount / lecturer.guideQuota) * 100)}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className={`px-6 py-4 rounded-r-[24px] border-y-2 border-r-2 transition-all ${
-                                                isSelected ? "border-[#F37021]" : "border-slate-300"
-                                            }`}>
-                                                <div className="flex justify-end">
-                                                    {isSelected ? (
-                                                        <div className="w-6 h-6 rounded-full bg-[#F37021] text-white flex items-center justify-center shadow-lg shadow-orange-200">
-                                                            <Check size={14} strokeWidth={4} />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-6 h-6 rounded-full border-2 border-slate-100 group-hover:border-orange-200 transition-colors" />
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
+              </div>
             </div>
           </div>
 
           {/* SECTION 3: Summary (25%) */}
           <div className="xl:w-[25%] bg-[#F37021] p-12 text-white flex flex-col relative overflow-hidden">
             <div className="relative z-10 flex flex-col h-full">
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-xl border border-white/20">
-                        <FileText size={24} />
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-xl border border-white/20">
+                  <FileText size={24} />
+                </div>
+                <div>
+                  <span className="font-black uppercase tracking-[0.2em] text-[11px] block font-jakarta">Tổng kết</span>
+                  <span className="text-white/60 text-[10px] font-bold">Xem lại trước khi gửi</span>
+                </div>
+              </div>
+
+              <div className="space-y-10 flex-1">
+                <div className="p-8 bg-white/10 rounded-[40px] border border-white/20 backdrop-blur-sm shadow-2xl">
+                  <label className="block text-[10px] font-black text-orange-100 uppercase mb-4 tracking-[0.2em] font-jakarta">Đợt bảo vệ dự kiến</label>
+                  <div className="relative">
+                    <div className="text-xl font-black text-white font-jakarta">
+                      {defenseTerms.find(term => String(term.defenseTermId) === String(selectedDefenseTermId))?.defenseTermName || "--"}
                     </div>
-                    <div>
-                        <span className="font-black uppercase tracking-[0.2em] text-[11px] block font-jakarta">Tổng kết</span>
-                        <span className="text-white/60 text-[10px] font-bold">Xem lại trước khi gửi</span>
-                    </div>
+                  </div>
+                  <p className="text-[10px] text-orange-100/60 mt-3 font-bold italic tracking-tight">Hệ thống lọc theo khóa học của bạn</p>
                 </div>
 
-                <div className="space-y-10 flex-1">
-                    <div className="p-8 bg-white/10 rounded-[40px] border border-white/20 backdrop-blur-sm shadow-2xl">
-                        <label className="block text-[10px] font-black text-orange-100 uppercase mb-4 tracking-[0.2em] font-jakarta">Đợt bảo vệ dự kiến</label>
-                        <div className="relative">
-                            <div className="text-xl font-black text-white font-jakarta">
-                                {defenseTerms.find(term => String(term.defenseTermId) === String(selectedDefenseTermId))?.defenseTermName || "--"}
-                            </div>
+                <div className="space-y-8 px-4">
+                  <div className="group">
+                    <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Tên đề tài</span>
+                    <p className="text-[15px] font-bold leading-relaxed text-white line-clamp-4 font-jakarta">
+                      {(isEditing ? editFormData.title : formData.title) || "Chưa xác định"}
+                    </p>
+                  </div>
+                  <div className="group">
+                    <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-3 font-jakarta">Hướng dẫn</span>
+                    {(() => {
+                      const selectedLecturer = lecturers.find(l => l.lecturerProfileID === (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID));
+                      if (!selectedLecturer) return <p className="text-[15px] font-bold text-white font-jakarta">Chưa chọn</p>;
+                      return (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-white/20 overflow-hidden border border-white/20 shadow-lg">
+                            {selectedLecturer.profileImage ? (
+                              <img
+                                src={getAvatarUrl(selectedLecturer.profileImage)}
+                                alt={selectedLecturer.fullName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center font-black text-sm text-white/60 bg-white/10">
+                                {selectedLecturer.fullName?.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="text-[15px] font-bold text-white truncate font-jakarta">{selectedLecturer.fullName}</p>
+                            <p className="text-[10px] text-white/50 font-bold uppercase tracking-tight">{selectedLecturer.degree}</p>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-orange-100/60 mt-3 font-bold italic tracking-tight">Hệ thống lọc theo khóa học của bạn</p>
-                    </div>
-
-                    <div className="space-y-8 px-4">
-                        <div className="group">
-                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Tên đề tài</span>
-                            <p className="text-[15px] font-bold leading-relaxed text-white line-clamp-4 font-jakarta">
-                                {(isEditing ? editFormData.title : formData.title) || "Chưa xác định"}
-                            </p>
-                        </div>
-                        <div className="group">
-                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-3 font-jakarta">Hướng dẫn</span>
-                            {(() => {
-                                const selectedLecturer = lecturers.find(l => l.lecturerProfileID === (isEditing ? editFormData.supervisorLecturerProfileID : formData.supervisorLecturerProfileID));
-                                if (!selectedLecturer) return <p className="text-[15px] font-bold text-white font-jakarta">Chưa chọn</p>;
-                                return (
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-white/20 overflow-hidden border border-white/20 shadow-lg">
-                                            {selectedLecturer.profileImage ? (
-                                                <img 
-                                                    src={getAvatarUrl(selectedLecturer.profileImage)} 
-                                                    alt={selectedLecturer.fullName}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center font-black text-sm text-white/60 bg-white/10">
-                                                    {selectedLecturer.fullName?.charAt(0)}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="overflow-hidden">
-                                            <p className="text-[15px] font-bold text-white truncate font-jakarta">{selectedLecturer.fullName}</p>
-                                            <p className="text-[10px] text-white/50 font-bold uppercase tracking-tight">{selectedLecturer.degree}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                        <div className="group">
-                            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Quản lý</span>
-                            <p className="text-[15px] font-bold text-white font-jakarta">{defaultDepartment?.name || "Khoa CNTT"}</p>
-                        </div>
-                    </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="group">
+                    <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block mb-2 font-jakarta">Quản lý</span>
+                    <p className="text-[15px] font-bold text-white font-jakarta">{defaultDepartment?.name || "Khoa CNTT"}</p>
+                  </div>
                 </div>
+              </div>
 
-                <div className="mt-16 space-y-5">
-                    {error && (
-                        <div className="p-4 bg-red-600/20 border border-red-500/30 rounded-2xl flex items-center gap-3">
-                            <AlertCircle size={20} className="shrink-0 text-white" />
-                            <span className="text-[11px] font-bold text-white leading-tight">{error}</span>
-                        </div>
-                    )}
-                    
-                    <button
-                        type="submit"
-                        disabled={submitting}
-                        className={`w-full py-4 rounded-[20px] font-black transition-all duration-300 flex items-center justify-between px-8 shadow-lg relative overflow-hidden group ${
-                            submitting
-                                ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                                : "bg-[#002855] text-white hover:bg-[#003D82] hover:shadow-blue-200/40"
-                        }`}
-                    >
-                        {submitting ? (
-                            <div className="flex items-center gap-3 w-full justify-center">
-                                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                                <span className="text-[12px] uppercase tracking-widest opacity-70">Đang xử lý...</span>
-                            </div>
-                        ) : (
-                            <>
-                                <span className="text-[14px] uppercase tracking-wider relative z-10">
-                                    {isEditing ? "Cập nhật đề tài" : "Đăng ký ngay"}
-                                </span>
-                                
-                                <div className="relative z-10 w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center group-hover:bg-white group-hover:text-[#F37021] transition-all duration-300">
-                                    <ChevronRight size={18} strokeWidth={3} />
-                                </div>
-                            </>
-                        )}
-                    </button>
-                </div>
+              <div className="mt-16 space-y-5">
+                {error && (
+                  <div className="p-4 bg-red-600/20 border border-red-500/30 rounded-2xl flex items-center gap-3">
+                    <AlertCircle size={20} className="shrink-0 text-white" />
+                    <span className="text-[11px] font-bold text-white leading-tight">{error}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className={`w-full py-4 rounded-[20px] font-black transition-all duration-300 flex items-center justify-between px-8 shadow-lg relative overflow-hidden group ${submitting
+                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                    : "bg-[#002855] text-white hover:bg-[#003D82] hover:shadow-blue-200/40"
+                    }`}
+                >
+                  {submitting ? (
+                    <div className="flex items-center gap-3 w-full justify-center">
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      <span className="text-[12px] uppercase tracking-widest opacity-70">Đang xử lý...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-[14px] uppercase tracking-wider relative z-10">
+                        {isEditing ? "Cập nhật đề tài" : "Đăng ký ngay"}
+                      </span>
+
+                      <div className="relative z-10 w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center group-hover:bg-white group-hover:text-[#F37021] transition-all duration-300">
+                        <ChevronRight size={18} strokeWidth={3} />
+                      </div>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Decorative Elements */}
@@ -2641,32 +2302,32 @@ const TopicRegistration: React.FC = () => {
 
         {/* Footer Actions */}
         <div className="mt-12 flex items-center justify-between px-8 text-slate-400 text-sm font-medium">
-             <p className="flex items-center gap-2">
-                 <Info size={16} className="text-orange-500" />
-                 Mọi thay đổi sẽ được lưu vết trong lịch sử hệ thống
-             </p>
-             <div className="flex items-center gap-6">
-                {isEditing && (
-                    <button 
-                        type="button"
-                        onClick={() => window.location.reload()}
-                        className="flex items-center gap-2 hover:text-slate-600 transition-colors"
-                    >
-                        <RotateCcw size={16} />
-                        Hủy chỉnh sửa
-                    </button>
-                )}
-                {existingTopic && (
-                    <button
-                        type="button"
-                        onClick={handleRollback}
-                        className="flex items-center gap-2 text-red-400 hover:text-red-600 transition-colors bg-red-50 px-4 py-2 rounded-2xl"
-                    >
-                        <RotateCcw size={16} />
-                        Rollback dữ liệu test
-                    </button>
-                )}
-             </div>
+          <p className="flex items-center gap-2">
+            <Info size={16} className="text-orange-500" />
+            Mọi thay đổi sẽ được lưu vết trong lịch sử hệ thống
+          </p>
+          <div className="flex items-center gap-6">
+            {isEditing && (
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex items-center gap-2 hover:text-slate-600 transition-colors"
+              >
+                <RotateCcw size={16} />
+                Hủy chỉnh sửa
+              </button>
+            )}
+            {existingTopic && (
+              <button
+                type="button"
+                onClick={handleRollback}
+                className="flex items-center gap-2 text-red-400 hover:text-red-600 transition-colors bg-red-50 px-4 py-2 rounded-2xl"
+              >
+                <RotateCcw size={16} />
+                Rollback dữ liệu test
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2683,58 +2344,58 @@ const TopicRegistration: React.FC = () => {
             >
               <div className="p-10 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-8 bg-white">
                 <div className="flex items-center gap-6">
-                    <div className="w-14 h-14 bg-[#F37021] rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-orange-200">
-                        <BookOpen size={28} />
-                    </div>
-                    <div>
-                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">Kho đề tài Niên luận / Đồ án</h2>
-                        <p className="text-slate-400 text-[11px] font-bold uppercase tracking-[0.2em] mt-1">Lựa chọn đề tài định hướng từ khoa</p>
-                    </div>
+                  <div className="w-14 h-14 bg-[#F37021] rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-orange-200">
+                    <BookOpen size={28} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">Kho đề tài Niên luận / Đồ án</h2>
+                    <p className="text-slate-400 text-[11px] font-bold uppercase tracking-[0.2em] mt-1">Lựa chọn đề tài định hướng từ khoa</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center shadow-inner">
-                        <button 
-                            onClick={() => setCatalogViewMode("card")}
-                            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "card" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
-                        >
-                            <Grid2X2 size={16} />
-                            Lưới
-                        </button>
-                        <button 
-                            onClick={() => setCatalogViewMode("table")}
-                            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "table" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
-                        >
-                            <List size={16} />
-                            Bảng
-                        </button>
-                    </div>
-                    <button onClick={() => setIsCatalogModalOpen(false)} className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-all border border-slate-200/50">
-                      <X size={24} />
+                  <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center shadow-inner">
+                    <button
+                      onClick={() => setCatalogViewMode("card")}
+                      className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "card" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                    >
+                      <Grid2X2 size={16} />
+                      Lưới
                     </button>
+                    <button
+                      onClick={() => setCatalogViewMode("table")}
+                      className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-xs font-bold ${catalogViewMode === "table" ? "bg-white text-orange-500 shadow-md" : "text-slate-400 hover:text-slate-600"}`}
+                    >
+                      <List size={16} />
+                      Bảng
+                    </button>
+                  </div>
+                  <button onClick={() => setIsCatalogModalOpen(false)} className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-all border border-slate-200/50">
+                    <X size={24} />
+                  </button>
                 </div>
               </div>
               <div className="px-10 py-6 bg-white/80 border-b border-slate-100 flex flex-col md:flex-row gap-6 items-center">
                 <div className="relative flex-1 w-full group">
-                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input 
-                        type="text" 
-                        placeholder="Tìm kiếm mã hoặc tên đề tài..." 
-                        value={catalogSearchQuery}
-                        onChange={(e) => setCatalogSearchQuery(e.target.value)}
-                        className="w-full pl-14 pr-6 py-5 bg-slate-50/50 border-2 border-slate-100 rounded-3xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all font-bold"
-                    />
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm mã hoặc tên đề tài..."
+                    value={catalogSearchQuery}
+                    onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                    className="w-full pl-14 pr-6 py-5 bg-slate-50/50 border-2 border-slate-100 rounded-3xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all font-bold"
+                  />
                 </div>
                 <div className="flex items-center gap-2 w-full md:w-auto">
-                    <select 
-                        value={catalogTagFilter || ""} 
-                        onChange={(e) => setCatalogTagFilter(e.target.value || null)}
-                        className="w-full md:w-64 px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl text-xs font-black uppercase tracking-widest focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
-                    >
-                        <option value="">Lọc theo lĩnh vực</option>
-                        {tags.map(tag => (
-                            <option key={tag.tagID} value={tag.tagCode}>{tag.tagName}</option>
-                        ))}
-                    </select>
+                  <select
+                    value={catalogTagFilter || ""}
+                    onChange={(e) => setCatalogTagFilter(e.target.value || null)}
+                    className="w-full md:w-64 px-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl text-xs font-black uppercase tracking-widest focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+                  >
+                    <option value="">Lọc theo lĩnh vực</option>
+                    {tags.map(tag => (
+                      <option key={tag.tagID} value={tag.tagCode}>{tag.tagName}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="p-10 overflow-y-auto custom-scrollbar flex-1 bg-[#FDFCFB]">
@@ -2748,16 +2409,14 @@ const TopicRegistration: React.FC = () => {
                             handleCatalogTopicChange(topic.catalogTopicID);
                             setIsCatalogModalOpen(false);
                           }}
-                          className={`p-8 rounded-[48px] border-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col min-h-[280px] bg-white ${
-                            (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID
-                              ? "border-orange-500 shadow-xl shadow-orange-100"
-                              : "border-slate-50 hover:border-orange-200"
-                          }`}
+                          className={`p-8 rounded-[48px] border-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col min-h-[280px] bg-white ${(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID
+                            ? "border-orange-500 shadow-xl shadow-orange-100"
+                            : "border-slate-50 hover:border-orange-200"
+                            }`}
                         >
                           <div className="flex justify-between items-start mb-6">
-                            <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${
-                              (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
-                            }`}>
+                            <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                              }`}>
                               {topic.catalogTopicCode}
                             </span>
                             {(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID && (
@@ -2770,9 +2429,9 @@ const TopicRegistration: React.FC = () => {
                           <p className="text-[12px] text-slate-400 mb-8 flex-1 line-clamp-3">{topic.summary}</p>
                           <div className="flex flex-wrap gap-2 mb-6">
                             {topic.tags?.slice(0, 3).map(tag => (
-                                <span key={tag.tagID} className="text-[9px] font-bold bg-orange-50/50 text-orange-600 px-3 py-1 rounded-lg uppercase">
-                                    {tag.tagName}
-                                </span>
+                              <span key={tag.tagID} className="text-[9px] font-bold bg-orange-50/50 text-orange-600 px-3 py-1 rounded-lg uppercase">
+                                {tag.tagName}
+                              </span>
                             ))}
                           </div>
                           <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 border-t border-slate-50 pt-5 mt-auto">
@@ -2785,33 +2444,33 @@ const TopicRegistration: React.FC = () => {
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-[48px] overflow-hidden shadow-sm">
                     <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/50 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                                <th className="px-8 py-6">Mã Đề tài</th>
-                                <th className="px-8 py-6">Tên Đề tài</th>
-                                <th className="px-8 py-6">Lĩnh vực</th>
-                                <th className="px-8 py-6 text-center">Thao tác</th>
+                      <thead>
+                        <tr className="bg-slate-50/50 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                          <th className="px-8 py-6">Mã Đề tài</th>
+                          <th className="px-8 py-6">Tên Đề tài</th>
+                          <th className="px-8 py-6">Lĩnh vực</th>
+                          <th className="px-8 py-6 text-center">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {filteredCatalogTopics
+                          .map((topic) => (
+                            <tr key={topic.catalogTopicID} onClick={() => { handleCatalogTopicChange(topic.catalogTopicID); setIsCatalogModalOpen(false); }} className={`group cursor-pointer hover:bg-orange-50/10 ${(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-50/20" : ""}`}>
+                              <td className="px-8 py-6"><span className="text-xs font-black text-orange-500">{topic.catalogTopicCode}</span></td>
+                              <td className="px-8 py-6"><p className="text-[14px] font-bold text-slate-700">{topic.title}</p></td>
+                              <td className="px-8 py-6">
+                                <div className="flex gap-1.5 flex-wrap">
+                                  {topic.tags?.slice(0, 2).map(tag => (<span key={tag.tagID} className="text-[10px] font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-lg">{tag.tagName}</span>))}
+                                </div>
+                              </td>
+                              <td className="px-8 py-6 text-center">
+                                <button className={`px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white shadow-lg shadow-orange-100" : "bg-slate-50 text-slate-400 group-hover:bg-orange-500 group-hover:text-white"}`}>
+                                  {(isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "Đã chọn" : "Lựa chọn"}
+                                </button>
+                              </td>
                             </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {filteredCatalogTopics
-                              .map((topic) => (
-                                <tr key={topic.catalogTopicID} onClick={() => { handleCatalogTopicChange(topic.catalogTopicID); setIsCatalogModalOpen(false); }} className={`group cursor-pointer hover:bg-orange-50/10 ${ (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-50/20" : "" }`}>
-                                    <td className="px-8 py-6"><span className="text-xs font-black text-orange-500">{topic.catalogTopicCode}</span></td>
-                                    <td className="px-8 py-6"><p className="text-[14px] font-bold text-slate-700">{topic.title}</p></td>
-                                    <td className="px-8 py-6">
-                                        <div className="flex gap-1.5 flex-wrap">
-                                            {topic.tags?.slice(0, 2).map(tag => ( <span key={tag.tagID} className="text-[10px] font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-lg">{tag.tagName}</span> ))}
-                                        </div>
-                                    </td>
-                                    <td className="px-8 py-6 text-center">
-                                        <button className={`px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${ (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "bg-orange-500 text-white shadow-lg shadow-orange-100" : "bg-slate-50 text-slate-400 group-hover:bg-orange-500 group-hover:text-white" }`}>
-                                            { (isEditing ? editFormData.catalogTopicID : formData.catalogTopicID) === topic.catalogTopicID ? "Đã chọn" : "Lựa chọn" }
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
+                          ))}
+                      </tbody>
                     </table>
                   </div>
                 )}

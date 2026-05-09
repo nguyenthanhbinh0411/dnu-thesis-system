@@ -316,6 +316,11 @@
   color: #dc2626;
 }
 
+.spm-status-none {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
 .spm-progress-cell {
   display: inline-flex;
   align-items: center;
@@ -1452,3 +1457,28 @@
     font-size: 21px;
   }
 }
+
+.spm-topic-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: #94a3b8;
+  background: #f8fafc;
+  border-radius: 20px;
+  border: 2px dashed #e2e8f0;
+}
+
+.spm-empty-icon {
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.spm-topic-empty-state p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
