@@ -16,6 +16,7 @@ export interface StudentReportAggregateTopic {
   supervisorLecturerCode: string | null;
   createdAt: string;
   lastUpdated: string;
+  score?: number | null;
 }
 
 export interface StudentReportAggregateMilestone {

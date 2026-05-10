@@ -66,7 +66,7 @@ namespace ThesisManagement.Api.Application.Query.ProgressSubmissions
         {
             var ent = await _uow.ProgressSubmissions.GetByIdAsync(id);
             if (ent == null) return null;
-            return new ProgressSubmissionUpdateDto(ent.LecturerComment, ent.LecturerState, ent.FeedbackLevel);
+            return new ProgressSubmissionUpdateDto(ent.LecturerComment, ent.LecturerState, ent.FeedbackLevel, null);
         }
     }
 }

@@ -15,6 +15,12 @@ import {
   ChevronRight,
   Search,
   Tag as TagIcon,
+  X,
+  Calendar,
+  Mail,
+  Phone,
+  Users,
+  TrendingUp,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import { useToast } from "../../context/useToast";
@@ -33,6 +39,7 @@ import {
 interface TopicDisplay {
   topicID: number;
   topicCode: string;
+  catalogTopicCode?: string | null;
   title: string;
   description: string;
   studentCode: string;
@@ -111,7 +118,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
 
   const [topicTags, setTopicTags] = useState<Tag[]>([]);
 
-  const [statusFilter, setStatusFilter] = useState<string>("Chờ duyệt");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTrigger, setSearchTrigger] = useState<number>(0);
@@ -361,8 +368,8 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
         }
 
         // Transform topics to display format
-        const displayTopics: TopicDisplay[] = topicsResponse.data.map(
-          (topic) => {
+        const displayTopics: TopicDisplay[] = topicsResponse.data
+          .map((topic) => {
             const studentProfile =
               studentProfilesMap[topic.proposerStudentCode || ""];
             const lecturerProfile =
@@ -371,6 +378,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
             return {
               topicID: topic.topicID,
               topicCode: topic.topicCode,
+              catalogTopicCode: topic.catalogTopicCode,
               title: topic.title,
               description: topic.summary, // Using summary as description
               studentCode: topic.proposerStudentCode || "",
@@ -385,8 +393,18 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
               supervisorLecturerCode: topic.supervisorLecturerCode,
               lecturerProfile,
             };
-          },
-        );
+          })
+          .sort((a, b) => {
+            // Prioritize "Chờ duyệt" status
+            if (a.status === "Chờ duyệt" && b.status !== "Chờ duyệt") return -1;
+            if (a.status !== "Chờ duyệt" && b.status === "Chờ duyệt") return 1;
+
+            // Then sort by submission date (newest first)
+            return (
+              new Date(b.submissionDate).getTime() -
+              new Date(a.submissionDate).getTime()
+            );
+          });
 
         setTopics(displayTopics);
       } catch (err) {
@@ -676,48 +694,26 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const openDetailModal = async (topic: TopicDisplay) => {
-    // Fetch topic tags
+    // Fetch topic tags using workflow detail
     try {
       let tags: Tag[] = [];
+      
+      const detail = await getTopicWorkflowDetail(topic.topicID);
+      const tagCodes = detail.tagCodes || [];
 
-      if (topic.category === "Đề tài catalog") {
-        // For catalog topics, get tags from CatalogTopicTags
-        const catalogTopicTagsRes = await fetchData(
-          `/CatalogTopicTags/list?CatalogTopicCode=${topic.topicCode}`,
-        );
-        const catalogTopicTags =
-          (catalogTopicTagsRes as ApiResponse<CatalogTopicTag[]>)?.data || [];
+      if (tagCodes.length > 0) {
+        // Fetch tag details for each tag code
+        const tagPromises = tagCodes.map(async (code) => {
+          try {
+            const tagRes = await fetchData<ApiResponse<Tag[]>>(`/Tags/list?TagCode=${code}`);
+            return tagRes.data?.[0] || null;
+          } catch {
+            return null;
+          }
+        });
 
-        if (catalogTopicTags.length > 0) {
-          // Get tag details
-          const tagCode = catalogTopicTags[0].tagCode;
-          const tagRes = await fetchData(`/Tags/list?TagCode=${tagCode}`);
-          const tagData = (tagRes as ApiResponse<Tag[]>)?.data || [];
-          tags = tagData;
-        }
-      } else if (topic.category === "Đề tài tự chọn") {
-        // For self-proposed topics, get tags from TopicTags
-        const topicTagsRes = await fetchData(
-          `/TopicTags/by-topic/${topic.topicCode}`,
-        );
-        const topicTagRecords =
-          (topicTagsRes as ApiResponse<TopicTag[]>)?.data || [];
-
-        if (topicTagRecords.length > 0) {
-          // Get tag details for each tag
-          const tagPromises = topicTagRecords.map(async (record) => {
-            try {
-              const tagRes = await fetchData(
-                `/Tags/get-by-code/${record.tagCode}`,
-              );
-              return (tagRes as ApiResponse<Tag>)?.data;
-            } catch {
-              return null;
-            }
-          });
-          const tagResults = await Promise.all(tagPromises);
-          tags = tagResults.filter((tag): tag is Tag => tag !== null);
-        }
+        const tagResults = await Promise.all(tagPromises);
+        tags = tagResults.filter((tag): tag is Tag => tag !== null);
       }
 
       setTopicTags(tags);
@@ -2371,8 +2367,8 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
         </div>
       )}
 
-      {/* Success Modal */}
-      {successModal.isOpen && (
+  {/* Success Modal */}
+  {successModal.isOpen && (
         <div
           style={{
             position: "fixed",
@@ -2491,850 +2487,488 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
           <div
             style={{
               background: "#FFFFFF",
-              borderRadius: "12px",
+              borderRadius: "24px",
               padding: "0",
-              maxWidth: "900px",
-              width: "100%",
-              maxHeight: "85vh",
+              maxWidth: "1100px",
+              width: "95%",
+              height: "90vh",
               overflow: "hidden",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
               display: "flex",
               flexDirection: "column",
+              position: "relative",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Sticky Header */}
-            <div
+            {/* Top-right close button */}
+            <button
+              onClick={closeDetailModal}
               style={{
-                position: "sticky",
-                top: 0,
-                zIndex: 10,
-                background: "#FFF8F0",
-                borderBottom: "1px solid #F59E0B",
-                borderRadius: "12px 12px 0 0",
-                padding: "20px",
+                position: "absolute",
+                top: "20px",
+                right: "20px",
+                width: "36px",
+                height: "36px",
+                borderRadius: "12px",
+                background: "white",
+                border: "1px solid #e2e8f0",
                 display: "flex",
-                justifyContent: "space-between",
                 alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                zIndex: 100,
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#fee2e2";
+                e.currentTarget.style.color = "#ef4444";
+                e.currentTarget.style.borderColor = "#fecaca";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "white";
+                e.currentTarget.style.color = "#64748b";
+                e.currentTarget.style.borderColor = "#e2e8f0";
               }}
             >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "12px" }}
-              >
-                <div
-                  style={{
-                    width: "40px",
-                    height: "40px",
-                    borderRadius: "8px",
-                    background: "#F59E0B",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <BookOpen size={20} color="white" />
-                </div>
-                <div>
-                  <h2
-                    style={{
-                      fontSize: "20px",
-                      fontWeight: "600",
-                      color: "#92400E",
-                      margin: 0,
-                    }}
-                  >
-                    Chi tiết đề tài
-                  </h2>
-                  <p
-                    style={{
-                      fontSize: "14px",
-                      color: "#A16207",
-                      margin: "2px 0 0 0",
-                      fontWeight: "500",
-                    }}
-                  >
-                    {detailModal.topic.topicCode}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={closeDetailModal}
-                style={{
-                  background: "#F3F4F6",
-                  border: "1px solid #D1D5DB",
-                  fontSize: "20px",
-                  cursor: "pointer",
-                  color: "#6B7280",
-                  padding: "8px",
-                  borderRadius: "6px",
-                  width: "36px",
-                  height: "36px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#E5E7EB";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#F3F4F6";
-                }}
-              >
-                ×
-              </button>
-            </div>
+              <X size={20} />
+            </button>
 
-            {/* Scrollable Content */}
+            {/* Scrollable Container */}
             <div
+              className="custom-scrollbar"
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "24px",
               }}
             >
-              {/* Student and Lecturer Information - 2 Column Layout */}
+              {/* Modal Body with 7/3 Grid */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "24px",
-                  marginBottom: "24px",
+                  gridTemplateColumns: "7fr 3fr",
+                  minHeight: "100%",
                 }}
               >
-                {/* Student Information - Left Column */}
-                {detailModal.topic.studentProfile && (
+                {/* Left Column: Topic Details */}
+                <div
+                  style={{
+                    padding: "40px",
+                    background: "white",
+                    borderRight: "1px solid #f1f5f9",
+                  }}
+                >
+                {/* Topic Header */}
+                <div style={{ marginBottom: "32px" }}>
                   <div
                     style={{
-                      background: "#FEF3C7",
-                      borderRadius: "12px",
-                      padding: "24px",
-                      border: "1px solid #F59E0B",
-                      boxShadow: "0 2px 8px rgba(245, 158, 11, 0.1)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      color: "#f37021",
+                      fontSize: "12px",
+                      fontWeight: "800",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.1em",
+                      marginBottom: "12px",
                     }}
                   >
-                    <div
+                    <BookOpen size={14} />
+                    Chi tiết đề tài
+                  </div>
+                  <h2
+                    style={{
+                      fontSize: "28px",
+                      fontWeight: "800",
+                      color: "#0f172a",
+                      lineHeight: "1.3",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    {detailModal.topic.title}
+                  </h2>
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <span
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "16px",
-                        marginBottom: "20px",
+                        padding: "6px 12px",
+                        background: "#f1f5f9",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "#475569",
                       }}
                     >
-                      <img
-                        src={
-                          getAvatarUrl(
-                            detailModal.topic.studentProfile.studentImage,
-                          ) || "https://via.placeholder.com/80x80?text=No+Image"
-                        }
-                        alt="Student Avatar"
+                      Mã: {detailModal.topic.topicCode}
+                    </span>
+                    <span
+                      style={{
+                        padding: "6px 12px",
+                        background: getStatusColor(detailModal.topic.status) + "15",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        color: getStatusColor(detailModal.topic.status),
+                      }}
+                    >
+                      {detailModal.topic.status}
+                    </span>
+                    <span
+                      style={{
+                        padding: "6px 12px",
+                        background: "#fff7ed",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "#f37021",
+                      }}
+                    >
+                      {detailModal.topic.category}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Topic Body */}
+                <div style={{ display: "grid", gap: "32px" }}>
+                  {/* Summary Section */}
+                  <div>
+                    <h3
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: "700",
+                        color: "#1e293b",
+                        marginBottom: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <FileText size={18} color="#f37021" />
+                      Tóm tắt đề tài
+                    </h3>
+                    <div
+                      style={{
+                        padding: "24px",
+                        background: "#f8fafc",
+                        borderRadius: "16px",
+                        fontSize: "15px",
+                        color: "#334155",
+                        lineHeight: "1.7",
+                        border: "1px solid #f1f5f9",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {detailModal.topic.description || "Chưa có nội dung tóm tắt cho đề tài này."}
+                    </div>
+                  </div>
+
+                  {/* Tags Section */}
+                  <div>
+                    <h3
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: "700",
+                        color: "#1e293b",
+                        marginBottom: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <TagIcon size={18} color="#f37021" />
+                      Lĩnh vực & Chuyên ngành
+                    </h3>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      {topicTags.length > 0 ? (
+                        topicTags.map((tag) => (
+                          <span
+                            key={tag.tagID}
+                            style={{
+                              padding: "8px 16px",
+                              background: "white",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "12px",
+                              fontSize: "13px",
+                              fontWeight: "600",
+                              color: "#1e293b",
+                              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                            }}
+                          >
+                            {tag.tagName}
+                          </span>
+                        ))
+                      ) : (
+                        <div style={{ fontSize: "14px", color: "#94a3b8", fontStyle: "italic" }}>
+                          Chưa có thông tin lĩnh vực
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Lecturer Feedback Section */}
+                  {detailModal.topic.comments && (
+                    <div>
+                      <h3
                         style={{
-                          width: "80px",
-                          height: "80px",
-                          borderRadius: "50%",
-                          objectFit: "cover",
-                          border: "3px solid #F59E0B",
-                          boxShadow: "0 2px 8px rgba(245, 158, 11, 0.3)",
+                          fontSize: "16px",
+                          fontWeight: "700",
+                          color: "#1e293b",
+                          marginBottom: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
                         }}
-                      />
-                      <div>
-                        <h3
-                          style={{
-                            fontSize: "20px",
-                            fontWeight: "600",
-                            color: "#92400e",
-                            margin: "0 0 4px 0",
-                          }}
-                        >
-                          {detailModal.topic.studentName}
-                        </h3>
-                        <p
-                          style={{
-                            fontSize: "14px",
-                            color: "#D97706",
-                            margin: 0,
-                            fontWeight: "500",
-                          }}
-                        >
-                          Sinh viên
-                        </p>
+                      >
+                        <MessageCircle size={18} color="#f37021" />
+                        Ghi chú từ giảng viên
+                      </h3>
+                      <div
+                        style={{
+                          padding: "20px",
+                          background: "#fff7ed",
+                          borderRadius: "16px",
+                          fontSize: "14px",
+                          color: "#9a3412",
+                          lineHeight: "1.6",
+                          border: "1px solid #ffedd5",
+                          fontWeight: "500",
+                        }}
+                      >
+                        {detailModal.topic.comments}
                       </div>
                     </div>
+                  )}
 
-                    <div style={{ display: "grid", gap: "16px" }}>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "16px",
-                        }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#92400e",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Mã sinh viên
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#92400e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.studentCode}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#92400e",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Email
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#92400e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.studentProfile.studentEmail}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "16px",
-                        }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#92400e",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Số điện thoại
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#92400e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.studentProfile.phoneNumber}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#92400e",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            GPA
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#92400e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.studentProfile.gpa}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#92400e",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Học lực
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#92400e",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.studentProfile.academicStanding}
-                          </div>
+                  {/* Dates Info */}
+                  <div
+                    style={{
+                      marginTop: "16px",
+                      padding: "20px",
+                      background: "#f1f5f9",
+                      borderRadius: "16px",
+                      display: "flex",
+                      gap: "32px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <Calendar size={18} color="#64748b" />
+                      <div>
+                        <div style={{ fontSize: "10px", color: "#64748b", fontWeight: "800", textTransform: "uppercase" }}>Ngày đăng ký</div>
+                        <div style={{ fontSize: "14px", color: "#1e293b", fontWeight: "700" }}>
+                          {new Date(detailModal.topic.submissionDate).toLocaleDateString("vi-VN")}
                         </div>
                       </div>
                     </div>
                   </div>
-                )}
 
-                {/* Lecturer Information - Right Column */}
-                {detailModal.topic.lecturerProfile && (
-                  <div
-                    style={{
-                      background: "#F0F9FF",
-                      borderRadius: "12px",
-                      padding: "24px",
-                      border: "1px solid #0EA5E9",
-                      boxShadow: "0 2px 8px rgba(14, 165, 233, 0.1)",
-                    }}
-                  >
+                  {/* Bottom Action Bar */}
+                  {detailModal.topic.status === "Chờ duyệt" && (
                     <div
                       style={{
+                        marginTop: "24px",
+                        padding: "24px",
+                        background: "white",
+                        borderRadius: "20px",
+                        border: "1px dashed #e2e8f0",
                         display: "flex",
-                        alignItems: "center",
-                        gap: "16px",
-                        marginBottom: "20px",
+                        justifyContent: "flex-end",
+                        gap: "12px",
                       }}
                     >
-                      <img
-                        src={
-                          getAvatarUrl(
-                            detailModal.topic.lecturerProfile.profileImage,
-                          ) || "https://via.placeholder.com/80x80?text=No+Image"
-                        }
-                        alt="Lecturer Avatar"
-                        style={{
-                          width: "80px",
-                          height: "80px",
-                          borderRadius: "50%",
-                          objectFit: "cover",
-                          border: "3px solid #0EA5E9",
-                          boxShadow: "0 2px 8px rgba(14, 165, 233, 0.3)",
+                      <button
+                        onClick={() => {
+                          openCommentModal("revision", detailModal.topic!.topicID, detailModal.topic!.title);
+                          closeDetailModal();
                         }}
-                      />
-                      <div>
-                        <h3
-                          style={{
-                            fontSize: "20px",
-                            fontWeight: "600",
-                            color: "#0C4A6E",
-                            margin: "0 0 4px 0",
-                          }}
-                        >
-                          {detailModal.topic.lecturerProfile.fullName}
-                        </h3>
-                        <p
-                          style={{
-                            fontSize: "14px",
-                            color: "#0369A1",
-                            margin: 0,
-                            fontWeight: "500",
-                          }}
-                        >
-                          Giảng viên hướng dẫn
-                        </p>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gap: "16px" }}>
-                      <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "16px",
+                          padding: "12px 20px",
+                          background: "#fff7ed",
+                          color: "#d97706",
+                          border: "1px solid #fed7aa",
+                          borderRadius: "12px",
+                          fontSize: "14px",
+                          fontWeight: "700",
+                          cursor: "pointer",
                         }}
                       >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748B",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Mã giảng viên
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#0C4A6E",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.supervisorLecturerCode}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748B",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Email
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#0C4A6E",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.lecturerProfile.email}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
+                        Yêu cầu sửa đổi
+                      </button>
+                      <button
+                        onClick={() => {
+                          openCommentModal("reject", detailModal.topic!.topicID, detailModal.topic!.title);
+                          closeDetailModal();
+                        }}
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "16px",
+                          padding: "12px 20px",
+                          background: "#fef2f2",
+                          color: "#dc2626",
+                          border: "1px solid #fecaca",
+                          borderRadius: "12px",
+                          fontSize: "14px",
+                          fontWeight: "700",
+                          cursor: "pointer",
                         }}
                       >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748B",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Số điện thoại
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#0C4A6E",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.lecturerProfile.phoneNumber ||
-                              "Chưa cập nhật"}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748B",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Khoa
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#0C4A6E",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.lecturerProfile.departmentCode ||
-                              "Chưa cập nhật"}
-                          </div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#64748B",
-                              fontWeight: "500",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Học vị
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              color: "#0C4A6E",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {detailModal.topic.lecturerProfile.degree ||
-                              "Chưa cập nhật"}
-                          </div>
-                        </div>
-                      </div>
+                        Từ chối
+                      </button>
+                      <button
+                        onClick={() => handleConfirmApprove()}
+                        style={{
+                          padding: "12px 32px",
+                          background: "#22c55e",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "12px",
+                          fontSize: "14px",
+                          fontWeight: "700",
+                          cursor: "pointer",
+                          boxShadow: "0 4px 6px -1px rgba(34, 197, 94, 0.2)",
+                        }}
+                      >
+                        Duyệt đề tài
+                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-
-              {/* Topic Information - Full Width Below */}
+              {/* Right Column: Sidebar */}
               <div
                 style={{
-                  background: "#F8FAFC",
-                  borderRadius: "12px",
-                  padding: "24px",
-                  border: "1px solid #E2E8F0",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                  marginBottom: "20px",
+                  background: "#f8fafc",
+                  padding: "40px 32px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "24px",
                 }}
               >
+                {/* Student Profile Card */}
                 <div
                   style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: "4px",
-                    background:
-                      "linear-gradient(90deg, #3B82F6, #6366F1, #8B5CF6)",
-                    borderRadius: "12px 12px 0 0",
-                  }}
-                />
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    marginBottom: "20px",
+                    background: "white",
+                    borderRadius: "24px",
+                    padding: "32px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                    border: "1px solid #f1f5f9",
+                    textAlign: "center",
                   }}
                 >
                   <div
                     style={{
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "10px",
-                      background: "linear-gradient(135deg, #3B82F6, #6366F1)",
+                      width: "128px",
+                      height: "128px",
+                      borderRadius: "32px",
+                      margin: "0 auto 24px",
+                      background: "linear-gradient(135deg, #f37021 0%, #ff8838 100%)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      boxShadow: "0 2px 8px rgba(59, 130, 246, 0.3)",
+                      border: "4px solid white",
+                      boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)",
+                      overflow: "hidden",
                     }}
                   >
-                    <FileText size={20} color="white" />
+                    {detailModal.topic.studentProfile?.studentImage ? (
+                      <img
+                        src={getAvatarUrl(detailModal.topic.studentProfile.studentImage)}
+                        alt={detailModal.topic.studentName}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: "48px", color: "white", fontWeight: "800" }}>
+                        {detailModal.topic.studentName.charAt(0)}
+                      </span>
+                    )}
                   </div>
-                  <h3
-                    style={{
-                      fontSize: "20px",
-                      fontWeight: "600",
-                      color: "#1e293b",
-                      margin: 0,
-                    }}
-                  >
-                    Thông tin đề tài
-                  </h3>
-                </div>
-
-                <div style={{ display: "grid", gap: "20px" }}>
+                  <h4 style={{ fontSize: "22px", fontWeight: "900", color: "#0f172a", marginBottom: "6px" }}>
+                    {detailModal.topic.studentName}
+                  </h4>
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: "20px",
+                      display: "inline-block",
+                      padding: "4px 12px",
+                      backgroundColor: "rgba(243, 112, 33, 0.1)",
+                      borderRadius: "8px",
                     }}
                   >
-                    <div
+                    <span
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
+                        fontSize: "11px",
+                        fontWeight: "900",
+                        color: "#f37021",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.1em",
                       }}
                     >
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "36px",
-                          borderRadius: "8px",
-                          background: "rgba(59, 130, 246, 0.1)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <BookOpen size={18} color="#3B82F6" />
-                      </div>
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#64748b",
-                            fontWeight: "500",
-                            marginBottom: "2px",
-                          }}
-                        >
-                          Mã đề tài
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "16px",
-                            color: "#1e293b",
-                            fontWeight: "600",
-                          }}
-                        >
-                          {detailModal.topic.topicCode}
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "36px",
-                          borderRadius: "8px",
-                          background: "rgba(168, 85, 247, 0.1)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <TagIcon size={18} color="#A855F7" />
-                      </div>
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#64748b",
-                            fontWeight: "500",
-                            marginBottom: "2px",
-                          }}
-                        >
-                          Chuyên ngành
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#1e293b",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {topicTags.length > 0
-                            ? topicTags.map((tag) => tag.tagName).join(", ")
-                            : "Chưa có thông tin"}
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "36px",
-                          borderRadius: "8px",
-                          background: "rgba(34, 197, 94, 0.1)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <CheckCircle size={18} color="#22C55E" />
-                      </div>
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#64748b",
-                            fontWeight: "500",
-                            marginBottom: "2px",
-                          }}
-                        >
-                          Trạng thái
-                        </div>
-                        <div
-                          style={{
-                            padding: "6px 16px",
-                            borderRadius: "20px",
-                            fontSize: "14px",
-                            fontWeight: "600",
-                            background:
-                              getStatusColor(detailModal.topic.status) + "20",
-                            color: getStatusColor(detailModal.topic.status),
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            border: `1px solid ${getStatusColor(
-                              detailModal.topic.status,
-                            )}30`,
-                          }}
-                        >
-                          {getStatusIcon(detailModal.topic.status)}
-                          {detailModal.topic.status}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#64748b",
-                        fontWeight: "500",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      Tên đề tài
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "18px",
-                        color: "#1e293b",
-                        fontWeight: "600",
-                        lineHeight: "1.4",
-                      }}
-                    >
-                      {detailModal.topic.title}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#64748b",
-                        fontWeight: "500",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      Mô tả
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "15px",
-                        color: "#475569",
-                        lineHeight: "1.6",
-                      }}
-                    >
-                      {detailModal.topic.description}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: "20px",
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "500",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Danh mục
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "15px",
-                          color: "#1e293b",
-                          fontWeight: "500",
-                        }}
-                      >
-                        {detailModal.topic.category}
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "500",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Ngày đăng ký
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "15px",
-                          color: "#1e293b",
-                          fontWeight: "500",
-                        }}
-                      >
-                        {new Date(
-                          detailModal.topic.submissionDate,
-                        ).toLocaleDateString("vi-VN")}
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "500",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Ngày tạo
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "15px",
-                          color: "#1e293b",
-                          fontWeight: "500",
-                        }}
-                      >
-                        {new Date(
-                          detailModal.topic.submissionDate,
-                        ).toLocaleDateString("vi-VN")}
-                      </div>
-                    </div>
+                      Mã SV: {detailModal.topic.studentCode}
+                    </span>
                   </div>
                 </div>
+
+                {/* Info List - Reduced */}
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {[
+                    { icon: <Users size={16} />, label: "Lớp", value: detailModal.topic.studentProfile?.classCode },
+                    { icon: <TrendingUp size={16} />, label: "GPA", value: detailModal.topic.studentProfile?.gpa?.toFixed(2) },
+                  ].map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: "16px",
+                        background: "white",
+                        borderRadius: "16px",
+                        border: "1px solid #f1f5f9",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#94a3b8" }}>
+                        {item.icon}
+                        <span style={{ fontSize: "10px", fontWeight: "900", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {item.label}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "14px", fontWeight: "700", color: "#334155", wordBreak: "break-all" }}>
+                        {item.value || "---"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Lecturer Card if available */}
+                {detailModal.topic.lecturerProfile && (
+                  <div
+                    style={{
+                      background: "white",
+                      borderRadius: "16px",
+                      padding: "20px",
+                      border: "1px solid #f1f5f9",
+                    }}
+                  >
+                    <div style={{ fontSize: "10px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
+                      Giảng viên hướng dẫn
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#f37021", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "800" }}>
+                        {detailModal.topic.lecturerProfile.fullName.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: "#1e293b" }}>
+                          {detailModal.topic.lecturerProfile.fullName}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748b" }}>
+                          {detailModal.topic.lecturerProfile.degree}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Comments */}
-              {detailModal.topic.comments && (
-                <div
-                  style={{
-                    background: "#FEF3C7",
-                    borderRadius: "8px",
-                    padding: "16px",
-                    border: "1px solid #F59E0B",
-                  }}
-                >
-                  <h3
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: "600",
-                      color: "#92400E",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Nhận xét của giảng viên
-                  </h3>
-                  <p style={{ color: "#92400E", margin: 0 }}>
-                    {detailModal.topic.comments}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
+
     </div>
   );
 };

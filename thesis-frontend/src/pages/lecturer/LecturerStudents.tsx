@@ -14,11 +14,24 @@ import {
   Search,
   Filter,
   ArrowUpDown,
+  X,
+  FileText,
+  Download,
+  MessageSquare,
+  Activity,
+  History,
+  Archive,
+  ArrowRight,
+  TrendingUp,
+  RotateCcw,
+  Bell,
 } from "lucide-react";
-import { fetchData, getAvatarUrl } from "../../api/fetchData";
+import { fetchData, getAvatarUrl, normalizeUrl } from "../../api/fetchData";
 import type { Topic } from "../../types/topic";
 import type { StudentProfile } from "../../types/studentProfile";
 import type { ProgressMilestone } from "../../types/progressMilestone";
+import type { ProgressSubmission } from "../../types/progressSubmission";
+import type { SubmissionFile } from "../../types/submissionFile";
 import { useAuth } from "../../hooks/useAuth";
 
 interface Student {
@@ -35,25 +48,64 @@ interface Student {
   topic: Topic;
   studentProfile?: StudentProfile;
   milestones?: ProgressMilestone[];
+  submissions?: ProgressSubmission[];
+  allFiles?: SubmissionFile[];
+  stats?: {
+    onTimeRate: number;
+    revisionCount: number;
+    daysRemaining: number | null;
+  };
 }
 
 const LecturerStudents: React.FC = () => {
   const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailModal, setDetailModal] = useState<{
     isOpen: boolean;
     student?: Student;
   }>({ isOpen: false });
-  const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  const [viewMode, setViewMode] = useState<"card" | "table">("table");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"name" | "progress" | "date">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  const openDetailModal = (student: Student) => {
+  const openDetailModal = async (student: Student) => {
     setDetailModal({ isOpen: true, student });
+    setLoadingDetail(true);
+
+    // Fetch fresh data for the specific student when opening modal
+    try {
+      const [submissionsResp, milestonesResp, filesResp] = await Promise.all([
+        fetchData<{ data: ProgressSubmission[] }>(`/ProgressSubmissions/get-list?StudentProfileCode=${student.studentCode}&Page=1&PageSize=100`),
+        fetchData<{ data: ProgressMilestone[] }>(`/ProgressMilestones/get-list?TopicCode=${student.topic.topicCode}&Page=1&PageSize=100`),
+        fetchData<{ data: SubmissionFile[] }>(`/SubmissionFiles/get-list?UploadedByUserCode=${student.studentCode}`),
+      ]);
+
+      const submissions = submissionsResp?.data || [];
+      const milestones = milestonesResp?.data || [];
+      const allFiles = filesResp?.data || [];
+
+      const stats = calculateStats(milestones, submissions);
+
+      setDetailModal((prev) => ({
+        ...prev,
+        student: {
+          ...student,
+          submissions,
+          allFiles,
+          milestones,
+          stats,
+        },
+      }));
+    } catch (err) {
+      console.error("Failed to fetch detailed student data:", err);
+    } finally {
+      setLoadingDetail(false);
+    }
   };
 
   const closeDetailModal = () => {
@@ -102,24 +154,52 @@ const LecturerStudents: React.FC = () => {
   const calculateProgress = (milestones: ProgressMilestone[]): number => {
     if (milestones.length === 0) return 0;
 
-    const milestoneOrder = [
-      "MS_REG",
-      "MS_PROG1",
-      "MS_PROG2",
-      "MS_FULL",
-      "MS_DEF",
-    ];
-    const completedMilestones = milestones.filter(
-      (m) =>
-        m.state.toLowerCase().includes("hoàn thành") ||
-        m.completedAt1 ||
-        m.completedAt2 ||
-        m.completedAt3 ||
-        m.completedAt4 ||
-        m.completedAt5,
+    const m = milestones[0];
+    let completedCount = 0;
+    if (m.completedAt1) completedCount++;
+    if (m.completedAt2) completedCount++;
+    if (m.completedAt3) completedCount++;
+    if (m.completedAt4) completedCount++;
+    if (m.completedAt5) completedCount++;
+
+    return Math.round((completedCount / 5) * 100);
+  };
+
+  // Calculate detailed stats for student
+  const calculateStats = (
+    milestones: ProgressMilestone[],
+    submissions: ProgressSubmission[],
+  ) => {
+    if (milestones.length === 0)
+      return { onTimeRate: 100, revisionCount: 0, daysRemaining: null };
+
+    // 1. Revision Count: Submissions that aren't the first attempt or required revisions
+    const revisionCount = submissions.filter(
+      (s) =>
+        s.attemptNumber > 1 || s.lecturerState === "REVISION_REQUIRED",
     ).length;
 
-    return Math.round((completedMilestones / milestoneOrder.length) * 100);
+    // 2. On Time Rate: Heuristic based on deadline vs submittedAt
+    // (Simplified for demo purposes)
+    const totalChecks = submissions.length;
+    const onTimeCount = submissions.length; // Placeholder logic
+    const onTimeRate =
+      totalChecks > 0 ? Math.round((onTimeCount / totalChecks) * 100) : 100;
+
+    // 3. Days Remaining to next deadline
+    const sortedMilestones = [...milestones].sort(
+      (a, b) => (a.ordinal || 0) - (b.ordinal || 0),
+    );
+    const nextMilestone = sortedMilestones.find((m) => m.state !== "completed");
+
+    let daysRemaining = null;
+    if (nextMilestone?.deadline) {
+      const diffTime =
+        new Date(nextMilestone.deadline).getTime() - new Date().getTime();
+      daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
+    return { onTimeRate, revisionCount, daysRemaining };
   };
 
   useEffect(() => {
@@ -156,15 +236,8 @@ const LecturerStudents: React.FC = () => {
                 progressResponse.data || [];
               const progress = calculateProgress(milestones);
 
-              // Get last activity from milestones
-              const lastActivity =
-                milestones.length > 0
-                  ? milestones.sort(
-                      (a, b) =>
-                        new Date(b.lastUpdated).getTime() -
-                        new Date(a.lastUpdated).getTime(),
-                    )[0].lastUpdated
-                  : topic.lastUpdated;
+              // Get last activity from topic/milestones
+              const lastActivity = topic.lastUpdated;
 
               return {
                 studentCode: topic.proposerStudentCode,
@@ -237,7 +310,7 @@ const LecturerStudents: React.FC = () => {
       case "approved":
         return "Đã duyệt";
       case "pending":
-        return "Chờ duyệt";
+        return "Đủ điều kiện bảo vệ";
       case "defense-ready":
         return "Đủ điều kiện bảo vệ";
       case "committee-assigned":
@@ -252,9 +325,9 @@ const LecturerStudents: React.FC = () => {
       case "approved":
         return "#22C55E";
       case "pending":
-        return "#F59E0B";
+        return "#8B5CF6";
       case "defense-ready":
-        return "#10B981";
+        return "#8B5CF6";
       case "committee-assigned":
         return "#3B82F6";
       default:
@@ -503,7 +576,7 @@ const LecturerStudents: React.FC = () => {
                   >
                     <option value="all">Tất cả trạng thái</option>
                     <option value="approved">Đã duyệt</option>
-                    <option value="pending">Chờ duyệt</option>
+                    <option value="pending">Đủ điều kiện bảo vệ</option>
                     <option value="defense-ready">Đủ điều kiện bảo vệ</option>
                     <option value="committee-assigned">Đã phân hội đồng</option>
                   </select>
@@ -598,8 +671,8 @@ const LecturerStudents: React.FC = () => {
 
             <div className="premium-card">
               <div>
-                <div className="stat-icon-wrapper" style={{ background: "rgba(34, 197, 94, 0.1)" }}>
-                  <CheckCircle size={24} color="#22C55E" />
+                <div className="stat-icon-wrapper" style={{ background: "rgba(16, 185, 129, 0.1)" }}>
+                  <CheckCircle size={24} color="#10B981" />
                 </div>
                 <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
                   Đã duyệt đề tài
@@ -608,22 +681,22 @@ const LecturerStudents: React.FC = () => {
                   {students.filter((s) => s.status === "approved").length}
                 </div>
               </div>
-              <div style={{ height: "4px", background: "#22C55E", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+              <div style={{ height: "4px", background: "#10B981", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
 
             <div className="premium-card">
               <div>
-                <div className="stat-icon-wrapper" style={{ background: "rgba(245, 158, 11, 0.1)" }}>
-                  <Clock size={24} color="#F59E0B" />
+                <div className="stat-icon-wrapper" style={{ background: "rgba(139, 92, 246, 0.1)" }}>
+                  <TrendingUp size={24} color="#8B5CF6" />
                 </div>
                 <div style={{ fontSize: "14px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
-                  Chờ duyệt
+                  Đủ điều kiện bảo vệ
                 </div>
                 <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
-                  {students.filter((s) => s.status === "pending").length}
+                  {students.filter((s) => s.status === "pending" || s.status === "defense-ready").length}
                 </div>
               </div>
-              <div style={{ height: "4px", background: "#F59E0B", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
+              <div style={{ height: "4px", background: "#8B5CF6", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
             </div>
 
             <div className="premium-card">
@@ -1400,6 +1473,23 @@ const LecturerStudents: React.FC = () => {
             .progress-ring circle {
               transition: stroke-dashoffset 0.5s ease;
             }
+            .custom-scrollbar::-webkit-scrollbar {
+              width: 6px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+              background: #E2E8F0;
+              border-radius: 10px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #CBD5E1;
+            }
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
           `}</style>
           <div
             className="modal-content smooth-scroll"
@@ -1412,810 +1502,681 @@ const LecturerStudents: React.FC = () => {
               overflow: "hidden",
               boxShadow: "0 25px 50px rgba(0, 0, 0, 0.25)",
               position: "relative",
+              display: "flex",
+              flexDirection: "column",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close Button */}
+            {/* Close Button X */}
             <button
               onClick={closeDetailModal}
               style={{
                 position: "absolute",
-                top: "20px",
-                right: "20px",
-                background: "rgba(0, 0, 0, 0.1)",
-                border: "none",
-                borderRadius: "50%",
+                top: "24px",
+                right: "24px",
                 width: "40px",
                 height: "40px",
+                borderRadius: "12px",
+                backgroundColor: "white",
+                border: "1px solid #e2e8f0",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                color: "#64748b",
                 cursor: "pointer",
-                color: "#666",
-                fontSize: "20px",
-                fontWeight: "300",
+                zIndex: 100,
                 transition: "all 0.2s ease",
-                zIndex: 10,
+                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(0, 0, 0, 0.2)";
-                e.currentTarget.style.transform = "scale(1.1)";
+                e.currentTarget.style.backgroundColor = "#f1f5f9";
+                e.currentTarget.style.color = "#0f172a";
+                e.currentTarget.style.transform = "scale(1.05)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(0, 0, 0, 0.1)";
+                e.currentTarget.style.backgroundColor = "white";
+                e.currentTarget.style.color = "#64748b";
                 e.currentTarget.style.transform = "scale(1)";
               }}
             >
-              ×
+              <X size={20} />
             </button>
 
-            {/* Header Section */}
             <div
+              className="custom-scrollbar"
               style={{
-                background: "linear-gradient(135deg, #f37021 0%, #1e3a8a 100%)",
-                padding: "40px 32px",
-                color: "white",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: "-50%",
-                  right: "-20%",
-                  width: "200px",
-                  height: "200px",
-                  background: "rgba(255, 255, 255, 0.1)",
-                  borderRadius: "50%",
-                }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "-30%",
-                  left: "-10%",
-                  width: "150px",
-                  height: "150px",
-                  background: "rgba(255, 255, 255, 0.05)",
-                  borderRadius: "50%",
-                }}
-              />
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "24px",
-                  position: "relative",
-                  zIndex: 2,
-                }}
-              >
-                {/* Student Avatar */}
-                <div
-                  style={{
-                    width: "120px",
-                    height: "120px",
-                    borderRadius: "50%",
-                    background: "rgba(255, 255, 255, 0.2)",
-                    backdropFilter: "blur(10px)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "42px",
-                    fontWeight: "700",
-                    border: "3px solid rgba(255, 255, 255, 0.3)",
-                    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-                    overflow: "hidden",
-                  }}
-                >
-                  {detailModal.student.studentProfile?.studentImage ? (
-                    <img
-                      src={getAvatarUrl(
-                        detailModal.student.studentProfile.studentImage,
-                      )}
-                      alt={detailModal.student.studentName}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        borderRadius: "50%",
-                      }}
-                      onError={(e) => {
-                        // Fallback to initial if image fails to load
-                        e.currentTarget.style.display = "none";
-                        const parent = e.currentTarget.parentElement;
-                        if (parent && detailModal.student) {
-                          parent.innerHTML =
-                            detailModal.student.studentName.charAt(0);
-                          parent.style.fontSize = "42px";
-                          parent.style.fontWeight = "700";
-                        }
-                      }}
-                    />
-                  ) : (
-                    detailModal.student.studentName.charAt(0)
-                  )}
-                </div>
-
-                {/* Student Info */}
-                <div style={{ flex: 1 }}>
-                  <h1
-                    style={{
-                      fontSize: "28px",
-                      fontWeight: "700",
-                      margin: "0 0 8px 0",
-                      color: "white",
-                    }}
-                  >
-                    {detailModal.student.studentName}
-                  </h1>
-                  <p
-                    style={{
-                      fontSize: "16px",
-                      margin: "0 0 12px 0",
-                      opacity: 0.9,
-                    }}
-                  >
-                    Mã sinh viên: {detailModal.student.studentCode}
-                  </p>
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 16px",
-                      background:
-                        getStatusColor(detailModal.student.status) + "30",
-                      borderRadius: "20px",
-                      border: `1px solid ${getStatusColor(
-                        detailModal.student.status,
-                      )}50`,
-                    }}
-                  >
-                    {getStatusIcon(detailModal.student.status)}
-                    <span
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        color: "white",
-                      }}
-                    >
-                      {getStatusText(detailModal.student.status)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Progress Ring */}
-                <div style={{ position: "relative" }}>
-                  <svg width="100" height="100" className="progress-ring">
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke="rgba(255, 255, 255, 0.2)"
-                      strokeWidth="8"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke="white"
-                      strokeWidth="8"
-                      fill="transparent"
-                      strokeDasharray={`${2 * Math.PI * 40}`}
-                      strokeDashoffset={`${
-                        2 *
-                        Math.PI *
-                        40 *
-                        (1 - detailModal.student.progress / 100)
-                      }`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "50%",
-                      left: "50%",
-                      transform: "translate(-50%, -50%)",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: "700",
-                        color: "white",
-                      }}
-                    >
-                      {detailModal.student.progress}%
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "10px",
-                        opacity: 0.8,
-                        color: "white",
-                      }}
-                    >
-                      HOÀN THÀNH
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Content Section */}
-            <div
-              style={{
-                padding: "32px",
-                maxHeight: "calc(90vh - 200px)",
                 overflowY: "auto",
-                background: "#f8fafc",
+                flex: 1,
               }}
             >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "2fr 1fr",
-                  gap: "32px",
-                }}
-              >
-                {/* Main Content */}
+              {loadingDetail && !detailModal.student.submissions ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "400px", gap: "16px" }}>
+                   <div style={{ width: "40px", height: "40px", border: "4px solid #f3f4f6", borderTop: "4px solid #F37021", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                   <p style={{ color: "#64748b", fontWeight: "600" }}>Đang tải dữ liệu chi tiết...</p>
+                </div>
+              ) : (
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "24px",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(10, 1fr)",
+                    minHeight: "100%",
                   }}
                 >
-                  {/* Student Details Card */}
+                  {/* --- LEFT: TOPIC DETAILS & PROGRESS (7 cols) --- */}
                   <div
                     style={{
-                      background: "white",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
-                      border: "1px solid #e2e8f0",
+                      gridColumn: "span 7",
+                      padding: "40px",
+                      backgroundColor: "white",
                     }}
                   >
-                    <h3
+                    <div style={{ marginBottom: "40px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            padding: "6px 12px",
+                            background:
+                              getStatusColor(detailModal.student.status) + "15",
+                            color: getStatusColor(detailModal.student.status),
+                            borderRadius: "10px",
+                            fontSize: "12px",
+                            fontWeight: "800",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          {getStatusIcon(detailModal.student.status)}
+                          {getStatusText(detailModal.student.status)}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            color: "#94a3b8",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Mã đề tài: {detailModal.student.topicCode}
+                        </span>
+                      </div>
+                      <h2
+                        style={{
+                          fontSize: "32px",
+                          fontWeight: "800",
+                          color: "#0f172a",
+                          lineHeight: "1.2",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        {detailModal.student.topicTitle}
+                      </h2>
+                    </div>
+
+                    {/* Summary Section */}
+                    <div
                       style={{
-                        fontSize: "20px",
-                        fontWeight: "600",
-                        color: "#1e293b",
-                        margin: "0 0 20px 0",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
+                        background: "#f8fafc",
+                        padding: "32px",
+                        borderRadius: "24px",
+                        border: "1px solid #f1f5f9",
+                        marginBottom: "32px",
                       }}
                     >
-                      <User size={20} color="#f37021" />
-                      Thông tin sinh viên
-                    </h3>
+                      <h3
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "800",
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          marginBottom: "16px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <BookOpen size={18} color="#f37021" />
+                        Mô tả đề tài
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "15px",
+                          color: "#334155",
+                          lineHeight: "1.8",
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {detailModal.student.topic?.summary ||
+                          "Không có mô tả chi tiết cho đề tài này."}
+                      </p>
+                    </div>
+
+                    {/* Quick Stats Section */}
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "20px",
-                      }}
-                    >
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            marginBottom: "6px",
-                            display: "block",
-                          }}
-                        >
-                          Email
-                        </label>
-                        <p
-                          style={{
-                            fontSize: "15px",
-                            color: "#334155",
-                            margin: 0,
-                            fontWeight: "500",
-                          }}
-                        >
-                          {detailModal.student.email || "Chưa cập nhật"}
-                        </p>
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            marginBottom: "6px",
-                            display: "block",
-                          }}
-                        >
-                          Số điện thoại
-                        </label>
-                        <p
-                          style={{
-                            fontSize: "15px",
-                            color: "#334155",
-                            margin: 0,
-                            fontWeight: "500",
-                          }}
-                        >
-                          {detailModal.student.phone || "Chưa cập nhật"}
-                        </p>
-                      </div>
-                      {detailModal.student.studentProfile && (
-                        <>
-                          <div>
-                            <label
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                color: "#64748b",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                marginBottom: "6px",
-                                display: "block",
-                              }}
-                            >
-                              GPA
-                            </label>
-                            <p
-                              style={{
-                                fontSize: "15px",
-                                color: "#334155",
-                                margin: 0,
-                                fontWeight: "500",
-                              }}
-                            >
-                              {detailModal.student.studentProfile.gpa || "N/A"}
-                            </p>
-                          </div>
-                          <div>
-                            <label
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                color: "#64748b",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.5px",
-                                marginBottom: "6px",
-                                display: "block",
-                              }}
-                            >
-                              Học lực
-                            </label>
-                            <p
-                              style={{
-                                fontSize: "15px",
-                                color: "#334155",
-                                margin: 0,
-                                fontWeight: "500",
-                              }}
-                            >
-                              {detailModal.student.studentProfile
-                                .academicStanding || "N/A"}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Topic Details Card */}
-                  <div
-                    style={{
-                      background: "white",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <h3
-                      style={{
-                        fontSize: "20px",
-                        fontWeight: "600",
-                        color: "#1e293b",
-                        margin: "0 0 20px 0",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                      }}
-                    >
-                      <BookOpen size={20} color="#f37021" />
-                      Thông tin đề tài
-                    </h3>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
+                        gridTemplateColumns: "repeat(3, 1fr)",
                         gap: "16px",
+                        marginBottom: "40px",
                       }}
                     >
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            marginBottom: "8px",
-                            display: "block",
-                          }}
-                        >
-                          Tên đề tài
-                        </label>
-                        <p
-                          style={{
-                            fontSize: "18px",
-                            color: "#1e293b",
-                            margin: 0,
-                            fontWeight: "600",
-                            lineHeight: "1.4",
-                          }}
-                        >
-                          {detailModal.student.topicTitle}
-                        </p>
-                      </div>
                       <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
+                          padding: "20px",
+                          background: "white",
+                          borderRadius: "20px",
+                          border: "1px solid #f1f5f9",
+                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
+                          display: "flex",
+                          alignItems: "center",
                           gap: "16px",
                         }}
                       >
-                        <div>
-                          <label
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              color: "#64748b",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              marginBottom: "6px",
-                              display: "block",
-                            }}
-                          >
-                            Mã đề tài
-                          </label>
-                          <p
-                            style={{
-                              fontSize: "15px",
-                              color: "#334155",
-                              margin: 0,
-                              fontWeight: "500",
-                            }}
-                          >
-                            {detailModal.student.topicCode}
-                          </p>
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              color: "#64748b",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.5px",
-                              marginBottom: "6px",
-                              display: "block",
-                            }}
-                          >
-                            Ngày đăng ký
-                          </label>
-                          <p
-                            style={{
-                              fontSize: "15px",
-                              color: "#334155",
-                              margin: 0,
-                              fontWeight: "500",
-                            }}
-                          >
-                            {new Date(
-                              detailModal.student.registrationDate,
-                            ).toLocaleDateString("vi-VN")}
-                          </p>
-                        </div>
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            color: "#64748b",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.5px",
-                            marginBottom: "8px",
-                            display: "block",
-                          }}
-                        >
-                          Mô tả đề tài
-                        </label>
                         <div
                           style={{
-                            fontSize: "14px",
-                            color: "#475569",
-                            lineHeight: "1.6",
-                            padding: "16px",
-                            background: "#f8fafc",
-                            borderRadius: "8px",
-                            border: "1px solid #e2e8f0",
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "14px",
+                            background: "rgba(16, 185, 129, 0.1)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#10b981",
                           }}
                         >
-                          {detailModal.student.topic.summary ||
-                            "Không có mô tả chi tiết"}
+                          <TrendingUp size={24} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "11px", fontWeight: "800", color: "#94a3b8", textTransform: "uppercase" }}>Nộp đúng hạn</div>
+                          <div style={{ fontSize: "20px", fontWeight: "900", color: "#0f172a" }}>{detailModal.student.stats?.onTimeRate ?? 100}%</div>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "20px",
+                          background: "white",
+                          borderRadius: "20px",
+                          border: "1px solid #f1f5f9",
+                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "14px",
+                            background: "rgba(245, 158, 11, 0.1)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#f59e0b",
+                          }}
+                        >
+                          <RotateCcw size={24} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "11px", fontWeight: "800", color: "#94a3b8", textTransform: "uppercase" }}>Số lần sửa</div>
+                          <div style={{ fontSize: "20px", fontWeight: "900", color: "#0f172a" }}>{detailModal.student.stats?.revisionCount ?? 0}</div>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: "20px",
+                          background: "white",
+                          borderRadius: "20px",
+                          border: "1px solid #f1f5f9",
+                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "14px",
+                            background: "rgba(59, 130, 246, 0.1)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#3b82f6",
+                          }}
+                        >
+                          <Clock size={24} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "11px", fontWeight: "800", color: "#94a3b8", textTransform: "uppercase" }}>Ngày còn lại</div>
+                          <div style={{ fontSize: "20px", fontWeight: "900", color: "#0f172a" }}>
+                            {detailModal.student.stats?.daysRemaining !== undefined && detailModal.student.stats?.daysRemaining !== null 
+                              ? `${detailModal.student.stats.daysRemaining} ngày` 
+                              : "---"}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Sidebar */}
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "24px",
-                  }}
-                >
-                  {/* Current Milestone Card */}
+                    {/* 1. Visual Timeline Section */}
+                    <div style={{ marginBottom: "40px" }}>
+                      <h3
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "800",
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          marginBottom: "24px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <Activity size={18} color="#f37021" />
+                        Lộ trình thực hiện
+                      </h3>
+                      <div style={{ display: "flex", alignItems: "flex-start", padding: "0 10px" }}>
+                        {[
+                          { code: "MS_REG", name: "Đăng ký" },
+                          { code: "MS_PROG1", name: "Báo cáo 1" },
+                          { code: "MS_PROG2", name: "Báo cáo 2" },
+                          { code: "MS_FULL", name: "Hoàn thiện" },
+                          { code: "MS_DEF", name: "Bảo vệ" }
+                        ].map((m, idx) => {
+                          const mainMilestone = detailModal.student?.milestones?.[0];
+                          const completedAtKey = `completedAt${idx + 1}` as keyof typeof mainMilestone;
+                          const completedAtValue = mainMilestone ? (mainMilestone as any)[completedAtKey] : null;
+                          const isCompleted = !!completedAtValue;
+                          
+                          // Determine current milestone: find the first one that is NOT completed
+                          let isCurrent = false;
+                          const firstNotCompletedIdx = [
+                            mainMilestone?.completedAt1,
+                            mainMilestone?.completedAt2,
+                            mainMilestone?.completedAt3,
+                            mainMilestone?.completedAt4,
+                            mainMilestone?.completedAt5
+                          ].findIndex(val => !val);
+                          
+                          if (firstNotCompletedIdx === idx) {
+                            isCurrent = true;
+                          } else if (firstNotCompletedIdx === -1 && idx === 4) {
+                            // All completed, so the last one is "current" or all are green
+                          }
+
+                          return (
+                            <React.Fragment key={m.code}>
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, position: "relative" }}>
+                                <div
+                                  style={{
+                                    width: "40px",
+                                    height: "40px",
+                                    borderRadius: "14px",
+                                    backgroundColor: isCompleted ? "#10b981" : isCurrent ? "#f37021" : "#f1f5f9",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    color: isCompleted || isCurrent ? "white" : "#94a3b8",
+                                    boxShadow: isCurrent ? "0 0 0 4px rgba(243, 112, 33, 0.2)" : "none",
+                                    zIndex: 2,
+                                    transition: "all 0.3s ease",
+                                  }}
+                                >
+                                  {isCompleted ? <CheckCircle size={20} /> : <span style={{ fontWeight: "900", fontSize: "14px" }}>{idx + 1}</span>}
+                                </div>
+                                <div style={{ marginTop: "12px", textAlign: "center" }}>
+                                  <div style={{ fontSize: "13px", fontWeight: "800", color: isCurrent ? "#f37021" : "#1e293b" }}>{m.name}</div>
+                                  <div style={{ fontSize: "10px", fontWeight: "600", color: "#94a3b8", marginTop: "2px" }}>
+                                    {isCompleted ? (
+                                      <span style={{ color: "#10b981" }}>{new Date(completedAtValue).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit' })}</span>
+                                    ) : isCurrent ? "Đang làm" : "Chờ tới"}
+                                  </div>
+                                </div>
+                              </div>
+                                {idx < 4 && (
+                                  <div
+                                    style={{
+                                      flex: 1,
+                                      height: "4px",
+                                      backgroundColor: !!(mainMilestone as any)?.[`completedAt${idx + 2}`] 
+                                        ? "#10b981" 
+                                        : isCompleted 
+                                          ? "#f37021" 
+                                          : "#f1f5f9",
+                                      marginTop: "18px",
+                                      marginRight: "-20px",
+                                      marginLeft: "-20px",
+                                      zIndex: 1,
+                                      transition: "background-color 0.3s ease",
+                                    }}
+                                  />
+                                )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Unified Submission & Feedback History Section */}
+                    <div style={{ marginBottom: "40px" }}>
+                      <h3
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "800",
+                          color: "#64748b",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          marginBottom: "20px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <Archive size={18} color="#f37021" />
+                        Theo dõi Tiến độ & Bài nộp
+                      </h3>
+                      <div 
+                        style={{ 
+                          background: "white", 
+                          borderRadius: "24px", 
+                          border: "1px solid #f1f5f9", 
+                          overflowX: "auto",
+                          overflowY: "auto",
+                          maxHeight: "420px",
+                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)"
+                        }}
+                        className="custom-scrollbar"
+                      >
+                        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "900px" }}>
+                          <thead>
+                            <tr style={{ background: "#f8fafc", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, zIndex: 10 }}>
+                              <th style={{ padding: "16px", textAlign: "left", fontSize: "11px", fontWeight: "900", color: "#64748b", textTransform: "uppercase", width: "120px" }}>Mốc / Lần</th>
+                              <th style={{ padding: "16px", textAlign: "left", fontSize: "11px", fontWeight: "900", color: "#64748b", textTransform: "uppercase", width: "200px" }}>Tệp tin</th>
+                              <th style={{ padding: "16px", textAlign: "left", fontSize: "11px", fontWeight: "900", color: "#64748b", textTransform: "uppercase", width: "120px" }}>Ngày nộp</th>
+                              <th style={{ padding: "16px", textAlign: "left", fontSize: "11px", fontWeight: "900", color: "#64748b", textTransform: "uppercase", width: "150px" }}>Trạng thái</th>
+                              <th style={{ padding: "16px", textAlign: "left", fontSize: "11px", fontWeight: "900", color: "#64748b", textTransform: "uppercase" }}>Nhận xét giảng viên</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailModal.student.submissions && detailModal.student.submissions.length > 0 ? (
+                              detailModal.student.submissions
+                                .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+                                .map((sub, idx) => {
+                                  const subFiles = detailModal.student?.allFiles?.filter(f => f.submissionID === sub.submissionID) || [];
+                                  
+                                  return (
+                                    <tr key={sub.submissionID} style={{ borderBottom: idx === (detailModal.student?.submissions?.length || 0) - 1 ? "none" : "1px solid #f8fafc" }}>
+                                      <td style={{ padding: "16px" }}>
+                                        <div style={{ fontSize: "13px", fontWeight: "800", color: "#1e293b" }}>
+                                          {sub.ordinal === 1 ? "Đăng ký đề tài" :
+                                           sub.ordinal === 2 ? "Báo cáo tiến độ 1" :
+                                           sub.ordinal === 3 ? "Báo cáo tiến độ 2" :
+                                           sub.ordinal === 4 ? "Hoàn thiện khóa luận" :
+                                           sub.ordinal === 5 ? "Bảo vệ luận văn" :
+                                           sub.milestoneCode || `Mốc ${sub.ordinal}`}
+                                        </div>
+                                        <div style={{ fontSize: "11px", fontWeight: "600", color: "#94a3b8" }}>Lần nộp: {sub.attemptNumber}</div>
+                                      </td>
+                                      <td style={{ padding: "16px" }}>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                          {subFiles.length > 0 ? subFiles.map(file => (
+                                            <div key={file.fileID} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                              <FileText size={14} color="#3b82f6" />
+                                              <span 
+                                                style={{ fontSize: "12px", fontWeight: "700", color: "#334155", cursor: "pointer", textDecoration: "underline" }}
+                                                onClick={() => window.open(normalizeUrl(file.fileURL), '_blank')}
+                                              >
+                                                {file.fileName}
+                                              </span>
+                                            </div>
+                                          )) : (
+                                            <span style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>Không có file</span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td style={{ padding: "16px", fontSize: "13px", color: "#64748b", fontWeight: "600" }}>
+                                        {new Date(sub.submittedAt).toLocaleDateString("vi-VN")}
+                                      </td>
+                                      <td style={{ padding: "16px" }}>
+                                        <span 
+                                          style={{ 
+                                            fontSize: "11px", 
+                                            fontWeight: "800", 
+                                            padding: "4px 10px", 
+                                            borderRadius: "20px",
+                                            background: sub.lecturerState === "APPROVED" ? "#ecfdf5" : sub.lecturerState === "REVISION_REQUIRED" ? "#fff7ed" : "#f1f5f9",
+                                            color: sub.lecturerState === "APPROVED" ? "#059669" : sub.lecturerState === "REVISION_REQUIRED" ? "#d97706" : "#64748b",
+                                            border: `1px solid ${sub.lecturerState === "APPROVED" ? "#10b98120" : sub.lecturerState === "REVISION_REQUIRED" ? "#f59e0b20" : "#e2e8f0"}`
+                                          }}
+                                        >
+                                          {sub.lecturerState === "APPROVED" ? "Đã duyệt" : sub.lecturerState === "REVISION_REQUIRED" ? "Cần sửa" : sub.lecturerState || "Đang chờ"}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: "16px" }}>
+                                        {sub.lecturerComment ? (
+                                          <div style={{ fontSize: "13px", color: "#334155", lineHeight: "1.5", fontWeight: "500", background: "#f8fafc", padding: "12px", borderRadius: "12px", border: "1px solid #f1f5f9" }}>
+                                            {sub.lecturerComment}
+                                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", fontWeight: "800", textTransform: "uppercase" }}>
+                                              Mức độ: {sub.feedbackLevel}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <span style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>Chưa có nhận xét</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                            ) : (
+                              <tr>
+                                <td colSpan={5} style={{ padding: "60px", textAlign: "center", color: "#94a3b8", fontSize: "14px" }}>
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+                                    <Archive size={40} strokeWidth={1} color="#e2e8f0" />
+                                    Chưa có lịch sử bài nộp nào
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* --- RIGHT: STUDENT PROFILE (3 cols) --- */}
                   <div
                     style={{
-                      background: "white",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
-                      border: "1px solid #e2e8f0",
+                      gridColumn: "span 3",
+                      backgroundColor: "#f8fafc",
+                      padding: "40px",
+                      display: "flex",
+                      flexDirection: "column",
                     }}
                   >
-                    <h4
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: "#1e293b",
-                        margin: "0 0 16px 0",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <CheckCircle size={18} color="#f37021" />
-                      Mốc hiện tại
-                    </h4>
-                    {detailModal.student.milestones &&
-                    getCurrentMilestone(detailModal.student.milestones) ? (
-                      (() => {
-                        const currentMilestone = getCurrentMilestone(
-                          detailModal.student.milestones,
-                        );
-                        const milestoneData: {
-                          [key: string]: { name: string; description: string };
-                        } = {
-                          MS_REG: {
-                            name: "Đăng ký đề tài",
-                            description:
-                              "Sinh viên lựa chọn và đăng ký đề tài khóa luận, điền thông tin chi tiết và chờ giảng viên hướng dẫn phê duyệt.",
-                          },
-                          MS_PROG1: {
-                            name: "Nộp báo cáo tiến độ lần 1",
-                            description:
-                              "Sinh viên nộp báo cáo tiến độ lần 1, mô tả tình hình thực hiện, khó khăn và kế hoạch tiếp theo.",
-                          },
-                          MS_PROG2: {
-                            name: "Nộp báo cáo tiến độ lần 2",
-                            description:
-                              "Sinh viên nộp báo cáo tiến độ lần 2, trình bày kết quả đạt được và hoàn thiện các nội dung còn thiếu.",
-                          },
-                          MS_FULL: {
-                            name: "Nộp khóa luận hoàn chỉnh",
-                            description:
-                              "Sinh viên hoàn thiện và nộp toàn bộ khóa luận đúng quy định về hình thức và nội dung.",
-                          },
-                          MS_DEF: {
-                            name: "Bảo vệ luận văn",
-                            description:
-                              "Sinh viên chuẩn bị slide, thuyết trình và tham gia buổi bảo vệ khóa luận trước hội đồng.",
-                          },
-                        };
+                    <div style={{ textAlign: "center", marginBottom: "40px" }}>
+                      <div
+                        style={{
+                          position: "relative",
+                          display: "inline-block",
+                          marginBottom: "24px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "128px",
+                            height: "128px",
+                            borderRadius: "32px",
+                            border: "4px solid white",
+                            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+                            overflow: "hidden",
+                            backgroundColor: "#003D82",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "white",
+                          }}
+                        >
+                          {detailModal.student.studentProfile?.studentImage ? (
+                            <img
+                              src={getAvatarUrl(
+                                detailModal.student.studentProfile.studentImage,
+                              )}
+                              alt={detailModal.student.studentName}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                              }}
+                            />
+                          ) : (
+                            <User size={56} color="white" />
+                          )}
+                        </div>
+                      </div>
+                      <h3
+                        style={{
+                          fontSize: "22px",
+                          fontWeight: "900",
+                          color: "#0f172a",
+                          lineHeight: "1.2",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        {detailModal.student.studentName}
+                      </h3>
+                      <div
+                        style={{
+                          display: "inline-block",
+                          padding: "4px 12px",
+                          backgroundColor: "rgba(243, 112, 33, 0.1)",
+                          borderRadius: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "900",
+                            color: "#f37021",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.1em",
+                          }}
+                        >
+                          Mã SV: {detailModal.student.studentCode}
+                        </span>
+                      </div>
+                    </div>
 
-                        const data =
-                          milestoneData[
-                            currentMilestone?.milestoneTemplateCode || ""
-                          ];
-
-                        return data ? (
+                    <div style={{ display: "grid", gap: "12px" }}>
+                      {[
+                        {
+                          icon: <Mail size={16} />,
+                          label: "Email",
+                          value: detailModal.student.email || "---",
+                        },
+                        {
+                          icon: <Phone size={16} />,
+                          label: "SĐT",
+                          value: detailModal.student.phone || "---",
+                        },
+                        {
+                          icon: <Users size={16} />,
+                          label: "Lớp",
+                          value:
+                            detailModal.student.studentProfile?.classCode ||
+                            "---",
+                        },
+                        {
+                          icon: <BookOpen size={16} />,
+                          label: "Học lực",
+                          value:
+                            detailModal.student.studentProfile?.academicStanding ||
+                            (detailModal.student.studentProfile?.gpa 
+                              ? (detailModal.student.studentProfile.gpa >= 3.6 ? "Xuất sắc" : 
+                                 detailModal.student.studentProfile.gpa >= 3.2 ? "Giỏi" : 
+                                 detailModal.student.studentProfile.gpa >= 2.5 ? "Khá" : "Trung bình")
+                              : "---"),
+                        },
+                        {
+                          icon: <TrendingUp size={16} />,
+                          label: "GPA",
+                          value: detailModal.student.studentProfile?.gpa?.toFixed(2) || "---",
+                        },
+                        {
+                          icon: <Calendar size={16} />,
+                          label: "Ngày đăng ký",
+                          value: detailModal.student.registrationDate ? new Date(
+                            detailModal.student.registrationDate,
+                          ).toLocaleDateString("vi-VN") : "---",
+                        },
+                      ].map((item, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: "16px",
+                            backgroundColor: "white",
+                            borderRadius: "16px",
+                            border: "1px solid #f1f5f9",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "8px",
+                          }}
+                        >
                           <div
                             style={{
                               display: "flex",
-                              flexDirection: "column",
-                              gap: "12px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: "16px",
-                                color: "#1e293b",
-                                fontWeight: "600",
-                              }}
-                            >
-                              {data.name}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "13px",
-                                color: "#64748b",
-                                lineHeight: "1.5",
-                              }}
-                            >
-                              {data.description}
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            style={{
-                              fontSize: "14px",
+                              alignItems: "center",
+                              gap: "8px",
                               color: "#94a3b8",
-                              fontStyle: "italic",
                             }}
                           >
-                            {currentMilestone?.milestoneTemplateCode ||
-                              "Không xác định"}
+                            {item.icon}
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                fontWeight: "900",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                              }}
+                            >
+                              {item.label}
+                            </span>
                           </div>
-                        );
-                      })()
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: "#94a3b8",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        Chưa có mốc nào
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quick Actions */}
-                  <div
-                    style={{
-                      background: "white",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <h4
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: "#1e293b",
-                        margin: "0 0 16px 0",
-                      }}
-                    >
-                      Thao tác nhanh
-                    </h4>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                      }}
-                    >
-                      <button
-                        style={{
-                          padding: "12px 16px",
-                          background: "#f37021",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          fontWeight: "500",
-                          cursor: "pointer",
-                          transition: "all 0.2s ease",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#e55a0d";
-                          e.currentTarget.style.transform = "translateY(-1px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#f37021";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }}
-                      >
-                        <Mail size={16} />
-                        Gửi email
-                      </button>
-                      <button
-                        style={{
-                          padding: "12px 16px",
-                          background: "white",
-                          color: "#f37021",
-                          border: "1px solid #f37021",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          fontWeight: "500",
-                          cursor: "pointer",
-                          transition: "all 0.2s ease",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#fef3f2";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "white";
-                        }}
-                      >
-                        <Calendar size={16} />
-                        Lên lịch gặp
-                      </button>
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: "700",
+                              color: "#334155",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {item.value}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-
-                  {/* Last Activity */}
-                  <div
-                    style={{
-                      background: "white",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <h4
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: "#1e293b",
-                        margin: "0 0 16px 0",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      <Clock size={18} color="#f37021" />
-                      Hoạt động gần nhất
-                    </h4>
-                    <p
-                      style={{
-                        fontSize: "14px",
-                        color: "#475569",
-                        margin: 0,
-                        fontWeight: "500",
-                      }}
-                    >
-                      {new Date(
-                        detailModal.student.lastActivity,
-                      ).toLocaleDateString("vi-VN", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };

@@ -11,6 +11,7 @@ using ThesisManagement.Api.DTOs.Reports.Command;
 using ThesisManagement.Api.DTOs.Reports.Query;
 using ThesisManagement.Api.Models;
 using ThesisManagement.Api.Services;
+using ThesisManagement.Api.Services.Reports;
 
 namespace ThesisManagement.Api.Controllers
 {
@@ -25,6 +26,7 @@ namespace ThesisManagement.Api.Controllers
         private readonly IGetLecturerSubmissionListQuery _getLecturerSubmissionListQuery;
         private readonly ISubmitStudentProgressReportCommand _submitStudentProgressReportCommand;
         private readonly IReviewLecturerSubmissionCommand _reviewLecturerSubmissionCommand;
+        private readonly IProgressEvaluationDocumentService _evaluationService;
 
         public ReportsController(
             IUnitOfWork uow,
@@ -32,7 +34,8 @@ namespace ThesisManagement.Api.Controllers
             IGetStudentProgressHistoryQuery getStudentProgressHistoryQuery,
             IGetLecturerSubmissionListQuery getLecturerSubmissionListQuery,
             ISubmitStudentProgressReportCommand submitStudentProgressReportCommand,
-            IReviewLecturerSubmissionCommand reviewLecturerSubmissionCommand)
+            IReviewLecturerSubmissionCommand reviewLecturerSubmissionCommand,
+            IProgressEvaluationDocumentService evaluationService)
         {
             _uow = uow;
             _getStudentDashboardQuery = getStudentDashboardQuery;
@@ -40,6 +43,7 @@ namespace ThesisManagement.Api.Controllers
             _getLecturerSubmissionListQuery = getLecturerSubmissionListQuery;
             _submitStudentProgressReportCommand = submitStudentProgressReportCommand;
             _reviewLecturerSubmissionCommand = reviewLecturerSubmissionCommand;
+            _evaluationService = evaluationService;
         }
 
         [HttpGet("student/dashboard")]
@@ -314,6 +318,67 @@ namespace ThesisManagement.Api.Controllers
                 return StatusCode(result.StatusCode, ApiResponse<object>.Fail(result.ErrorMessage ?? "Request failed", result.StatusCode));
 
             return Ok(ApiResponse<object>.SuccessResponse(result.Data));
+        }
+
+        [HttpGet("topics/{topicCode}/export-evaluation")]
+        public async Task<IActionResult> ExportEvaluationForm(string topicCode)
+        {
+            var topic = await _uow.Topics.Query()
+                .FirstOrDefaultAsync(x => x.TopicCode == topicCode);
+
+            if (topic == null)
+                return NotFound(ApiResponse<object>.Fail("Topic not found", 404));
+
+            var student = await _uow.StudentProfiles.Query()
+                .FirstOrDefaultAsync(x => x.StudentCode == topic.ProposerStudentCode);
+
+            var lecturer = await _uow.LecturerProfiles.Query()
+                .FirstOrDefaultAsync(x => x.LecturerCode == topic.SupervisorLecturerCode);
+
+            var major = student != null && !string.IsNullOrWhiteSpace(student.DepartmentCode)
+                ? await _uow.Departments.Query().FirstOrDefaultAsync(x => x.DepartmentCode == student.DepartmentCode)
+                : null;
+
+            var now = DateTime.Now;
+            var data = new ProgressEvaluationTemplateDataDto
+            {
+                LecturerName = lecturer?.FullName,
+                LecturerDegree = lecturer?.Degree,
+                StudentName = student?.FullName,
+                StudentCode = student?.StudentCode,
+                ClassName = student?.ClassCode,
+                EnrollmentYear = student?.EnrollmentYear?.ToString(),
+                MajorName = major?.Name,
+                TopicTitle = topic.Title,
+
+                ReviewQuality = topic.ReviewQuality,
+                ReviewAttitude = topic.ReviewAttitude,
+                ReviewCapability = topic.ReviewCapability,
+                ReviewResultProcessing = topic.ReviewResultProcessing,
+                ReviewAchievements = topic.ReviewAchievements,
+                ReviewLimitations = topic.ReviewLimitations,
+                ReviewConclusion = topic.ReviewConclusion,
+
+                NumChapters = topic.NumChapters?.ToString(),
+                NumPages = topic.NumPages?.ToString(),
+                NumTables = topic.NumTables?.ToString(),
+                NumFigures = topic.NumFigures?.ToString(),
+                NumReferences = topic.NumReferences?.ToString(),
+                NumVnReferences = topic.NumVietnameseReferences?.ToString(),
+                NumForeignReferences = topic.NumForeignReferences?.ToString(),
+
+                ScoreNumber = topic.Score?.ToString("F1"),
+                ScoreInWords = topic.ScoreInWords,
+
+                Day = now.Day.ToString("D2"),
+                Month = now.Month.ToString("D2"),
+                Year = now.Year.ToString()
+            };
+
+            var fileBytes = await _evaluationService.BuildEvaluationFormAsync(data);
+            var fileName = $"Phieu_Danh_Gia_{topicCode}.docx";
+
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
         }
     }
 }

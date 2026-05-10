@@ -23,13 +23,21 @@ namespace ThesisManagement.Api.Services
             var key = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is not configured.");
             var expireMinutes = int.TryParse(_configuration["Jwt:ExpireMinutes"], out var minutes) ? minutes : 120;
 
-            var claims = new[]
+            var claimsList = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
                 new Claim(ClaimTypes.Name, user.UserCode),
-                new Claim(ClaimTypes.Role, user.Role),
                 new Claim("userCode", user.UserCode)
             };
+
+            if (!string.IsNullOrEmpty(user.Role))
+            {
+                var roles = user.Role.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var role in roles)
+                {
+                    claimsList.Add(new Claim(ClaimTypes.Role, role.Trim()));
+                }
+            }
 
             var credentials = new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
@@ -38,7 +46,7 @@ namespace ThesisManagement.Api.Services
             var tokenDescriptor = new JwtSecurityToken(
                 issuer: issuer,
                 audience: audience,
-                claims: claims,
+                claims: claimsList,
                 expires: DateTime.UtcNow.AddMinutes(expireMinutes),
                 signingCredentials: credentials);
 
