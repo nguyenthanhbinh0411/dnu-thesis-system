@@ -7,6 +7,8 @@ export interface User {
   fullName?: string;
   email?: string;
   role?: Role;
+  roles?: Role[];
+  activeRole?: Role;
   topicCode?: string;
   createdAt?: string;
   lastUpdated?: string;

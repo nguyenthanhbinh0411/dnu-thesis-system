@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Users, ShieldCheck, GraduationCap } from "lucide-react";
 import {
   login as loginApi,
   parseLoginResponse,
@@ -12,6 +13,7 @@ import {
   clearAuthSession,
   consumeSessionExpiredMessage,
   getRoleClaimFromAccessToken,
+  getAllRolesFromAccessToken,
   setLecturerCode,
   setAuthSession,
   setStudentCode,
@@ -77,6 +79,9 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [tempUser, setTempUser] = useState<any>(null);
   const auth = useAuth();
   const navigate = useNavigate();
 
@@ -147,10 +152,20 @@ const LoginPage: React.FC = () => {
           // Ignore localStorage failures and continue auth flow
         }
 
-        const role =
-          normalizeRole(getRoleClaimFromAccessToken(resp.accessToken)) ||
-          normalizeRole(user.role);
+        const roles = getAllRolesFromAccessToken(resp.accessToken);
+        
+        if (roles.length > 1) {
+          setTempUser(user);
+          setAvailableRoles(roles);
+          setShowRoleSelector(true);
+          setLoading(false);
+          return;
+        }
+
+        const role = normalizeRole(roles[0] || user.role);
         user.role = role;
+        user.roles = roles;
+        user.activeRole = role;
 
         await cacheRoleProfileCode(role, user.userCode || "");
 
@@ -176,8 +191,29 @@ const LoginPage: React.FC = () => {
         error?.response?.data?.message ?? error.message ?? "Lỗi kết nối",
       );
     } finally {
-      setLoading(false);
+      if (!showRoleSelector) {
+        setLoading(false);
+      }
     }
+  }
+
+  async function handleRoleSelect(role: string) {
+    if (!tempUser) return;
+    setLoading(true);
+    
+    const normalizedRole = normalizeRole(role);
+    const userToLogin = {
+      ...tempUser,
+      role: normalizedRole,
+      activeRole: normalizedRole,
+      roles: availableRoles
+    };
+
+    await cacheRoleProfileCode(normalizedRole, userToLogin.userCode || "");
+    
+    auth.login(userToLogin);
+    const redirect = RolePaths[normalizedRole] ?? "/";
+    navigate(redirect);
   }
 
   return (
@@ -194,6 +230,191 @@ const LoginPage: React.FC = () => {
         overflow: "hidden",
       }}
     >
+      {showRoleSelector && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "linear-gradient(135deg, #001C3D 0%, #002855 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "500px",
+              background: "#FFFFFF",
+              borderRadius: "24px",
+              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+              overflow: "hidden",
+              animation: "slideUp 0.5s ease-out",
+            }}
+          >
+
+            <div style={{ padding: "40px" }}>
+              {/* Logo Area */}
+              <div
+                style={{
+                  width: "100px",
+                  height: "100px",
+                  background: "#FFFFFF",
+                  borderRadius: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 24px",
+                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
+                  padding: "10px",
+                }}
+              >
+                <img
+                  src="/dnu_logo.png"
+                  alt="DNU"
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              </div>
+
+              <h2
+                style={{
+                  fontSize: "26px",
+                  fontWeight: 800,
+                  color: "#001C3D",
+                  marginBottom: "8px",
+                  textAlign: "center",
+                }}
+              >
+                Không gian làm việc
+              </h2>
+              <p
+                style={{
+                  fontSize: "15px",
+                  color: "#64748B",
+                  marginBottom: "32px",
+                  textAlign: "center",
+                  lineHeight: "1.6",
+                }}
+              >
+                Vui lòng chọn vai trò để bắt đầu truy cập hệ thống
+              </p>
+
+              <div style={{ display: "grid", gap: "16px" }}>
+                {availableRoles.map((role) => (
+                  <button
+                    key={role}
+                    onClick={() => handleRoleSelect(role)}
+                    style={{
+                      position: "relative",
+                      padding: "24px",
+                      borderRadius: "16px",
+                      border: "none",
+                      background: role === "ADMIN" ? "#001C3D" : "#F37021",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "20px",
+                      cursor: "pointer",
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                      textAlign: "left",
+                      width: "100%",
+                      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+                      overflow: "hidden",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.boxShadow = role === "ADMIN" 
+                        ? "0 12px 30px rgba(0, 28, 61, 0.3)" 
+                        : "0 12px 30px rgba(243, 112, 33, 0.3)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.12)";
+                    }}
+                  >
+                    {/* Background Pattern */}
+                    <div style={{
+                      position: "absolute",
+                      right: "-10px",
+                      bottom: "-10px",
+                      opacity: 0.1,
+                      color: "#FFFFFF",
+                      transform: "rotate(-15deg)"
+                    }}>
+                      {role === "ADMIN" ? <ShieldCheck size={100} /> : <GraduationCap size={100} />}
+                    </div>
+
+                    <div
+                      style={{
+                        width: "52px",
+                        height: "52px",
+                        borderRadius: "12px",
+                        background: "rgba(255, 255, 255, 0.2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#FFFFFF",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {role === "ADMIN" ? <ShieldCheck size={28} /> : <GraduationCap size={28} />}
+                    </div>
+                    <div style={{ flex: 1, zIndex: 1 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          color: "#FFFFFF",
+                          fontSize: "18px",
+                          marginBottom: "2px",
+                        }}
+                      >
+                        {role === "ADMIN" ? "Quản trị viên" : "Giảng viên"}
+                      </div>
+                      <div style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.8)" }}>
+                        {role === "ADMIN" ? "Quản lý & Phê duyệt hệ thống" : "Quản lý đồ án & Chấm điểm"}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowRoleSelector(false);
+                  clearAuthSession();
+                }}
+                style={{
+                  marginTop: "32px",
+                  background: "none",
+                  border: "none",
+                  color: "#001C3D",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "center",
+                  opacity: 0.6,
+                  transition: "opacity 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
+              >
+                Hủy và quay lại đăng nhập
+              </button>
+            </div>
+          </div>
+          <style>{`
+            @keyframes slideUp {
+              from { opacity: 0; transform: translateY(20px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>
+      )}
       {/* Background decoration */}
       <div
         style={{

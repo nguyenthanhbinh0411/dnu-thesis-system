@@ -219,8 +219,20 @@ namespace ThesisManagement.Api.Application.Command.Reports
             if (!result.Success)
                 return OperationResult<object>.Failed(result.ErrorMessage ?? "Request failed", result.StatusCode);
 
-            var reviewedSubmission = await _uow.ProgressSubmissions.GetByIdAsync(submissionId);
-            if (reviewedSubmission != null && !string.IsNullOrWhiteSpace(reviewedSubmission.StudentUserCode))
+            var reviewedSubmission = await _uow.ProgressSubmissions.Query()
+                .Include(x => x.Milestone)
+                .FirstOrDefaultAsync(x => x.SubmissionID == submissionId);
+
+            if (reviewedSubmission == null)
+                return OperationResult<object>.Failed("Submission not found after update", 404);
+
+            // Handle workflow transition if approved
+            if (IsApprovedLecturerState(dto.LecturerState))
+            {
+                await HandleWorkflowTransitionAsync(reviewedSubmission, dto);
+            }
+
+            if (!string.IsNullOrWhiteSpace(reviewedSubmission.StudentUserCode))
             {
                 await _notificationEventPublisher.PublishAsync(new NotificationEventRequest(
                     NotifCategory: "PROGRESS_REVIEW",
@@ -259,6 +271,153 @@ namespace ThesisManagement.Api.Application.Command.Reports
 
             var normalized = lecturerState.Trim().ToLowerInvariant();
             return normalized is "pending" or "cho duyet" or "chờ duyệt" or "dang cho" or "đang chờ";
+        }
+
+        private static bool IsApprovedLecturerState(string? lecturerState)
+        {
+            if (string.IsNullOrWhiteSpace(lecturerState))
+                return false;
+
+            var normalized = lecturerState.Trim().ToLowerInvariant();
+            return normalized is "approved" or "accepted" or "đã duyệt" or "da duyet" or "dat" or "đạt";
+        }
+
+        private async Task HandleWorkflowTransitionAsync(ProgressSubmission submission, ProgressSubmissionUpdateDto dto)
+        {
+            if (submission.MilestoneID == null) return;
+
+            var currentMilestone = submission.Milestone;
+            if (currentMilestone == null)
+            {
+                currentMilestone = await _uow.ProgressMilestones.GetByIdAsync(submission.MilestoneID.Value);
+            }
+
+            if (currentMilestone == null) return;
+
+            // 1. Mark current milestone as Completed
+            currentMilestone.State = "Completed";
+            currentMilestone.LastUpdated = DateTime.UtcNow;
+
+            // Set completion time based on ordinal
+            switch (currentMilestone.Ordinal)
+            {
+                case 1: currentMilestone.CompletedAt1 = DateTime.UtcNow; break;
+                case 2: currentMilestone.CompletedAt2 = DateTime.UtcNow; break;
+                case 3: currentMilestone.CompletedAt3 = DateTime.UtcNow; break;
+                case 4: currentMilestone.CompletedAt4 = DateTime.UtcNow; break;
+                case 5: currentMilestone.CompletedAt5 = DateTime.UtcNow; break;
+            }
+
+            _uow.ProgressMilestones.Update(currentMilestone);
+
+            var currentOrdinal = currentMilestone.Ordinal ?? 0;
+            var topicId = currentMilestone.TopicID;
+
+            // 2. Handle Final Milestone (Ordinal 4 - MS_FULL)
+            if (currentOrdinal == 4 || currentMilestone.MilestoneTemplateCode == "MS_FULL")
+            {
+                var topic = await _uow.Topics.GetByIdAsync(topicId);
+                if (topic != null)
+                {
+                    topic.Score = dto.Score ?? topic.Score;
+                    topic.Status = "Đủ điều kiện bảo vệ";
+                    topic.LastUpdated = DateTime.UtcNow;
+                    topic.LecturerComment = submission.LecturerComment ?? topic.LecturerComment;
+
+                    // Map Evaluation Fields (Phiếu đánh giá)
+                    topic.ReviewQuality = dto.ReviewQuality ?? topic.ReviewQuality;
+                    topic.ReviewAttitude = dto.ReviewAttitude ?? topic.ReviewAttitude;
+                    topic.ReviewCapability = dto.ReviewCapability ?? topic.ReviewCapability;
+                    topic.ReviewResultProcessing = dto.ReviewResultProcessing ?? topic.ReviewResultProcessing;
+                    topic.ReviewAchievements = dto.ReviewAchievements ?? topic.ReviewAchievements;
+                    topic.ReviewLimitations = dto.ReviewLimitations ?? topic.ReviewLimitations;
+                    topic.ReviewConclusion = dto.ReviewConclusion ?? topic.ReviewConclusion;
+                    topic.ScoreInWords = dto.ScoreInWords ?? topic.ScoreInWords;
+
+                    // Map structural fields (Kết cấu đồ án)
+                    topic.NumChapters = dto.NumChapters ?? topic.NumChapters;
+                    topic.NumPages = dto.NumPages ?? topic.NumPages;
+                    topic.NumTables = dto.NumTables ?? topic.NumTables;
+                    topic.NumFigures = dto.NumFigures ?? topic.NumFigures;
+                    topic.NumReferences = dto.NumReferences ?? topic.NumReferences;
+                    topic.NumVietnameseReferences = dto.NumVietnameseReferences ?? topic.NumVietnameseReferences;
+                    topic.NumForeignReferences = dto.NumForeignReferences ?? topic.NumForeignReferences;
+
+                    _uow.Topics.Update(topic);
+                }
+            }
+            // 3. Handle transition to next milestone
+            else if (currentOrdinal < 4)
+            {
+                var nextOrdinal = currentOrdinal + 1;
+                var nextTemplate = await _uow.MilestoneTemplates.Query()
+                    .FirstOrDefaultAsync(x => x.Ordinal == nextOrdinal);
+
+                if (nextTemplate != null)
+                {
+                    var nextMilestone = await _uow.ProgressMilestones.Query()
+                        .FirstOrDefaultAsync(x => x.TopicID == topicId && x.Ordinal == nextOrdinal);
+
+                    if (nextMilestone == null)
+                    {
+                        nextMilestone = new ProgressMilestone
+                        {
+                            MilestoneID = await GetNextProgressMilestoneIdAsync(),
+                            MilestoneCode = await GenerateMilestoneCodeAsync(),
+                            TopicID = topicId,
+                            TopicCode = currentMilestone.TopicCode,
+                            MilestoneTemplateCode = nextTemplate.MilestoneTemplateCode,
+                            Ordinal = nextOrdinal,
+                            Deadline = nextTemplate.Deadline,
+                            State = "Pending", // Initially Pending, Lazy Update will move to In Progress
+                            CreatedAt = DateTime.UtcNow,
+                            LastUpdated = DateTime.UtcNow
+                        };
+                        await _uow.ProgressMilestones.AddAsync(nextMilestone);
+                    }
+                    else if (nextMilestone.State != "Completed")
+                    {
+                        nextMilestone.State = "Pending";
+                        nextMilestone.LastUpdated = DateTime.UtcNow;
+                        _uow.ProgressMilestones.Update(nextMilestone);
+                    }
+                }
+            }
+
+            await _uow.SaveChangesAsync();
+        }
+
+        private async Task<int> GetNextProgressMilestoneIdAsync()
+        {
+            var currentMax = await _uow.ProgressMilestones.Query()
+                .Select(x => (int?)x.MilestoneID)
+                .MaxAsync() ?? 0;
+
+            return currentMax + 1;
+        }
+
+        private async Task<string> GenerateMilestoneCodeAsync()
+        {
+            var now = DateTime.UtcNow;
+            var prefix = $"MS{now:yyMMdd}";
+
+            var recentCodes = await _uow.ProgressMilestones.Query()
+                .Where(x => x.MilestoneCode.StartsWith(prefix))
+                .OrderByDescending(x => x.MilestoneCode)
+                .Take(1)
+                .Select(x => x.MilestoneCode)
+                .ToListAsync();
+
+            var sequence = 1;
+            var lastCode = recentCodes.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(lastCode) && lastCode.Length >= prefix.Length + 3)
+            {
+                var suffix = lastCode.Substring(prefix.Length, 3);
+                if (int.TryParse(suffix, out var parsed))
+                    sequence = parsed + 1;
+            }
+
+            return $"{prefix}{sequence:D3}";
         }
 
         private static ReportSubmissionFileDto MapFile(SubmissionFile file)

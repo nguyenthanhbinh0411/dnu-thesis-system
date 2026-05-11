@@ -199,4 +199,40 @@ Chúc bạn hỗ trợ sinh viên DNU thật tốt!
             ChatSessionID = session!.ChatSessionID
         };
     }
+    public async Task<string> GetRawCompletionAsync(string systemPrompt, string userMessage, bool useJsonMode = false)
+    {
+        try
+        {
+            var requestBody = new
+            {
+                model = _model,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userMessage }
+                },
+                temperature = 0.2, // Lower temperature for more consistent JSON
+                response_format = useJsonMode ? new { type = "json_object" } : null
+            };
+
+            var serializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var content = new StringContent(JsonSerializer.Serialize(requestBody, serializerOptions), Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync("chat/completions", content);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Groq API Error ({response.StatusCode}): {responseString}");
+            }
+
+            using var doc = JsonDocument.Parse(responseString);
+            var root = doc.RootElement;
+            return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Lỗi khi gọi Groq API (Raw): {ex.Message}");
+        }
+    }
 }

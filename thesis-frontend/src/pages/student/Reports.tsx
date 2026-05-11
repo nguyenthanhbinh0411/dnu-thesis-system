@@ -460,7 +460,7 @@ const Reports: React.FC = () => {
         {/* --- RIGHT: HISTORY TABLE --- */}
         <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 flex flex-col overflow-hidden h-full">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-             <h2 className="text-sm font-black text-slate-900 flex items-center gap-2"><Calendar size={16} className="text-[#003D82]" />Lịch sử ({reports.length})</h2>
+             <h2 className="text-sm font-black text-slate-900 flex items-center gap-2"><Clock size={16} className="text-[#003D82]" />Lịch sử nộp báo cáo ({reports.length})</h2>
           </div>
           <div className="flex-1 overflow-y-auto">
             <table className="w-full custom-table border-collapse">
@@ -480,10 +480,14 @@ const Reports: React.FC = () => {
                   reports.map((report, idx) => {
                     const tone = getStatusTone(report.lecturerState);
                     return (
-                      <tr key={report.submissionID}>
+                      <tr 
+                        key={report.submissionID}
+                        className="cursor-pointer hover:bg-blue-50/30 group/row transition-all relative"
+                        onClick={() => { setSelectedReport(report); setShowReportDetailModal(true); }}
+                      >
                         <td className="font-black text-slate-400">#{report.attemptNumber || reports.length - idx}</td>
                         <td className="font-bold text-slate-800">
-                           <div className="truncate max-w-[150px]" title={report.reportTitle}>{report.reportTitle}</div>
+                           <div className="truncate max-w-[150px] group-hover/row:text-[#003D82] transition-colors" title={report.reportTitle}>{report.reportTitle}</div>
                         </td>
                         <td className="text-slate-500 font-medium whitespace-nowrap">{new Date(report.submittedAt).toLocaleDateString("vi-VN")}</td>
                         <td>
@@ -492,11 +496,11 @@ const Reports: React.FC = () => {
                               {getStatusText(report.lecturerState)}
                            </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                            <div className="flex items-center justify-center gap-1">
-                              <button onClick={() => { setSelectedReport(report); setShowReportDetailModal(true); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-[#003D82]" title="Xem"><Eye size={14} /></button>
+                              <button onClick={() => { setSelectedReport(report); setShowReportDetailModal(true); }} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-[#003D82] shadow-sm border border-transparent hover:border-slate-100 transition-all" title="Xem chi tiết"><Eye size={14} /></button>
                               {report.files?.[0] && (
-                                <button onClick={(e) => handleDownloadFile(report.files![0], e)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-emerald-500" title="Tải"><Download size={14} /></button>
+                                <button onClick={(e) => handleDownloadFile(report.files![0], e)} className="p-2 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-500 shadow-sm border border-transparent hover:border-slate-100 transition-all" title="Tải tài liệu"><Download size={14} /></button>
                               )}
                            </div>
                         </td>
@@ -512,24 +516,83 @@ const Reports: React.FC = () => {
 
       {showReportDetailModal && selectedReport && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-           <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-              <div className="bg-[#003D82] p-6 text-white flex justify-between items-center">
-                 <h3 className="text-sm font-black uppercase tracking-widest">Chi tiết báo cáo</h3>
-                 <button onClick={() => setShowReportDetailModal(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={20} /></button>
-              </div>
-              <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
-                 <div className="flex justify-between items-center">
-                    <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Mốc tiến độ</span><span className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-black text-slate-900 uppercase">{selectedReport.milestoneCode}</span></div>
-                    <div className="text-right"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ngày nộp</span><span className="text-xs font-bold text-slate-600">{new Date(selectedReport.submittedAt).toLocaleDateString('vi-VN')}</span></div>
+           <div className="bg-white w-full max-w-4xl rounded-[32px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+              <div className="bg-gradient-to-r from-[#003D82] to-[#0052a2] p-6 text-white flex justify-between items-center">
+                 <div>
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] opacity-80 mb-0.5">Chi tiết lịch sử nộp báo cáo</h3>
+                    <p className="text-[10px] font-bold text-blue-100 flex items-center gap-2"><Clock size={12} /> Lần nộp #{selectedReport.attemptNumber || "N/A"}</p>
                  </div>
-                 <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Tiêu đề</span><p className="text-lg font-black text-slate-900 leading-tight">{selectedReport.reportTitle}</p></div>
-                 <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Mô tả</span><div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-sm text-slate-600 font-bold italic leading-relaxed">"{selectedReport.reportDescription}"</div></div>
-                 {selectedReport.lecturerComment && (
-                    <div><span className="text-[10px] font-black text-orange-500 uppercase tracking-widest block mb-2 flex items-center gap-2"><MessageSquare size={14} /> Phản hồi Giảng viên</span><div className="bg-orange-50 p-5 rounded-2xl border border-orange-100 text-sm text-slate-700 font-bold">{selectedReport.lecturerComment}</div></div>
-                 )}
+                 <button onClick={() => setShowReportDetailModal(false)} className="p-2 hover:bg-white/10 rounded-xl transition-all"><X size={20} /></button>
               </div>
-              <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                 <button onClick={() => setShowReportDetailModal(false)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest">Đóng</button>
+              <div className="p-8 space-y-6 max-h-[65vh] overflow-y-auto">
+                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="space-y-6">
+                       <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Mốc tiến độ</span>
+                             <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-[#F37021]"></div>
+                                <span className="text-xs font-black text-slate-900 uppercase">{selectedReport.milestoneCode}</span>
+                             </div>
+                          </div>
+                          <div className="space-y-1 text-right">
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Ngày nộp</span>
+                             <div className="text-xs font-black text-slate-900">{new Date(selectedReport.submittedAt).toLocaleString('vi-VN')}</div>
+                          </div>
+                       </div>
+
+                       <div className="p-5 rounded-[20px] bg-slate-50 border border-slate-100 space-y-3">
+                          <div className="space-y-1">
+                             <span className="text-[9px] font-black text-[#003D82] uppercase tracking-widest block">Tiêu đề báo cáo</span>
+                             <p className="text-lg font-black text-slate-900 leading-tight">{selectedReport.reportTitle}</p>
+                          </div>
+                          <div className="space-y-1">
+                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Mô tả nội dung</span>
+                             <p className="text-xs text-slate-600 font-bold italic leading-relaxed">"{selectedReport.reportDescription || "Không có mô tả"}"</p>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="space-y-6">
+                       {selectedReport.files && selectedReport.files.length > 0 && (
+                          <div className="space-y-2">
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Tài liệu đính kèm</span>
+                             <div className="space-y-2">
+                                {selectedReport.files.map((file) => (
+                                   <div key={file.fileID} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-[#003D82] transition-all group">
+                                      <div className="flex items-center gap-3">
+                                         <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#003D82] flex items-center justify-center group-hover:bg-[#003D82] group-hover:text-white transition-all"><FileText size={16} /></div>
+                                         <div className="max-w-[200px]">
+                                            <p className="text-[11px] font-black text-slate-900 truncate" title={file.fileName}>{file.fileName}</p>
+                                         </div>
+                                      </div>
+                                      <button onClick={(e) => handleDownloadFile(file, e)} className="p-2 text-slate-400 hover:text-emerald-500 transition-all" title="Tải xuống"><Download size={16} /></button>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       )}
+
+                       {selectedReport.lecturerComment && (
+                          <div className="p-5 rounded-[20px] bg-orange-50 border border-orange-100 space-y-2">
+                             <span className="text-[9px] font-black text-[#F37021] uppercase tracking-widest flex items-center gap-2">
+                                <MessageSquare size={12} /> Phản hồi từ giảng viên
+                             </span>
+                             <p className="text-xs text-slate-700 font-bold leading-relaxed">{selectedReport.lecturerComment}</p>
+                             {selectedReport.feedbackLevel && (
+                                <div className="pt-1">
+                                   <span className="px-2 py-0.5 bg-white rounded-md text-[9px] font-black text-[#F37021] uppercase border border-orange-200">
+                                      Đánh giá: {getFeedbackLevelText(selectedReport.feedbackLevel)}
+                                   </span>
+                                </div>
+                             )}
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                 <button onClick={() => setShowReportDetailModal(false)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-100 transition-all">Đóng</button>
               </div>
            </div>
         </div>

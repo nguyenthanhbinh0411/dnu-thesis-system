@@ -11,6 +11,9 @@ import {
   X,
   KeyRound,
   Sidebar,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -830,6 +833,40 @@ const LecturerLayout: React.FC = () => {
                   </div>
 
                   <div style={{ padding: "8px" }}>
+                    {auth.user?.roles?.includes("ADMIN") && (
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          auth.switchRole("ADMIN");
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "14px",
+                          width: "100%",
+                          padding: "14px 18px",
+                          background: "rgba(59, 130, 246, 0.1)",
+                          border: "none",
+                          borderRadius: "12px",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          color: "#3b82f6",
+                          fontWeight: 600,
+                          transition: "all 0.3s ease",
+                          marginBottom: "8px"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.1)";
+                        }}
+                      >
+                        <ShieldCheck size={18} color="#3b82f6" />
+                        Giao diện Quản trị
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setShowDropdown(false);

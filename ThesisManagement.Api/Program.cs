@@ -83,6 +83,7 @@ using ThesisManagement.Api.Services.DefenseOperationsExport;
 using ThesisManagement.Api.Services.FileStorage;
 using ThesisManagement.Api.Services.DefenseDocuments;
 using ThesisManagement.Api.Services.TopicRenameRequests;
+using ThesisManagement.Api.Services.Reports;
 using ThesisManagement.Api.Application.Command.TopicRenameRequests;
 using ThesisManagement.Api.Application.Query.TopicRenameRequests;
 using ThesisManagement.Api.Mappings;
@@ -111,6 +112,7 @@ builder.Services.AddControllers(options =>
     options.JsonSerializerOptions.DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
+builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 
 // CORS
@@ -284,6 +286,8 @@ builder.Services.AddScoped<IDeleteTopicRenameRequestTemplateCommand, DeleteTopic
 builder.Services.AddScoped<IReviewTopicRenameRequestCommand, ReviewTopicRenameRequestCommand>();
 builder.Services.AddScoped<IGenerateTopicRenameRequestTemplateCommand, GenerateTopicRenameRequestTemplateCommand>();
 builder.Services.AddScoped<IReportQueryProcessor, ReportQueryProcessor>();
+builder.Services.AddScoped<IThesisAiAnalysisService, ThesisAiAnalysisService>();
+builder.Services.AddScoped<IProgressEvaluationDocumentService, ProgressEvaluationDocumentService>();
 builder.Services.AddScoped<IGetStudentDashboardQuery, GetStudentDashboardQuery>();
 builder.Services.AddScoped<IGetStudentProgressHistoryQuery, GetStudentProgressHistoryQuery>();
 builder.Services.AddScoped<IGetLecturerSubmissionListQuery, GetLecturerSubmissionListQuery>();

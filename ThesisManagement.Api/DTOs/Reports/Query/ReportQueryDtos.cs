@@ -17,7 +17,23 @@ namespace ThesisManagement.Api.DTOs.Reports.Query
         string? CatalogTopicCode,
         string? SupervisorLecturerCode,
         DateTime? CreatedAt,
-        DateTime? LastUpdated);
+        DateTime? LastUpdated,
+        decimal? Score,
+        string? ReviewQuality = null,
+        string? ReviewAttitude = null,
+        string? ReviewCapability = null,
+        string? ReviewResultProcessing = null,
+        string? ReviewAchievements = null,
+        string? ReviewLimitations = null,
+        string? ReviewConclusion = null,
+        string? ScoreInWords = null,
+        int? NumChapters = null,
+        int? NumPages = null,
+        int? NumTables = null,
+        int? NumFigures = null,
+        int? NumReferences = null,
+        int? NumVietnameseReferences = null,
+        int? NumForeignReferences = null);
 
     public record ReportMilestoneDto(
         int MilestoneID,

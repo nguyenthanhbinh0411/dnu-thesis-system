@@ -456,7 +456,23 @@ namespace ThesisManagement.Api.Application.Query.Reports
                 topic.CatalogTopicCode,
                 topic.SupervisorLecturerCode,
                 topic.CreatedAt,
-                topic.LastUpdated);
+                topic.LastUpdated,
+                topic.Score,
+                topic.ReviewQuality,
+                topic.ReviewAttitude,
+                topic.ReviewCapability,
+                topic.ReviewResultProcessing,
+                topic.ReviewAchievements,
+                topic.ReviewLimitations,
+                topic.ReviewConclusion,
+                topic.ScoreInWords,
+                topic.NumChapters,
+                topic.NumPages,
+                topic.NumTables,
+                topic.NumFigures,
+                topic.NumReferences,
+                topic.NumVietnameseReferences,
+                topic.NumForeignReferences);
 
         private static ReportSupervisorDto MapSupervisor(LecturerProfile supervisor, int? currentGuidingCountOverride = null)
             => new(
