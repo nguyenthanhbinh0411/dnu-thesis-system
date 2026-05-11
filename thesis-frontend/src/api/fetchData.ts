@@ -53,8 +53,11 @@ type BodyInitCompatible = BodyInit | object | undefined;
 
 type FetchDataOptions = Omit<RequestInit, "body" | "signal"> & {
   body?: BodyInitCompatible;
+  params?: Record<string, unknown>;
+  query?: Record<string, unknown>;
   timeoutMs?: number;
   signal?: AbortSignal;
+  skipAuthRedirect?: boolean;
 };
 
 export class FetchDataError extends Error {
@@ -149,8 +152,37 @@ export async function fetchData<TResponse = unknown>(
   path: string,
   options: FetchDataOptions = {},
 ): Promise<TResponse> {
-  const { body, headers, timeoutMs, signal, ...rest } = options;
-  const url = resolveUrl(path);
+  const {
+    body,
+    headers,
+    timeoutMs,
+    signal,
+    skipAuthRedirect,
+    params,
+    query,
+    ...rest
+  } = options;
+
+  let url = resolveUrl(path);
+
+  // Merge params and query into URL search parameters
+  const searchParams = new URLSearchParams();
+  const mergedParams = { ...params, ...query };
+
+  Object.entries(mergedParams).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (Array.isArray(value)) {
+        value.forEach((v) => searchParams.append(key, String(v)));
+      } else {
+        searchParams.append(key, String(value));
+      }
+    }
+  });
+
+  const queryString = searchParams.toString();
+  if (queryString) {
+    url += (url.includes("?") ? "&" : "?") + queryString;
+  }
 
   // Attach Authorization header when token exists
   const token = getAccessToken();
@@ -277,6 +309,7 @@ export async function fetchData<TResponse = unknown>(
     if (
       response.status === 401 &&
       !isLoginRequest &&
+      !skipAuthRedirect &&
       typeof window !== "undefined"
     ) {
       clearAuthSession();

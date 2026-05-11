@@ -335,9 +335,8 @@ const DefenseTermLecturersSection = forwardRef<
   return (
     <section
       style={{
-        marginTop: 16,
         border: "1px solid #cbd5e1",
-        borderRadius: 12,
+        borderRadius: 10,
         background: "#ffffff",
         boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
         overflow: "hidden",
@@ -350,58 +349,39 @@ const DefenseTermLecturersSection = forwardRef<
           alignItems: "center",
           gap: 12,
           flexWrap: "wrap",
-          padding: 18,
+          padding: "14px 18px",
           borderBottom: "1px solid #e2e8f0",
         }}
       >
         <div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
             Giảng viên trong đợt
           </div>
-          <div style={{ marginTop: 4, color: "#475569", fontSize: 13 }}>
-            Quản lý danh sách giảng viên và role của từng người trong đợt bảo
-            vệ.
+          <div style={{ marginTop: 2, color: "#475569", fontSize: 12 }}>
+            {rows.length} hàng
           </div>
         </div>
-        <button
-          type="button"
-          onClick={openAdd}
-          style={{
-            border: "1px solid #f37021",
-            background: "#f37021",
-            color: "#ffffff",
-            borderRadius: 10,
-            padding: "10px 14px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          <Plus size={15} /> Thêm giảng viên
-        </button>
       </div>
 
       <div
         style={{
-          padding: 14,
+          padding: "12px 18px",
           display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+          gridTemplateColumns: "2fr 1fr 1fr",
           gap: 10,
           borderBottom: "1px solid #e2e8f0",
         }}
       >
-        <label style={{ display: "grid", gap: 6, gridColumn: "1 / span 2" }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Tìm kiếm</span>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontWeight: 600, fontSize: 11, color: "#0f172a" }}>Tìm kiếm</span>
           <div style={{ position: "relative" }}>
             <Search
-              size={15}
+              size={13}
               style={{
                 position: "absolute",
-                left: 12,
-                top: 11,
-                color: "#f37021",
+                left: 10,
+                top: 9,
+                color: "#1e3a5f",
               }}
             />
             <input
@@ -411,14 +391,15 @@ const DefenseTermLecturersSection = forwardRef<
               style={{
                 width: "100%",
                 border: "1px solid #cbd5e1",
-                borderRadius: 10,
-                padding: "10px 12px 10px 36px",
+                borderRadius: 8,
+                padding: "8px 10px 8px 32px",
+                fontSize: 12,
               }}
             />
           </div>
         </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Khoa/Bộ môn</span>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontWeight: 600, fontSize: 11, color: "#0f172a" }}>Khoa</span>
           <input
             value={filters.departmentCode}
             onChange={(event) =>
@@ -429,195 +410,53 @@ const DefenseTermLecturersSection = forwardRef<
             }
             style={{
               border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontSize: 12,
             }}
           />
         </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Học vị</span>
-          <input
-            value={filters.degree}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, degree: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Role</span>
-          <input
-            value={filters.role}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, role: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Chính</span>
-          <select
-            value={filters.isPrimary}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, isPrimary: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          >
-            <option value="">Tất cả</option>
-            <option value="true">Có</option>
-            <option value="false">Không</option>
-          </select>
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Từ ngày</span>
-          <input
-            type="date"
-            value={filters.fromDate}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, fromDate: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Đến ngày</span>
-          <input
-            type="date"
-            value={filters.toDate}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, toDate: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Tag codes</span>
-          <input
-            value={filters.tagCodes}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, tagCodes: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Tags</span>
-          <input
-            value={filters.tags}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, tags: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Sắp xếp</span>
-          <select
-            value={filters.sortBy}
-            onChange={(event) =>
-              setFilters((prev) => ({ ...prev, sortBy: event.target.value }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          >
-            <option value="createdAt">CreatedAt</option>
-            <option value="updatedAt">UpdatedAt</option>
-            <option value="lecturerCode">LecturerCode</option>
-            <option value="userCode">UserCode</option>
-          </select>
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Giảm dần</span>
-          <select
-            value={filters.sortDescending}
-            onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                sortDescending: event.target.value,
-              }))
-            }
-            style={{
-              border: "1px solid #cbd5e1",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          >
-            <option value="true">Có</option>
-            <option value="false">Không</option>
-          </select>
-        </label>
-        <div
-          style={{
-            gridColumn: "1 / -1",
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
           <button
             type="button"
             onClick={() => setPage(1)}
             style={{
-              border: "1px solid #f37021",
-              background: "#f37021",
+              border: "1px solid #1e3a5f",
+              background: "#1e3a5f",
               color: "#ffffff",
-              borderRadius: 10,
-              padding: "10px 12px",
-              fontWeight: 700,
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontWeight: 600,
+              fontSize: 12,
               display: "inline-flex",
               alignItems: "center",
-              gap: 8,
+              gap: 6,
+              flex: 1,
             }}
           >
-            <Filter size={15} /> Áp dụng lọc
+            <Filter size={12} /> Áp dụng
           </button>
           <button
             type="button"
-            onClick={resetFilters}
+            onClick={() => {
+              setFilters(initialFilters);
+              setSearchInput("");
+              setPage(1);
+            }}
             style={{
               border: "1px solid #cbd5e1",
               background: "#ffffff",
               color: "#0f172a",
-              borderRadius: 10,
-              padding: "10px 12px",
-              fontWeight: 700,
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontWeight: 600,
+              fontSize: 12,
               display: "inline-flex",
               alignItems: "center",
-              gap: 8,
+              gap: 6,
             }}
           >
-            <RefreshCw size={15} /> Làm mới
+            <RefreshCw size={12} />
           </button>
         </div>
       </div>
@@ -625,10 +464,11 @@ const DefenseTermLecturersSection = forwardRef<
       {error ? (
         <div
           style={{
-            padding: 14,
+            padding: 12,
             color: "#b91c1c",
             background: "#fff1f2",
             borderBottom: "1px solid #fecdd3",
+            fontSize: 12,
           }}
         >
           {error}
@@ -639,52 +479,44 @@ const DefenseTermLecturersSection = forwardRef<
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-              <th style={{ padding: 12 }}>Mã GV</th>
-              <th style={{ padding: 12 }}>Giảng viên</th>
-              <th style={{ padding: 12 }}>User</th>
-              <th style={{ padding: 12 }}>Khoa/Bộ môn</th>
-              <th style={{ padding: 12 }}>Học vị</th>
-              <th style={{ padding: 12 }}>Roles</th>
-              <th style={{ padding: 12 }}>Chính</th>
-              <th style={{ padding: 12 }}>Hành động</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>Mã GV</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>Giảng viên</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>User</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>Khoa</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>Học vị</th>
+              <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0", textTransform: "uppercase", color: "#0f172a", letterSpacing: "0.02em" }}>Hành động</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr
-                key={row.defenseTermLecturerID || row.lecturerProfileID}
+                key={row.defenseTermLecturerID}
                 style={{ borderTop: "1px solid #e2e8f0" }}
               >
                 <td
-                  style={{ padding: 12, verticalAlign: "top", fontWeight: 700 }}
+                  style={{ padding: "10px 12px", verticalAlign: "top", fontWeight: 700, fontSize: 13, color: "#0f172a" }}
                 >
                   {row.lecturerCode || "--"}
                 </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
-                  <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, color: "#0f172a" }}>
                     {row.fullName || "--"}
                   </div>
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                    ID: {row.lecturerProfileID || "--"}
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>
+                    {row.lecturerProfileID || "--"}
                   </div>
                 </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
+                <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13, color: "#0f172a" }}>
                   {row.userCode || "--"}
                 </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
+                <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13, color: "#0f172a" }}>
                   {row.departmentCode || "--"}
                 </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
+                <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13, color: "#0f172a" }}>
                   {row.degree || "--"}
                 </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
-                  {row.roles.join(", ") || "--"}
-                </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
-                  {row.isPrimary ? "Có" : "Không"}
-                </td>
-                <td style={{ padding: 12, verticalAlign: "top" }}>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <td style={{ padding: "10px 12px", verticalAlign: "top" }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       onClick={() => openEdit(row)}
@@ -692,15 +524,17 @@ const DefenseTermLecturersSection = forwardRef<
                         border: "1px solid #cbd5e1",
                         background: "#ffffff",
                         color: "#0f172a",
-                        borderRadius: 10,
-                        padding: "8px 10px",
+                        borderRadius: 8,
+                        padding: "6px 8px",
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 6,
-                        fontWeight: 700,
+                        gap: 4,
+                        fontWeight: 600,
+                        fontSize: 12,
+                        cursor: "pointer",
                       }}
                     >
-                      <Edit size={14} /> Sửa
+                      <Edit size={12} /> Sửa
                     </button>
                     <button
                       type="button"
@@ -710,15 +544,17 @@ const DefenseTermLecturersSection = forwardRef<
                         border: "1px solid #ef4444",
                         background: "#ffffff",
                         color: "#b91c1c",
-                        borderRadius: 10,
-                        padding: "8px 10px",
+                        borderRadius: 8,
+                        padding: "6px 8px",
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 6,
-                        fontWeight: 700,
+                        gap: 4,
+                        fontWeight: 600,
+                        fontSize: 12,
+                        cursor: "pointer",
                       }}
                     >
-                      <Trash2 size={14} /> Xóa
+                      <Trash2 size={12} /> Xóa
                     </button>
                   </div>
                 </td>
@@ -727,7 +563,7 @@ const DefenseTermLecturersSection = forwardRef<
             {!loading && rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={6}
                   style={{ padding: 24, textAlign: "center", color: "#64748b" }}
                 >
                   Chưa có giảng viên trong đợt.

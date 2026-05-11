@@ -208,25 +208,25 @@ public class CommitteeRosterExportService : ICommitteeRosterExportService
 
     private static void BuildFooter(IXLWorksheet sheet, int startRow, int councilCount)
     {
-        sheet.Cell(startRow, 1).Value = $"Ấn định danh sách có: {councilCount:00} Hội đồng";
-        sheet.Range(startRow, 1, startRow, 13).Merge();
+        sheet.Cell(startRow, 2).Value = $"Ấn định danh sách có: {councilCount:00} Hội đồng";
+        sheet.Range(startRow, 2, startRow, 13).Merge();
         sheet.Row(startRow).Style.Font.Bold = true;
         sheet.Row(startRow).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
         // Put date one row after the summary (remove extra blank row)
-        sheet.Cell(startRow + 1, 8).Value = "Hà Nội, ngày  tháng  năm 202 ";
-        sheet.Range(startRow + 1, 8, startRow + 1, 13).Merge();
+        sheet.Cell(startRow + 1, 9).Value = $"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}";
+        sheet.Range(startRow + 1, 9, startRow + 1, 13).Merge();
         sheet.Row(startRow + 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
         // Signatures (bold)
-        sheet.Cell(startRow + 2, 1).Value = "NGƯỜI LẬP BIỂU";
-        sheet.Cell(startRow + 2, 8).Value = "TRƯỞNG KHOA";
-        sheet.Range(startRow + 2, 1, startRow + 2, 6).Merge();
-        sheet.Range(startRow + 2, 8, startRow + 2, 13).Merge();
-        sheet.Range(startRow + 2, 1, startRow + 2, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-        sheet.Range(startRow + 2, 8, startRow + 2, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-        sheet.Range(startRow + 2, 1, startRow + 2, 6).Style.Font.Bold = true;
-        sheet.Range(startRow + 2, 8, startRow + 2, 13).Style.Font.Bold = true;
+        sheet.Cell(startRow + 2, 2).Value = "NGƯỜI LẬP BIỂU";
+        sheet.Cell(startRow + 2, 9).Value = "TRƯỞNG KHOA";
+        sheet.Range(startRow + 2, 2, startRow + 2, 6).Merge();
+        sheet.Range(startRow + 2, 9, startRow + 2, 13).Merge();
+        sheet.Range(startRow + 2, 2, startRow + 2, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        sheet.Range(startRow + 2, 9, startRow + 2, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        sheet.Range(startRow + 2, 2, startRow + 2, 6).Style.Font.Bold = true;
+        sheet.Range(startRow + 2, 9, startRow + 2, 13).Style.Font.Bold = true;
 
         // Clear a couple of rows after signatures for spacing
         sheet.Row(startRow + 3).Clear();

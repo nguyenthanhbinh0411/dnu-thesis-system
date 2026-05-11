@@ -1,4 +1,5 @@
 using AutoMapper;
+using Microsoft.EntityFrameworkCore;
 using ThesisManagement.Api.DTOs.DefenseTermStudents.Query;
 using ThesisManagement.Api.Helpers;
 using ThesisManagement.Api.Services;
@@ -23,7 +24,7 @@ namespace ThesisManagement.Api.Application.Query.DefenseTermStudents
 
         public async Task<(IEnumerable<DefenseTermStudentReadDto> Items, int TotalCount)> ExecuteAsync(DefenseTermStudentFilter filter)
         {
-            var result = await _uow.DefenseTermStudents.GetPagedWithFilterAsync(filter.Page, filter.PageSize, filter, (query, f) => query.ApplyFilter(f));
+            var result = await _uow.DefenseTermStudents.GetPagedWithFilterAsync(filter.Page, filter.PageSize, filter, (query, f) => query.Include(x => x.StudentProfile).ApplyFilter(f));
             return (result.Items.Select(x => _mapper.Map<DefenseTermStudentReadDto>(x)), result.TotalCount);
         }
     }

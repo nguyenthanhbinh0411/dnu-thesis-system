@@ -83,18 +83,18 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
                         {
                             row.RelativeItem().Column(left =>
                             {
-                                left.Item().Text("TRUONG DAI HOC DAI NAM").Bold().FontSize(12);
-                                left.Item().Text("KHOA CONG NGHE THONG TIN").Bold().FontSize(12);
+                                left.Item().Text("TRƯỜNG ĐẠI HỌC ĐẠI NAM").Bold().FontSize(12);
+                                left.Item().Text("KHOA CÔNG NGHỆ THÔNG TIN").Bold().FontSize(12);
                             });
 
                             row.RelativeItem().AlignRight().Column(right =>
                             {
-                                right.Item().Text("CONG HOA XA HOI CHU NGHIA VIET NAM").Bold().FontSize(12);
-                                right.Item().Text("Doc lap - Tu do - Hanh phuc").Bold().FontSize(12);
+                                right.Item().Text("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM").Bold().FontSize(12);
+                                right.Item().Text("Độc lập - Tự do - Hạnh phúc").Bold().FontSize(12);
                             });
                         });
 
-                        column.Item().PaddingTop(6).AlignCenter().Text("DIEU HANH CHAM DIEM BAO VE DO AN").Bold().FontSize(14);
+                        column.Item().PaddingTop(6).AlignCenter().Text("ĐIỀU HÀNH CHẤM ĐIỂM BẢO VỆ ĐỒ ÁN").Bold().FontSize(14);
                         column.Item().AlignCenter().Text(BuildPeriodTitle(snapshot)).Bold().FontSize(12);
                     });
 
@@ -114,15 +114,15 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
                         {
                             row.RelativeItem().Column(left =>
                             {
-                                left.Item().AlignCenter().Text("NGUOI LAP BIEU").Bold();
-                                left.Item().AlignCenter().PaddingTop(40).Text("Nguyen Thi Huong Giang").Bold();
+                                left.Item().AlignCenter().Text("NGƯỜI LẬP BIỂU").Bold();
+                                left.Item().AlignCenter().PaddingTop(40).Text("Nguyễn Thị Hương Giang").Bold();
                             });
 
                             row.RelativeItem().Column(right =>
                             {
-                                right.Item().AlignCenter().Text($"Ha Noi, ngay {DateTime.Now:dd} thang {DateTime.Now:MM} nam {DateTime.Now:yyyy}").Italic();
-                                right.Item().AlignCenter().Text("TRUONG KHOA").Bold();
-                                right.Item().AlignCenter().PaddingTop(40).Text("Tran Dang Cong").Bold();
+                                right.Item().AlignCenter().Text($"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}").Italic();
+                                right.Item().AlignCenter().Text("TRƯỞNG KHOA").Bold();
+                                right.Item().AlignCenter().PaddingTop(40).Text("Trần Đăng Công").Bold();
                             });
                         });
                     });
@@ -147,20 +147,20 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
 
         private static void WriteHeader(IXLWorksheet worksheet, DefenseOperationsExportSnapshotDto snapshot, ref int row)
         {
-            MergeAndStyle(worksheet, row, 1, row, 6, "TRUONG DAI HOC DAI NAM", true, 12);
-            MergeAndStyle(worksheet, row, 7, row, 12, "CONG HOA XA HOI CHU NGHIA VIET NAM", true, 12);
+            MergeAndStyle(worksheet, row, 1, row, 6, "TRƯỜNG ĐẠI HỌC ĐẠI NAM", true, 12);
+            MergeAndStyle(worksheet, row, 7, row, 12, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", true, 12);
             row++;
-            MergeAndStyle(worksheet, row, 1, row, 6, "KHOA CONG NGHE THONG TIN", true, 12);
-            MergeAndStyle(worksheet, row, 7, row, 12, "Doc lap - Tu do - Hanh phuc", true, 12);
+            MergeAndStyle(worksheet, row, 1, row, 6, "KHOA CÔNG NGHỆ THÔNG TIN", true, 12);
+            MergeAndStyle(worksheet, row, 7, row, 12, "Độc lập - Tự do - Hạnh phúc", true, 12);
             row++;
             row++;
-            MergeAndStyle(worksheet, row, 1, row, 12, "DIEU HANH CHAM DIEM BAO VE DO AN", true, 14);
+            MergeAndStyle(worksheet, row, 1, row, 12, "ĐIỀU HÀNH CHẤM ĐIỂM BẢO VỆ ĐỒ ÁN", true, 14);
             row++;
             MergeAndStyle(worksheet, row, 1, row, 12, BuildPeriodTitle(snapshot), true, 12);
             row += 2;
 
             var period = snapshot.State;
-            var metaText = $"Trang thai: {BuildStatusLabel(period)} | Bat dau: {FormatDate(period.StartDate)} | Ket thuc: {FormatDate(period.EndDate)} | Con lai: {BuildRemainingDays(period)} ngay";
+            var metaText = $"Trạng thái: {BuildStatusLabel(period)} | Bắt đầu: {FormatDate(period.StartDate)} | Kết thúc: {FormatDate(period.EndDate)} | Còn lại: {BuildRemainingDays(period)} ngày";
             MergeAndStyle(worksheet, row, 1, row, 12, metaText, false, 10);
             row += 2;
         }
@@ -399,13 +399,13 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
 
         private static void WriteSignatureSection(IXLWorksheet worksheet, DefenseOperationsExportSnapshotDto snapshot, ref int row)
         {
-            MergeAndStyle(worksheet, row, 1, row, 6, "NGUOI LAP BIEU", true, 11);
-            MergeAndStyle(worksheet, row, 7, row, 12, "TRUONG KHOA", true, 11);
+            MergeAndStyle(worksheet, row, 2, row, 6, "NGƯỜI LẬP BIỂU", true, 11);
+            MergeAndStyle(worksheet, row, 8, row, 12, "TRƯỞNG KHOA", true, 11);
             row += 3;
-            MergeAndStyle(worksheet, row, 1, row, 6, "Nguyen Thi Huong Giang", true, 11);
-            MergeAndStyle(worksheet, row, 7, row, 12, "Tran Dang Cong", true, 11);
+            MergeAndStyle(worksheet, row, 2, row, 6, "Nguyễn Thị Hương Giang", true, 11);
+            MergeAndStyle(worksheet, row, 8, row, 12, "Trần Đăng Công", true, 11);
             row += 1;
-            MergeAndStyle(worksheet, row, 1, row, 12, $"Ha Noi, ngay {DateTime.Now:dd} thang {DateTime.Now:MM} nam {DateTime.Now:yyyy}", false, 10);
+            MergeAndStyle(worksheet, row, 8, row, 12, $"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}", false, 10);
         }
 
         private static void WriteSectionTitle(IXLWorksheet worksheet, int row, int startCol, int endCol, string title)
@@ -444,15 +444,26 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
                 cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+
+                var normalizedHeader = headers[i].Trim().ToLowerInvariant();
+                if (normalizedHeader.Contains("de tai") || normalizedHeader.Contains("topictitle"))
+                {
+                    worksheet.Column(startCol + i).Width = 38;
+                }
+                else if (normalizedHeader.Contains("noi dung") || normalizedHeader.Contains("review"))
+                {
+                    worksheet.Column(startCol + i).Width = 40;
+                }
             }
         }
 
         private static void WriteDataRow(IXLWorksheet worksheet, int row, int startCol, IReadOnlyList<object> values)
         {
+            var maxTextLength = 0;
             for (var i = 0; i < values.Count; i++)
             {
                 var cell = worksheet.Cell(row, startCol + i);
-                cell.Value = values[i] switch
+                var cellText = values[i] switch
                 {
                     null => string.Empty,
                     DateTime dt => dt == default ? string.Empty : dt.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
@@ -460,6 +471,8 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
                     bool b => b ? "YES" : "NO",
                     _ => values[i]?.ToString() ?? string.Empty
                 };
+                cell.Value = cellText;
+                maxTextLength = Math.Max(maxTextLength, cellText.Length);
                 cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
                 cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
                 cell.Style.Alignment.WrapText = true;
@@ -468,6 +481,8 @@ namespace ThesisManagement.Api.Services.DefenseOperationsExport
                     cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 }
             }
+
+            worksheet.Row(row).Height = maxTextLength > 90 ? 42 : maxTextLength > 50 ? 30 : 22;
         }
 
         private static void MergeAndStyle(IXLWorksheet worksheet, int startRow, int startCol, int endRow, int endCol, string text, bool bold, int fontSize)

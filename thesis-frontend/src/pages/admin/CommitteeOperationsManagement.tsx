@@ -3,26 +3,35 @@ import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   Archive,
+  Award,
   BarChart3,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Download,
   Eye,
   FileSpreadsheet,
   FileText,
   Gavel,
+  Hash,
   Lock,
   Maximize2,
   MessageSquare,
+  Paperclip,
   Pencil,
   PieChart,
   RefreshCw,
   RotateCcw,
   Search,
+  Star,
   Table,
   Trash2,
   TrendingUp,
   Unlock,
+  User,
+  Users,
+  X,
 } from "lucide-react";
 // `useNavigate` removed (not needed after module button removal)
 import { useToast } from "../../context/useToast";
@@ -199,6 +208,19 @@ type NavigatorFilter = "all" | "active" | "delayed" | "warning" | "completed";
 type ProgressFilter = "all" | "under-50" | "50-80" | "80-100";
 type AuditActionFilter = "all" | "open" | "submit" | "reopen" | "lock" | "publish" | "sync";
 type CommitteeExportType = "scoreboard" | "minutes" | "review";
+type ExportScopeMode = "per-period" | "per-council" | "per-topic" | "free-config";
+type ExportTemplateMode = "official-transcript" | "council-minutes" | "statistics" | "custom";
+
+type ExportFieldOption = {
+  key: string;
+  label: string;
+};
+
+type ExportFieldGroup = {
+  key: string;
+  label: string;
+  fields: ExportFieldOption[];
+};
 
 type DashboardAlertSeverity = "critical" | "warning" | "info";
 
@@ -582,6 +604,161 @@ const committeeExportOptions = [
   { value: "review", label: "Nhận xét từng đề tài" },
 ];
 
+const exportScopeOptions: Array<{ value: ExportScopeMode; label: string }> = [
+  { value: "per-period", label: "Toàn đợt bảo vệ" },
+  { value: "per-council", label: "Theo hội đồng" },
+  { value: "per-topic", label: "Theo đề tài" },
+  { value: "free-config", label: "Theo sinh viên" },
+];
+
+const exportTemplateOptions: Array<{ value: ExportTemplateMode; label: string; description: string; icon: React.ReactNode }> = [
+  {
+    value: "official-transcript",
+    label: "Official Transcript",
+    description: "Bảng điểm chính thức",
+    icon: <FileSpreadsheet size={16} />,
+  },
+  {
+    value: "council-minutes",
+    label: "Council Minutes",
+    description: "Biên bản hội đồng",
+    icon: <Users size={16} />,
+  },
+  {
+    value: "statistics",
+    label: "Statistics",
+    description: "Báo cáo thống kê",
+    icon: <BarChart3 size={16} />,
+  },
+  {
+    value: "custom",
+    label: "Custom",
+    description: "Tự cấu hình",
+    icon: <Activity size={16} />,
+  },
+];
+
+const exportFieldGroups: ExportFieldGroup[] = [
+  {
+    key: "student",
+    label: "Sinh viên",
+    fields: [
+      { key: "StudentCode", label: "MSSV" },
+      { key: "StudentName", label: "Họ tên" },
+      { key: "ClassName", label: "Lớp" },
+      { key: "CohortCode", label: "Khóa" },
+    ],
+  },
+  {
+    key: "topic",
+    label: "Đề tài",
+    fields: [
+      { key: "TopicCode", label: "Mã đề tài" },
+      { key: "TopicTitle", label: "Tên đề tài" },
+      { key: "TopicTags", label: "Tag chuyên môn" },
+      { key: "AssignmentCode", label: "Mã phân công" },
+    ],
+  },
+  {
+    key: "supervisor",
+    label: "GVHD",
+    fields: [
+      { key: "SupervisorLecturerName", label: "Tên GVHD" },
+      { key: "ScoreGvhd", label: "Điểm GVHD" },
+      { key: "CommentGvhd", label: "Nhận xét GVHD" },
+    ],
+  },
+  {
+    key: "committee",
+    label: "Hội đồng",
+    fields: [
+      { key: "CommitteeCode", label: "Mã hội đồng" },
+      { key: "CommitteeChairName", label: "Chủ tịch" },
+      { key: "CommitteeSecretaryName", label: "Thư ký" },
+      { key: "CommitteeReviewerName", label: "Phản biện" },
+      { key: "Room", label: "Phòng" },
+    ],
+  },
+  {
+    key: "score",
+    label: "Điểm",
+    fields: [
+      { key: "ScoreCt", label: "Điểm CT" },
+      { key: "ScoreTk", label: "Điểm TK" },
+      { key: "ScorePb", label: "Điểm PB" },
+      { key: "ScoreGvhd", label: "Điểm GVHD" },
+      { key: "Score", label: "Điểm tổng" },
+      { key: "Grade", label: "Xếp loại" },
+      { key: "Variance", label: "Variance" },
+    ],
+  },
+  {
+    key: "time",
+    label: "Thời gian",
+    fields: [
+      { key: "DefenseDate", label: "Ngày bảo vệ" },
+      { key: "Session", label: "Buổi" },
+      { key: "StartTime", label: "Giờ bắt đầu" },
+      { key: "EndTime", label: "Giờ kết thúc" },
+    ],
+  },
+  {
+    key: "audit",
+    label: "Audit / Trạng thái",
+    fields: [
+      { key: "Status", label: "Trạng thái" },
+      { key: "IsLocked", label: "Đã khóa" },
+      { key: "SubmittedCount", label: "Số đã nộp" },
+      { key: "RequiredCount", label: "Số cần nộp" },
+    ],
+  },
+  {
+    key: "document",
+    label: "Tài liệu",
+    fields: [{ key: "DocumentCount", label: "Số tài liệu" }],
+  },
+];
+
+const exportTemplateFieldPresets: Record<ExportTemplateMode, string[]> = {
+  "official-transcript": [
+    "StudentCode",
+    "StudentName",
+    "TopicTitle",
+    "CommitteeCode",
+    "ScoreCt",
+    "ScoreTk",
+    "ScorePb",
+    "ScoreGvhd",
+    "Score",
+    "Grade",
+  ],
+  "council-minutes": [
+    "StudentCode",
+    "StudentName",
+    "TopicTitle",
+    "CommitteeChairName",
+    "CommitteeSecretaryName",
+    "CommitteeReviewerName",
+    "ScoreCt",
+    "ScoreTk",
+    "ScorePb",
+    "ScoreGvhd",
+    "Grade",
+    "Status",
+  ],
+  statistics: [
+    "CommitteeCode",
+    "StudentCode",
+    "StudentName",
+    "Score",
+    "Grade",
+    "Variance",
+    "Status",
+    "IsLocked",
+  ],
+  custom: ["StudentCode", "StudentName", "TopicTitle", "Score", "Grade"],
+};
+
 const formatCompactDuration = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) {
     return "0m";
@@ -726,6 +903,39 @@ const getScoreBandLabel = (score: number): string => {
   return "< 4.0";
 };
 
+const sortStudentRows = (
+  rows: ScoringMatrixRow[],
+  sortField: "studentCode" | "studentName" | "topicTitle" | "finalScore" | "committeeCode",
+  sortDir: "asc" | "desc"
+): ScoringMatrixRow[] => {
+  const sorted = [...rows].sort((a, b) => {
+    let aVal: any, bVal: any;
+    
+    if (sortField === "studentCode") {
+      aVal = (a.studentCode || "").toLowerCase();
+      bVal = (b.studentCode || "").toLowerCase();
+    } else if (sortField === "studentName") {
+      aVal = (a.studentName || "").toLowerCase();
+      bVal = (b.studentName || "").toLowerCase();
+    } else if (sortField === "topicTitle") {
+      aVal = (a.topicTitle || "").toLowerCase();
+      bVal = (b.topicTitle || "").toLowerCase();
+    } else if (sortField === "finalScore") {
+      aVal = Number(a.finalScore ?? a.currentScore ?? 0);
+      bVal = Number(b.finalScore ?? b.currentScore ?? 0);
+    } else if (sortField === "committeeCode") {
+      aVal = (a.committeeCode || "").toLowerCase();
+      bVal = (b.committeeCode || "").toLowerCase();
+    }
+    
+    if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
+    if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+  
+  return sorted;
+};
+
 const buildDistributionRows = (
   rows: ScoringMatrixRow[],
   mode: DistributionViewMode,
@@ -746,6 +956,12 @@ const buildDistributionRows = (
   });
 
   return buckets;
+};
+
+const toApiExportFormat = (format: ReportFormat | "word" | "pdf") => {
+  if (format === "excel") return "xlsx";
+  if (format === "word") return "docx";
+  return format;
 };
 
 const CommitteeOperationsManagement: React.FC = () => {
@@ -789,7 +1005,10 @@ const CommitteeOperationsManagement: React.FC = () => {
   const [distributionViewMode, setDistributionViewMode] = useState<DistributionViewMode>("grade");
   const [distributionChartType, setDistributionChartType] = useState<"pie" | "bar" | "line">("pie");
   const [distributionChartMenuOpen, setDistributionChartMenuOpen] = useState(false);
+  const [committeeStatsPage, setCommitteeStatsPage] = useState(1);
+  const committeeStatsPageSize = 5;
   const distributionChartMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportDownloadMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Council / scoring UI state
   const [scoringModalOpen, setScoringModalOpen] = useState(false);
@@ -802,12 +1021,29 @@ const CommitteeOperationsManagement: React.FC = () => {
   const [reportType, setReportType] = useState<ReportType>("council-summary");
   const [reportFormat, setReportFormat] = useState<ReportFormat>("csv");
   const [reportCouncilId, setReportCouncilId] = useState("");
+  const [exportScopeMode, setExportScopeMode] = useState<ExportScopeMode>("per-period");
+  const [exportTemplateMode, setExportTemplateMode] = useState<ExportTemplateMode>("official-transcript");
+  const [exportFieldSearch, setExportFieldSearch] = useState("");
+  const [exportTopicKeyword, setExportTopicKeyword] = useState("");
+  const [exportSelectedFields, setExportSelectedFields] = useState<string[]>(() => exportTemplateFieldPresets["official-transcript"]);
+  const [exportIncludeLogo, setExportIncludeLogo] = useState(true);
+  const [exportIncludeSignature, setExportIncludeSignature] = useState(true);
+  const [exportPasswordProtect, setExportPasswordProtect] = useState(false);
+  const [exportDownloadMenuOpen, setExportDownloadMenuOpen] = useState(false);
+  const [exportOnlyLocked, setExportOnlyLocked] = useState(true);
+  const [exportOnlyPublished, setExportOnlyPublished] = useState(true);
+  const [exportExpandedGroups, setExportExpandedGroups] = useState<string[]>(() => exportFieldGroups.map((group) => group.key));
   const [committeeExportType, setCommitteeExportType] = useState<CommitteeExportType>("scoreboard");
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [previewModalType, setPreviewModalType] = useState<PreviewModalType | null>(null);
   const [isDownloadingPreviewFile, setIsDownloadingPreviewFile] = useState(false);
   const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "analytics" | "committee" | "post-defense" | "audit">("overview");
+  const [studentTableSortField, setStudentTableSortField] = useState<"studentCode" | "studentName" | "topicTitle" | "finalScore" | "committeeCode">("studentCode");
+  const [studentTableSortDir, setStudentTableSortDir] = useState<"asc" | "desc">("asc");
+  const [studentTablePage, setStudentTablePage] = useState(1);
+  const studentTablePageSize = 10;
+  const [hoveredDistributionLabel, setHoveredDistributionLabel] = useState<string | null>(null);
   const commandBarRef = useRef<HTMLDivElement | null>(null);
   const committeeSearchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -966,6 +1202,24 @@ const CommitteeOperationsManagement: React.FC = () => {
 
     return undefined;
   }, [distributionChartMenuOpen]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        exportDownloadMenuRef.current &&
+        !exportDownloadMenuRef.current.contains(event.target as Node)
+      ) {
+        setExportDownloadMenuOpen(false);
+      }
+    };
+
+    if (exportDownloadMenuOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => document.removeEventListener("mousedown", handleOutsideClick);
+    }
+
+    return undefined;
+  }, [exportDownloadMenuOpen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -1234,14 +1488,15 @@ const CommitteeOperationsManagement: React.FC = () => {
     }
   };
 
-  const exportReport = () => {
+  const exportReport = (overrides?: { reportType?: ReportType; format?: ReportFormat; councilId?: string }) => {
     if (!periodId) {
       notifyWarning("Chua chon dot bao ve. Vui long chon dot tai module Quan ly dot.");
       return;
     }
 
-    let effectiveReportType: ReportType = reportType;
-    let effectiveCouncilId = reportCouncilId.trim();
+    let effectiveReportType: ReportType = overrides?.reportType ?? reportType;
+    let effectiveCouncilId = (overrides?.councilId ?? reportCouncilId).trim();
+    const effectiveFormat = overrides?.format ?? reportFormat;
 
     if (activeTab === "committee" && selectedCommittee) {
       effectiveReportType = committeeExportType;
@@ -1258,26 +1513,62 @@ const CommitteeOperationsManagement: React.FC = () => {
       }
     }
 
-    if (["form-1", "scoreboard", "minutes", "review"].includes(effectiveReportType) && !effectiveCouncilId) {
+    if (["form-1", "scoreboard", "minutes", "review", "council-summary"].includes(effectiveReportType) && !effectiveCouncilId) {
       notifyError("Bao cao hoi dong bat buoc co councilId.");
       return;
     }
 
-    const params = new URLSearchParams({
-      reportType: effectiveReportType,
-      format: reportFormat,
-    });
-    if (["form-1", "scoreboard", "minutes", "review"].includes(effectiveReportType)) {
-      params.set("councilId", effectiveCouncilId);
-    }
+    const apiFormat = toApiExportFormat(effectiveFormat);
+    const endpoint = `${defensePeriodBase}/reports/export`;
+    const extension = effectiveFormat === "pdf" ? "pdf" : effectiveFormat === "word" ? "docx" : effectiveFormat === "excel" ? "xlsx" : effectiveFormat === "zip" ? "zip" : "csv";
+    const mimeType =
+      effectiveFormat === "pdf"
+        ? "application/pdf"
+        : effectiveFormat === "word"
+          ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          : effectiveFormat === "excel"
+            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            : effectiveFormat === "zip"
+              ? "application/zip"
+              : "text/csv;charset=utf-8";
 
-    window.open(
-      `${defensePeriodBase}/reports/export?${params.toString()}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    notifyInfo("Đã gửi yêu cầu mở file báo cáo.");
-    setExportModalOpen(false);
+    void (async () => {
+      try {
+        const data = await fetchData<ArrayBuffer>(endpoint, {
+          method: "POST",
+          skipAuthRedirect: true,
+          body: {
+            reportType: effectiveReportType,
+            format: apiFormat,
+            ...(effectiveCouncilId ? { councilId: Number(effectiveCouncilId) } : {}),
+            ...(exportSelectedFields.length > 0 ? { selectedFields: exportSelectedFields } : {}),
+          },
+        });
+        if (!data || data.byteLength === 0) {
+          throw new Error("File export rỗng hoặc không hợp lệ.");
+        }
+
+        const blob = new Blob([data], { type: mimeType });
+        const url = window.URL.createObjectURL(blob);
+        const fileName = `${effectiveReportType}_${Date.now()}.${extension}`;
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+        notifySuccess("Tải file báo cáo thành công.");
+        setExportModalOpen(false);
+      } catch (error) {
+        if (error instanceof FetchDataError && error.status === 401) {
+          notifyError("Bạn chưa có quyền tải báo cáo hoặc phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại hoặc kiểm tra phân quyền.");
+          return;
+        }
+        notifyError("Không thể tải file báo cáo. Vui lòng kiểm tra quyền truy cập hoặc đăng nhập lại.");
+      }
+    })();
   };
 
   const downloadCommitteeReport = async (committeeRow: CommitteeSummary, reportTypeValue: CommitteeExportType, format: ReportFormat) => {
@@ -1292,15 +1583,16 @@ const CommitteeOperationsManagement: React.FC = () => {
       return;
     }
 
+    const apiFormat = toApiExportFormat(format);
     const params = new URLSearchParams({
       reportType: reportTypeValue,
-      format,
+      format: apiFormat,
       councilId: String(councilId),
     });
 
     try {
       const endpoint = `${defensePeriodBase}/reports/export?${params.toString()}`;
-      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET" });
+      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET", skipAuthRedirect: true });
       
       if (!data || data.byteLength < 100) {
           throw new Error("Dữ liệu file không hợp lệ hoặc quá nhỏ.");
@@ -1325,8 +1617,12 @@ const CommitteeOperationsManagement: React.FC = () => {
       window.URL.revokeObjectURL(url);
       
       notifySuccess(`Tải file ${reportTypeValue} thành công.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Download error:", err);
+      if (err instanceof FetchDataError && err.status === 401) {
+        notifyError("Bạn chưa có quyền tải file hoặc phiên đăng nhập đã hết hạn. Vui lòng kiểm tra phân quyền.");
+        return;
+      }
       notifyError(`Không thể tải file ${reportTypeValue}. Vui lòng kiểm tra lại quyền truy cập hoặc kết nối mạng.`);
     }
   };
@@ -1347,16 +1643,17 @@ const CommitteeOperationsManagement: React.FC = () => {
       }
 
       const reportType = template === "meeting" ? "minutes" : template === "reviewer" ? "review" : "scoreboard";
+      const apiFormat = toApiExportFormat(format);
       const params = new URLSearchParams({
         reportType,
-        format,
+        format: apiFormat,
         councilId: String(councilId),
         ...(selectedTopic?.assignmentId ? { assignmentId: String(selectedTopic.assignmentId) } : {}),
         ...(selectedTopic?.studentCode ? { studentCode: selectedTopic.studentCode } : {}),
       });
 
       const endpoint = `${defensePeriodBase}/reports/export?${params.toString()}`;
-      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET" });
+      const data = await fetchData<ArrayBuffer>(endpoint, { method: "GET", skipAuthRedirect: true });
       
       if (!data || data.byteLength < 100) {
           throw new Error("Dữ liệu file không hợp lệ hoặc quá nhỏ.");
@@ -1379,6 +1676,10 @@ const CommitteeOperationsManagement: React.FC = () => {
       notifySuccess("Tải tài liệu thành công.");
     } catch (error) {
       console.error("Download error:", error);
+      if (error instanceof FetchDataError && error.status === 401) {
+        notifyError("Bạn chưa có quyền tải tài liệu hoặc phiên đăng nhập đã hết hạn. Vui lòng kiểm tra phân quyền.");
+        return;
+      }
       notifyError("Không thể tải tài liệu. Vui lòng kiểm tra lại quyền truy cập hoặc kết nối mạng.");
     } finally {
       setIsDownloadingPreviewFile(false);
@@ -1465,6 +1766,11 @@ const CommitteeOperationsManagement: React.FC = () => {
   const distributionTotal = useMemo(
     () => distributionRows.reduce((sum, item) => sum + item.value, 0),
     [distributionRows],
+  );
+
+  const studentTableSortedData = useMemo(
+    () => sortStudentRows(scoredRowsForDistribution, studentTableSortField, studentTableSortDir),
+    [scoredRowsForDistribution, studentTableSortField, studentTableSortDir],
   );
 
   const distributionStops = useMemo(() => {
@@ -1851,6 +2157,11 @@ const CommitteeOperationsManagement: React.FC = () => {
     return source.slice().sort((a, b) => Number(b.finalScore ?? b.currentScore ?? 0) - Number(a.finalScore ?? a.currentScore ?? 0)).slice(0, 10);
   }, [publishedAnalyticsTopics, publishedScoringRows]);
 
+  const topStudents = useMemo(() => {
+    const source = publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows;
+    return source.slice().sort((a, b) => Number(b.finalScore ?? b.currentScore ?? 0) - Number(a.finalScore ?? a.currentScore ?? 0)).slice(0, 5);
+  }, [publishedAnalyticsTopics, publishedScoringRows]);
+
   const topLow10 = useMemo(() => {
     const source = publishedAnalyticsTopics.length > 0 ? publishedAnalyticsTopics : publishedScoringRows;
     return source.slice().sort((a, b) => Number(a.finalScore ?? a.currentScore ?? 0) - Number(b.finalScore ?? b.currentScore ?? 0)).slice(0, 10);
@@ -2021,6 +2332,278 @@ const CommitteeOperationsManagement: React.FC = () => {
     () => snapshot?.reporting?.recentExports ?? [],
     [snapshot?.reporting?.recentExports],
   );
+
+  const exportAllFields = useMemo(
+    () => exportFieldGroups.flatMap((group) => group.fields),
+    [],
+  );
+
+  const exportFieldLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    exportAllFields.forEach((field) => {
+      map.set(field.key, field.label);
+    });
+    return map;
+  }, [exportAllFields]);
+
+  const exportResolvedReportType = useMemo<ReportType>(() => {
+    if (exportTemplateMode === "council-minutes") {
+      return "minutes";
+    }
+    if (exportTemplateMode === "statistics") {
+      return exportScopeMode === "per-council" ? "scoreboard" : "final-term";
+    }
+    if (exportScopeMode === "per-council") {
+      return "council-summary";
+    }
+    return "final-term";
+  }, [exportScopeMode, exportTemplateMode]);
+
+  const exportCouncilOptions = useMemo(() => {
+    const rows = scoringMatrix.filter((row) => row.committeeId != null || row.committeeCode);
+    const map = new Map<string, string>();
+    rows.forEach((row) => {
+      const key = row.committeeId != null ? String(row.committeeId) : String(row.committeeCode ?? "").trim();
+      if (!key || map.has(key)) {
+        return;
+      }
+      const label = row.committeeCode ? `${row.committeeCode}${row.committeeName ? ` - ${row.committeeName}` : ""}` : `Hội đồng ${key}`;
+      map.set(key, label);
+    });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [scoringMatrix]);
+
+  const exportFilteredGroups = useMemo(() => {
+    const keyword = exportFieldSearch.trim().toLowerCase();
+    if (!keyword) {
+      return exportFieldGroups;
+    }
+    return exportFieldGroups
+      .map((group) => ({
+        ...group,
+        fields: group.fields.filter((field) => field.label.toLowerCase().includes(keyword) || field.key.toLowerCase().includes(keyword)),
+      }))
+      .filter((group) => group.fields.length > 0);
+  }, [exportFieldSearch]);
+
+  const getExportFieldValue = useCallback(
+    (row: ScoringMatrixRow, fieldKey: string, rowNumber: number) => {
+      const scoreValue = Number(row.finalScore ?? row.currentScore ?? 0);
+      const scoreText = Number.isFinite(scoreValue) && scoreValue > 0 ? scoreValue.toFixed(1) : "-";
+      const startDate = parseDateValue(row.startTime);
+
+      switch (fieldKey) {
+        case "RowNumber":
+          return rowNumber;
+        case "StudentCode":
+          return row.studentCode ?? "-";
+        case "StudentName":
+          return row.studentName ?? "-";
+        case "ClassName":
+          return row.className ?? "-";
+        case "CohortCode":
+          return row.cohortCode ?? "-";
+        case "TopicCode":
+          return row.topicCode ?? "-";
+        case "TopicTitle":
+          return row.topicTitle ?? "-";
+        case "TopicTags":
+          return "-";
+        case "AssignmentCode":
+          return row.assignmentCode ?? "-";
+        case "SupervisorLecturerName":
+          return row.supervisorLecturerName ?? row.supervisorName ?? "-";
+        case "CommitteeCode":
+          return row.committeeCode ?? "-";
+        case "CommitteeChairName":
+          return row.committeeChairName ?? row.chairName ?? row.chair ?? "-";
+        case "CommitteeSecretaryName":
+          return row.committeeSecretaryName ?? row.secretaryName ?? row.secretary ?? "-";
+        case "CommitteeReviewerName":
+          return row.committeeReviewerName ?? row.reviewerName ?? row.reviewer ?? "-";
+        case "Room":
+          return row.room ?? "-";
+        case "ScoreCt":
+          return row.scoreCt != null ? Number(row.scoreCt).toFixed(1) : "-";
+        case "ScoreTk":
+          return row.scoreTk != null ? Number(row.scoreTk).toFixed(1) : "-";
+        case "ScorePb":
+          return row.scorePb != null ? Number(row.scorePb).toFixed(1) : "-";
+        case "ScoreGvhd":
+          return row.scoreGvhd != null ? Number(row.scoreGvhd).toFixed(1) : "-";
+        case "Score":
+          return scoreText;
+        case "Grade":
+          return scoreText === "-" ? "-" : getGradeFromScore(scoreValue);
+        case "Variance":
+          return row.variance != null ? Number(row.variance).toFixed(1) : "-";
+        case "DefenseDate":
+          return startDate ? startDate.toLocaleDateString("vi-VN") : "-";
+        case "Session":
+          return startDate ? (startDate.getHours() < 12 ? "Sáng" : "Chiều") : "-";
+        case "StartTime":
+          return row.startTime ?? "-";
+        case "EndTime":
+          return row.endTime ?? "-";
+        case "Status":
+          return row.status ?? "-";
+        case "IsLocked":
+          return row.isLocked ? "Có" : "Không";
+        case "SubmittedCount":
+          return row.submittedCount ?? "-";
+        case "RequiredCount":
+          return row.requiredCount ?? "-";
+        case "CommentGvhd":
+          return row.commentGvhd ?? "-";
+        case "DocumentCount":
+          return row.defenseDocuments?.length ?? 0;
+        default:
+          return "-";
+      }
+    },
+    [],
+  );
+
+  const exportPreviewColumns = useMemo(() => {
+    const selected = exportSelectedFields.slice(0, 3);
+    if (selected.length > 0) {
+      return selected;
+    }
+    return ["StudentCode", "StudentName", "Score"];
+  }, [exportSelectedFields]);
+
+  const exportPreviewRows = useMemo(() => {
+    const topicKeyword = exportTopicKeyword.trim().toLowerCase();
+    const rows = scoringMatrix
+      .filter((row) => (exportOnlyLocked ? row.isLocked : true))
+      .filter((row) => (exportOnlyPublished ? row.finalScore != null : true))
+      .filter((row) => {
+        if (exportScopeMode !== "per-council") {
+          return true;
+        }
+        if (!reportCouncilId.trim()) {
+          return true;
+        }
+        const councilId = String(row.committeeId ?? "").trim();
+        const councilCode = String(row.committeeCode ?? "").trim().toLowerCase();
+        const keyword = reportCouncilId.trim().toLowerCase();
+        return councilId === reportCouncilId.trim() || councilCode.includes(keyword);
+      })
+      .filter((row) => {
+        if (exportScopeMode !== "per-topic" || !topicKeyword) {
+          return true;
+        }
+        const haystack = `${row.topicCode ?? ""} ${row.topicTitle ?? ""} ${row.studentCode ?? ""} ${row.studentName ?? ""}`.toLowerCase();
+        return haystack.includes(topicKeyword);
+      })
+      .slice(0, 6);
+
+    return rows.map((row, index) => ({
+      key: `${row.assignmentId ?? row.studentCode ?? index}`,
+      values: exportPreviewColumns.map((columnKey) => getExportFieldValue(row, columnKey, index + 1)),
+    }));
+  }, [
+    exportOnlyLocked,
+    exportOnlyPublished,
+    exportPreviewColumns,
+    exportScopeMode,
+    exportTopicKeyword,
+    getExportFieldValue,
+    reportCouncilId,
+    scoringMatrix,
+  ]);
+
+  const exportPreviewModalColumns = useMemo(() => {
+    if (exportSelectedFields.length > 0) {
+      return exportSelectedFields;
+    }
+    return ["StudentCode", "StudentName", "Score"];
+  }, [exportSelectedFields]);
+
+  const exportPreviewModalRows = useMemo(() => {
+    const topicKeyword = exportTopicKeyword.trim().toLowerCase();
+    const rows = scoringMatrix
+      .filter((row) => (exportOnlyLocked ? row.isLocked : true))
+      .filter((row) => (exportOnlyPublished ? row.finalScore != null : true))
+      .filter((row) => {
+        if (exportScopeMode !== "per-council") {
+          return true;
+        }
+        if (!reportCouncilId.trim()) {
+          return true;
+        }
+        const councilId = String(row.committeeId ?? "").trim();
+        const councilCode = String(row.committeeCode ?? "").trim().toLowerCase();
+        const keyword = reportCouncilId.trim().toLowerCase();
+        return councilId === reportCouncilId.trim() || councilCode.includes(keyword);
+      })
+      .filter((row) => {
+        if (exportScopeMode !== "per-topic" || !topicKeyword) {
+          return true;
+        }
+        const haystack = `${row.topicCode ?? ""} ${row.topicTitle ?? ""} ${row.studentCode ?? ""} ${row.studentName ?? ""}`.toLowerCase();
+        return haystack.includes(topicKeyword);
+      })
+      .slice(0, 6);
+
+    return rows.map((row, index) => ({
+      key: `${row.assignmentId ?? row.studentCode ?? index}`,
+      values: exportPreviewModalColumns.map((columnKey) => getExportFieldValue(row, columnKey, index + 1)),
+    }));
+  }, [
+    exportOnlyLocked,
+    exportOnlyPublished,
+    exportPreviewModalColumns,
+    exportScopeMode,
+    exportTopicKeyword,
+    getExportFieldValue,
+    reportCouncilId,
+    scoringMatrix,
+  ]);
+
+  useEffect(() => {
+    if (exportTemplateMode !== "custom") {
+      setExportSelectedFields(exportTemplateFieldPresets[exportTemplateMode]);
+    }
+  }, [exportTemplateMode]);
+
+  const toggleExportField = useCallback((fieldKey: string) => {
+    setExportSelectedFields((prev) => {
+      if (prev.includes(fieldKey)) {
+        return prev.filter((key) => key !== fieldKey);
+      }
+      return [...prev, fieldKey];
+    });
+  }, []);
+
+  const toggleExportGroup = useCallback((group: ExportFieldGroup) => {
+    const groupKeys = group.fields.map((field) => field.key);
+    setExportSelectedFields((prev) => {
+      const allSelected = groupKeys.every((key) => prev.includes(key));
+      if (allSelected) {
+        return prev.filter((key) => !groupKeys.includes(key));
+      }
+      const merged = [...prev];
+      groupKeys.forEach((key) => {
+        if (!merged.includes(key)) {
+          merged.push(key);
+        }
+      });
+      return merged;
+    });
+  }, []);
+
+  const toggleExportGroupExpand = useCallback((groupKey: string) => {
+    setExportExpandedGroups((prev) => (prev.includes(groupKey) ? prev.filter((key) => key !== groupKey) : [...prev, groupKey]));
+  }, []);
+
+  const selectAllExportFields = useCallback(() => {
+    setExportSelectedFields(exportAllFields.map((field) => field.key));
+  }, [exportAllFields]);
+
+  const resetExportFields = useCallback(() => {
+    setExportSelectedFields(exportTemplateFieldPresets[exportTemplateMode]);
+  }, [exportTemplateMode]);
 
   const tabNavTop = commandBarHeight > 0 ? commandBarHeight + 24 : 12;
 
@@ -2761,25 +3344,30 @@ const CommitteeOperationsManagement: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1.15fr) minmax(320px, 0.85fr)", gap: 18, alignItems: "stretch" }}>
-                <div style={{ display: "grid", placeItems: "center", minHeight: 320, padding: 12, borderRadius: 18, background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "grid", gap: 18, gridTemplateColumns: "1fr" }}>
+                <div style={{ display: "grid", placeItems: "center", minHeight: 280, padding: 12, borderRadius: 18, background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)", border: "1px solid #e2e8f0", position: "relative" }}>
                   {distributionChartType === "pie" ? (
                     <div
                       style={{
-                        width: 230,
-                        height: 230,
+                        width: 190,
+                        height: 190,
                         borderRadius: "50%",
                         background: distributionTotal > 0
                           ? `conic-gradient(${distributionStops.map((stop) => `${stop.color} ${stop.start}% ${stop.end}%`).join(", ")})`
                           : "#e2e8f0",
                         position: "relative",
-                        boxShadow: "inset 0 0 0 1px rgba(148,163,184,0.35), 0 18px 40px rgba(15, 23, 42, 0.08)",
+                        boxShadow: hoveredDistributionLabel === "pie" ? "inset 0 0 0 1px rgba(148,163,184,0.35), 0 24px 48px rgba(15, 23, 42, 0.15)" : "inset 0 0 0 1px rgba(148,163,184,0.35), 0 18px 40px rgba(15, 23, 42, 0.08)",
+                        cursor: "pointer",
+                        transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                        transform: hoveredDistributionLabel === "pie" ? "scale(1.02)" : "scale(1)",
                       }}
+                      onMouseEnter={() => setHoveredDistributionLabel("pie")}
+                      onMouseLeave={() => setHoveredDistributionLabel(null)}
                     >
                       <div
                         style={{
                           position: "absolute",
-                          inset: 24,
+                          inset: 20,
                           borderRadius: "50%",
                           background: "#ffffff",
                           display: "grid",
@@ -2789,131 +3377,239 @@ const CommitteeOperationsManagement: React.FC = () => {
                           boxShadow: "0 10px 20px rgba(15, 23, 42, 0.08)",
                         }}
                       >
-                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "TỔNG XẾP LOẠI" : "TỔNG ĐIỂM"}</div>
-                        <div style={{ fontSize: 26, fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>{formatNumber(distributionTotal)}</div>
-                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "Sinh viên" : "Mẫu"}</div>
+                        <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "TỔNG XẾP LOẠI" : "TỔNG ĐIỂM"}</div>
+                        <div style={{ fontSize: 24, fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>{formatNumber(distributionTotal)}</div>
+                        <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>{distributionViewMode === "grade" ? "Sinh viên" : "Mẫu"}</div>
                       </div>
                     </div>
                   ) : distributionChartType === "bar" ? (
-                    <div style={{ width: "100%", height: 320, display: "flex", alignItems: "flex-end", gap: 10, padding: "16px 4px 6px" }}>
+                    <div style={{ width: "100%", height: 260, display: "flex", alignItems: "flex-end", gap: 8, padding: "16px 4px 6px", position: "relative" }}>
+                      <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }} width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <line key={`grid-${i}`} x1="0" y1={40 - (i * 40) / 4} x2="100" y2={40 - (i * 40) / 4} stroke="#e2e8f0" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                        ))}
+                      </svg>
                       {distributionRows.map((item) => (
-                        <div key={item.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <div style={{ width: "100%", height: `${Math.max(8, (item.value / distributionPeak) * 220)}px`, borderRadius: "12px 12px 0 0", background: distributionPalette[item.label] ?? "#cbd5e1", transition: "height 0.25s ease", boxShadow: item.value > 0 ? "0 8px 16px rgba(15, 23, 42, 0.1)" : "none" }} />
-                          <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
+                        <div key={item.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0, position: "relative", cursor: "pointer" }} onMouseEnter={() => setHoveredDistributionLabel(item.label)} onMouseLeave={() => setHoveredDistributionLabel(null)}>
+                          {hoveredDistributionLabel === item.label && <div style={{ position: "absolute", top: -26, left: "50%", transform: "translateX(-50%)", background: "#0f172a", color: "#ffffff", padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", zIndex: 20 }}>{item.value}</div>}
+                          <div style={{ width: "100%", height: `${Math.max(8, (item.value / distributionPeak) * 200)}px`, borderRadius: "8px 8px 0 0", background: distributionPalette[item.label] ?? "#cbd5e1", transition: "all 0.2s ease", boxShadow: item.value > 0 ? "0 4px 12px rgba(15, 23, 42, 0.1)" : "none", opacity: hoveredDistributionLabel === null || hoveredDistributionLabel === item.label ? 1 : 0.4 }} />
+                          <span style={{ fontSize: 9, fontWeight: 800, color: "#475569", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div style={{ width: "100%", height: 320, padding: "8px 0" }}>
-                      <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+                    <div style={{ width: "100%", height: 320, padding: "16px 8px 8px", position: "relative", background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)", borderRadius: 8 }}>
+                      <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="xMidYMid meet" style={{ position: "relative", zIndex: 1 }}>
+                        <defs>
+                          <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor={DEEP_BLUE_PRIMARY} stopOpacity="0.15" />
+                            <stop offset="100%" stopColor={DEEP_BLUE_PRIMARY} stopOpacity="0.02" />
+                          </linearGradient>
+                        </defs>
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <line key={`grid-${i}`} x1="0" y1={40 - (i * 40) / 4} x2="100" y2={40 - (i * 40) / 4} stroke="#cbd5e1" strokeWidth="0.4" opacity="0.6" vectorEffect="non-scaling-stroke" />
+                        ))}
+                        {distributionRows.length > 0 && (
+                          <path
+                            d={`M ${distributionRows.map((item, idx) => `${(distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100)},${40 - (item.value / distributionPeak) * 34}`).join(" L ")} L ${distributionRows.length <= 1 ? 50 : 100},40 L 0,40 Z`}
+                            fill="url(#areaGradient)"
+                          />
+                        )}
                         <path
                           d={`M ${distributionRows.map((item, idx) => `${(distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100)},${40 - (item.value / distributionPeak) * 34}`).join(" L ")}`}
                           fill="none"
                           stroke={DEEP_BLUE_PRIMARY}
-                          strokeWidth="2.5"
+                          strokeWidth="2.2"
                           strokeLinejoin="round"
                           strokeLinecap="round"
+                          style={{ filter: "drop-shadow(0 2px 4px rgba(15, 23, 42, 0.1))" }}
                         />
                         {distributionRows.map((item, idx) => (
-                          <circle
-                            key={item.label}
-                            cx={distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100}
-                            cy={40 - (item.value / distributionPeak) * 34}
-                            r="1.8"
-                            fill={distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY}
-                          />
+                          <g key={item.label} onMouseEnter={() => setHoveredDistributionLabel(item.label)} onMouseLeave={() => setHoveredDistributionLabel(null)} style={{ cursor: "pointer" }}>
+                            <circle
+                              cx={distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100}
+                              cy={40 - (item.value / distributionPeak) * 34}
+                              r={hoveredDistributionLabel === item.label ? "3.5" : "2.8"}
+                              fill={distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY}
+                              stroke="white"
+                              strokeWidth="1.5"
+                              style={{ transition: "r 0.2s ease, filter 0.2s ease", filter: hoveredDistributionLabel === item.label ? "drop-shadow(0 2px 8px rgba(15, 23, 42, 0.3))" : "drop-shadow(0 1px 3px rgba(15, 23, 42, 0.1))" }}
+                            />
+                            {hoveredDistributionLabel === item.label && (
+                              <g>
+                                <rect
+                                  x={distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100}
+                                  y={40 - (item.value / distributionPeak) * 34 - 8}
+                                  width="12"
+                                  height="5"
+                                  rx="1"
+                                  fill="#0f172a"
+                                  textAnchor="middle"
+                                  transform={`translate(-6, 0)`}
+                                />
+                                <text
+                                  x={distributionRows.length <= 1 ? 50 : (idx / (distributionRows.length - 1)) * 100}
+                                  y={40 - (item.value / distributionPeak) * 34 - 4.5}
+                                  textAnchor="middle"
+                                  fontSize="2.2"
+                                  fontWeight="700"
+                                  fill="white"
+                                  style={{ pointerEvents: "none" }}
+                                >
+                                  {item.value}
+                                </text>
+                              </g>
+                            )}
+                          </g>
                         ))}
                       </svg>
                     </div>
                   )}
                 </div>
 
-                <div style={{ display: "grid", gap: 10, alignSelf: "stretch", alignContent: "start" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-                    {distributionRows.map((item) => (
-                      <div key={item.label} style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 12, background: "#ffffff", display: "grid", gap: 6, minHeight: 84, boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 999, background: distributionPalette[item.label] ?? "#cbd5e1", flexShrink: 0 }} />
-                          <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, lineHeight: 1.2 }}>{item.label}</div>
-                        </div>
-                        <div style={{ fontSize: 24, fontWeight: 900, color: distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY, lineHeight: 1 }}>{item.value}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(70px, 1fr))", gap: 6, marginBottom: 16 }}>
+                  {distributionRows.map((item) => (
+                    <div key={item.label} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 8, background: "#ffffff", display: "grid", gap: 5, minHeight: 58, cursor: "pointer", transition: "all 0.2s ease", transform: hoveredDistributionLabel === item.label ? "translateY(-2px)" : "translateY(0)", boxShadow: hoveredDistributionLabel === item.label ? "0 4px 16px rgba(15, 23, 42, 0.12)" : "0 2px 8px rgba(15, 23, 42, 0.04)" }} onMouseEnter={() => setHoveredDistributionLabel(item.label)} onMouseLeave={() => setHoveredDistributionLabel(null)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: distributionPalette[item.label] ?? "#cbd5e1", flexShrink: 0 }} />
+                        <div style={{ fontSize: 9, color: "#64748b", fontWeight: 800, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</div>
                       </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
-                    {distributionViewMode === "grade"
-                      ? "Phân bổ tính theo kết quả cuối cùng của từng đề tài, quy đổi đúng A+/A/B+/B/C+/C/D+/D/F."
-                      : "Phân bổ tính theo điểm hệ 10 và chia đúng theo các khoảng chuẩn tương ứng."}
-                  </div>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: distributionPalette[item.label] ?? DEEP_BLUE_PRIMARY, lineHeight: 1 }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, marginBottom: 8 }}>
+                  {distributionViewMode === "grade"
+                    ? "Phân bổ tính theo kết quả cuối cùng của từng đề tài, quy đổi đúng A+/A/B+/B/C+/C/D+/D/F."
+                    : "Phân bổ tính theo điểm hệ 10 và chia đúng theo các khoảng chuẩn tương ứng."}
                 </div>
               </div>
             </section>
 
             {(scoresPublished || distributionTotal > 0) && (
-              <>
-                <section style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Trung bình theo hội đồng</div>
-                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                    {committeeScoreStats.slice(0, 6).map((item) => (
-                      <div key={item.code}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 4 }}>
-                          <span style={{ fontWeight: 700 }}>{item.code}</span>
-                          <strong>{item.avgScore.toFixed(1)}</strong>
+              <section style={cardStyle}>
+                <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Top sinh viên</div>
+                <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                  {topStudents.map((r, i) => {
+                    const score = Number(r.finalScore ?? r.currentScore ?? 0);
+                    const grade = getGradeFromScore(score);
+                    const medalColors = ["#fbbf24", "#c0c0c0", "#cd7f32"];
+                    const medalBg = i < 3 ? medalColors[i] : DEEP_BLUE_PRIMARY;
+                    return (
+                      <div key={`top-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, background: i < 3 ? medalBg + "15" : "#f8fafc", border: `1px solid ${i < 3 ? medalBg + "40" : "#e2e8f0"}` }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: medalBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 900, fontSize: 14, color: "#ffffff" }}>{i + 1}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.studentName ?? "-"}</div>
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{r.studentCode ?? "-"}</div>
                         </div>
-                        <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                          <div style={{ width: `${(item.avgScore / scorePeak) * 100}%`, height: "100%", background: DEEP_BLUE_PRIMARY }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Trạng thái khóa</div>
-                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-                    {[
-                      { label: "Đã khóa", value: scoringMatrix.filter((r) => r.isLocked).length, color: "#0ea5e9" },
-                      { label: "Chưa khóa", value: scoringMatrix.filter((r) => !r.isLocked && r.finalScore != null).length, color: "#f59e0b" },
-                      { label: "Đang xử lý", value: scoringMatrix.filter((r) => r.finalScore == null).length, color: "#ef4444" },
-                    ].map((item) => (
-                      <div key={item.label}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                          <span>{item.label}</span>
-                          <strong style={{ color: item.color }}>{formatNumber(item.value)}</strong>
-                        </div>
-                        <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                          <div
-                            style={{
-                              width: `${(item.value / Math.max(1, scoringMatrix.length)) * 100}%`,
-                              height: "100%",
-                              background: item.color,
-                            }}
-                          />
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>{score.toFixed(1)}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, padding: "2px 6px", borderRadius: 6, background: distributionPalette[grade] + "20", color: distributionPalette[grade] ?? DEEP_BLUE_PRIMARY }}>{grade}</div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Biến thiên điểm</div>
-                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                    {committeeScoreStats.slice(0, 6).map((item) => (
-                      <div key={`${item.code}-variance`}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 4 }}>
-                          <span style={{ fontWeight: 700 }}>{item.code}</span>
-                          <strong>{item.avgVariance.toFixed(1)}</strong>
-                        </div>
-                        <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
-                          <div style={{ width: `${(item.avgVariance / variancePeak) * 100}%`, height: "100%", background: "#f59e0b" }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </>
+                    );
+                  })}
+                </div>
+              </section>
             )}
           </div>
+
+          {(scoresPublished || distributionTotal > 0) && (
+            <section style={cardStyle}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Thống kê theo hội đồng</div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>Điểm trung bình, biến thiên và trạng thái khóa</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", marginBottom: 10 }}>Điểm trung bình</div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(() => {
+                      const totalPages = Math.ceil(committeeScoreStats.length / committeeStatsPageSize);
+                      const startIdx = (committeeStatsPage - 1) * committeeStatsPageSize;
+                      const endIdx = startIdx + committeeStatsPageSize;
+                      const pageData = committeeScoreStats.slice(startIdx, endIdx);
+                      return pageData.map((item) => (
+                        <div key={item.code}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ fontWeight: 700 }}>{item.code}</span>
+                            <strong>{item.avgScore.toFixed(1)}</strong>
+                          </div>
+                          <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                            <div style={{ width: `${(item.avgScore / scorePeak) * 100}%`, height: "100%", background: DEEP_BLUE_PRIMARY }} />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  {committeeScoreStats.length > committeeStatsPageSize && (() => {
+                    const totalPages = Math.ceil(committeeScoreStats.length / committeeStatsPageSize);
+                    return (
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 12 }}>
+                        <button type="button" onClick={() => setCommitteeStatsPage(Math.max(1, committeeStatsPage - 1))} disabled={committeeStatsPage === 1} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 700, borderRadius: 6, border: "1px solid #cbd5e1", background: committeeStatsPage === 1 ? "#f1f5f9" : "#ffffff", color: committeeStatsPage === 1 ? "#94a3b8" : "#0f172a", cursor: committeeStatsPage === 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><ChevronLeft size={14} /> Trước</button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (<button key={`cpage-${page}`} type="button" onClick={() => setCommitteeStatsPage(page)} style={{ width: 28, height: 28, padding: 0, fontSize: 10, fontWeight: 800, borderRadius: 4, border: `1px solid ${committeeStatsPage === page ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: committeeStatsPage === page ? DEEP_BLUE_PRIMARY : "#ffffff", color: committeeStatsPage === page ? "#ffffff" : "#0f172a", cursor: "pointer" }}>{page}</button>))}
+                        <button type="button" onClick={() => setCommitteeStatsPage(Math.min(totalPages, committeeStatsPage + 1))} disabled={committeeStatsPage === totalPages} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 700, borderRadius: 6, border: "1px solid #cbd5e1", background: committeeStatsPage === totalPages ? "#f1f5f9" : "#ffffff", color: committeeStatsPage === totalPages ? "#94a3b8" : "#0f172a", cursor: committeeStatsPage === totalPages ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>Sau <ChevronRight size={14} /></button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", marginBottom: 10 }}>Biến thiên điểm</div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(() => {
+                      const totalPages = Math.ceil(committeeScoreStats.length / committeeStatsPageSize);
+                      const startIdx = (committeeStatsPage - 1) * committeeStatsPageSize;
+                      const endIdx = startIdx + committeeStatsPageSize;
+                      const pageData = committeeScoreStats.slice(startIdx, endIdx);
+                      return pageData.map((item) => (
+                        <div key={`${item.code}-variance`}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, marginBottom: 4 }}>
+                            <span style={{ fontWeight: 700 }}>{item.code}</span>
+                            <strong>{item.avgVariance.toFixed(1)}</strong>
+                          </div>
+                          <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                            <div style={{ width: `${(item.avgVariance / variancePeak) * 100}%`, height: "100%", background: "#f59e0b" }} />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", marginBottom: 10 }}>Trạng thái khóa</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {[
+                    { label: "Đã khóa", value: scoringMatrix.filter((r) => r.isLocked).length, color: "#0ea5e9" },
+                    { label: "Chưa khóa", value: scoringMatrix.filter((r) => !r.isLocked && r.finalScore != null).length, color: "#f59e0b" },
+                    { label: "Đang xử lý", value: scoringMatrix.filter((r) => r.finalScore == null).length, color: "#ef4444" },
+                  ].map((item) => (
+                    <div key={item.label}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                        <span>{item.label}</span>
+                        <strong style={{ color: item.color }}>{formatNumber(item.value)}</strong>
+                      </div>
+                      <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${(item.value / Math.max(1, scoringMatrix.length)) * 100}%`,
+                            height: "100%",
+                            background: item.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Committee Progress Bars */}
           <section style={cardStyle}>
@@ -2947,78 +3643,121 @@ const CommitteeOperationsManagement: React.FC = () => {
               </div>
 
               <section style={cardStyle}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Chi tiết điểm theo đề tài</div>
-                    <div style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>Danh sách điểm, xếp hạng và top 10</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 12, color: "#475569" }}>Sắp xếp:</div>
-                    <button type="button" onClick={() => setScoreSort("score")} style={{ border: `1px solid ${scoreSort === "score" ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: scoreSort === "score" ? LIGHT_BLUE_SOFTEN : "#ffffff", color: scoreSort === "score" ? DEEP_BLUE_PRIMARY : "#0f172a", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer" }}>Theo điểm</button>
-                    <button type="button" onClick={() => setScoreSort("name")} style={{ border: `1px solid ${scoreSort === "name" ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: scoreSort === "name" ? LIGHT_BLUE_SOFTEN : "#ffffff", color: scoreSort === "name" ? DEEP_BLUE_PRIMARY : "#0f172a", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer" }}>Theo tên</button>
-                    <button type="button" onClick={() => setScoreSort("topic")} style={{ border: `1px solid ${scoreSort === "topic" ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: scoreSort === "topic" ? LIGHT_BLUE_SOFTEN : "#ffffff", color: scoreSort === "topic" ? DEEP_BLUE_PRIMARY : "#0f172a", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer" }}>Theo đề tài</button>
-                  </div>
+                <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em", color: "#0f172a" }}>Danh sách đề tài theo sinh viên</div>
+                <div style={{ fontSize: 13, color: "#475569", marginTop: 6 }}>Bấm vào cột tiêu đề để sắp xếp từ A-Z hoặc Z-A</div>
+                
+                <div style={{ marginTop: 16, overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", borderRight: "1px solid #e2e8f0" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Hash size={14} /> STT</span></th>
+                        <th 
+                          onClick={() => {
+                            setStudentTableSortField("studentCode");
+                            setStudentTableSortDir(studentTableSortField === "studentCode" && studentTableSortDir === "asc" ? "desc" : "asc");
+                          }}
+                          style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none", borderRight: "1px solid #e2e8f0", background: studentTableSortField === "studentCode" ? "#eff6ff" : "transparent", transition: "background 0.15s" }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><User size={14} /> Mã SV</span> {studentTableSortField === "studentCode" && (studentTableSortDir === "asc" ? "↑" : "↓")}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setStudentTableSortField("studentName");
+                            setStudentTableSortDir(studentTableSortField === "studentName" && studentTableSortDir === "asc" ? "desc" : "asc");
+                          }}
+                          style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none", borderRight: "1px solid #e2e8f0", background: studentTableSortField === "studentName" ? "#eff6ff" : "transparent", transition: "background 0.15s" }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Users size={14} /> Họ tên</span> {studentTableSortField === "studentName" && (studentTableSortDir === "asc" ? "↑" : "↓")}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setStudentTableSortField("topicTitle");
+                            setStudentTableSortDir(studentTableSortField === "topicTitle" && studentTableSortDir === "asc" ? "desc" : "asc");
+                          }}
+                          style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", cursor: "pointer", userSelect: "none", borderRight: "1px solid #e2e8f0", background: studentTableSortField === "topicTitle" ? "#eff6ff" : "transparent", transition: "background 0.15s" }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><FileText size={14} /> Tên đề tài</span> {studentTableSortField === "topicTitle" && (studentTableSortDir === "asc" ? "↑" : "↓")}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setStudentTableSortField("finalScore");
+                            setStudentTableSortDir(studentTableSortField === "finalScore" && studentTableSortDir === "asc" ? "desc" : "asc");
+                          }}
+                          style={{ padding: "12px", textAlign: "center", fontWeight: 800, color: "#0f172a", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none", borderRight: "1px solid #e2e8f0", background: studentTableSortField === "finalScore" ? "#eff6ff" : "transparent", transition: "background 0.15s" }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Star size={14} /> Điểm tổng</span> {studentTableSortField === "finalScore" && (studentTableSortDir === "asc" ? "↑" : "↓")}
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "center", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", borderRight: "1px solid #e2e8f0" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><CheckCircle2 size={14} /> Điểm chữ</span></th>
+                        <th 
+                          onClick={() => {
+                            setStudentTableSortField("committeeCode");
+                            setStudentTableSortDir(studentTableSortField === "committeeCode" && studentTableSortDir === "asc" ? "desc" : "asc");
+                          }}
+                          style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none", borderRight: "1px solid #e2e8f0", background: studentTableSortField === "committeeCode" ? "#eff6ff" : "transparent", transition: "background 0.15s" }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Gavel size={14} /> Hội đồng</span> {studentTableSortField === "committeeCode" && (studentTableSortDir === "asc" ? "↑" : "↓")}
+                        </th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", borderRight: "1px solid #e2e8f0" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Lock size={14} /> Trạng thái</span></th>
+                        <th style={{ padding: "12px", textAlign: "center", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Paperclip size={14} /> Action</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const totalPages = Math.ceil(studentTableSortedData.length / studentTablePageSize);
+                        const startIdx = (studentTablePage - 1) * studentTablePageSize;
+                        const endIdx = startIdx + studentTablePageSize;
+                        const pageData = studentTableSortedData.slice(startIdx, endIdx);
+                        
+                        return pageData.map((row, pageIdx) => {
+                          const score = Number(row.finalScore ?? row.currentScore ?? 0);
+                          const grade = getGradeFromScore(score);
+                          const statusLabel = (row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount && !row.isLocked)
+                            ? "Chờ công bố"
+                            : row.finalScore != null || row.currentScore != null
+                              ? "Đã chấm"
+                              : "Chưa chấm";
+                          const statusColor = statusLabel === "Chờ công bố" ? "#b45309" : statusLabel === "Đã chấm" ? "#16a34a" : "#ef4444";
+                          const globalIdx = startIdx + pageIdx + 1;
+                          
+                          return (
+                            <tr key={`student-row-${row.assignmentId ?? pageIdx}`} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", fontWeight: 700, color: "#0f172a" }}>{globalIdx}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", fontWeight: 600, color: "#0f172a" }}>{row.studentCode ?? "-"}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", color: "#0f172a" }}>{row.studentName ?? "-"}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", color: "#0f172a", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.topicTitle}>{row.topicTitle ?? "-"}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", textAlign: "center", fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>{score > 0 ? score.toFixed(1) : "-"}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", textAlign: "center", fontWeight: 800, fontSize: 14, color: distributionPalette[grade] ?? "#0f172a" }}>{grade}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0", fontWeight: 600, color: "#0f172a" }}>{row.committeeCode ?? "-"}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #e2e8f0" }}>
+                                <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: statusColor === "#b45309" ? "#fef3c7" : statusColor === "#16a34a" ? "#dcfce7" : "#fee2e2", color: statusColor }}>{statusLabel}</span>
+                              </td>
+                              <td style={{ padding: "12px", textAlign: "center" }}>
+                                <button type="button" onClick={() => {setSelectedTopic(row); setTopicDetailModalOpen(true);}} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 8px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1px solid #cbd5e1", background: "#ffffff", color: DEEP_BLUE_PRIMARY, cursor: "pointer", transition: "all 0.2s ease" }} title="Xem chi tiết"><Eye size={16} /></button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                  {studentTableSortedData.length === 0 && (<div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b", fontSize: 14 }}>Không có dữ liệu sinh viên</div>)}
                 </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: 12 }}>
-                  <div style={{ border: "1px solid #e6eef6", borderRadius: 10, padding: 10, background: "#ffffff", maxHeight: 420, overflowY: "auto" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 110px 100px 80px", gap: 12, padding: "8px 12px", background: "#f8fafc", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#475569" }}>
-                      <div>Hạng</div>
-                      <div>Đề tài / Sinh viên</div>
-                      <div>Hội đồng</div>
-                      <div>Điểm</div>
-                      <div>Xếp loại</div>
-                    </div>
-                    {sortedScores.slice(0, 200).map((row, idx) => (
-                      <div key={`score-row-${row.assignmentId ?? idx}`} style={{ display: "grid", gridTemplateColumns: "48px 1fr 110px 100px 80px", gap: 12, padding: "10px 12px", borderTop: "1px solid #eef2f7", alignItems: "center", transition: "background 0.18s" }}>
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>{idx + 1}</div>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>{row.topicTitle ?? "-"}</div>
-                          <div style={{ fontSize: 12, color: "#475569" }}>{row.studentName ?? "-"} · {row.studentCode ?? "-"}</div>
+                
+                {studentTableSortedData.length > 0 && (() => {
+                  const totalPages = Math.ceil(studentTableSortedData.length / studentTablePageSize);
+                  return (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid #e2e8f0" }}>
+                      <div style={{ fontSize: 12, color: "#475569" }}>Hiển thị {((studentTablePage - 1) * studentTablePageSize) + 1} đến {Math.min(studentTablePage * studentTablePageSize, studentTableSortedData.length)} của {studentTableSortedData.length} đề tài</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <button type="button" onClick={() => setStudentTablePage(Math.max(1, studentTablePage - 1))} disabled={studentTablePage === 1} style={{ padding: "6px 12px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1px solid #cbd5e1", background: studentTablePage === 1 ? "#f1f5f9" : "#ffffff", color: studentTablePage === 1 ? "#94a3b8" : "#0f172a", cursor: studentTablePage === 1 ? "default" : "pointer", transition: "all 0.2s ease", display: "inline-flex", alignItems: "center", gap: 6 }}><ChevronLeft size={14} /> Trước</button>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (<button key={`page-${page}`} type="button" onClick={() => setStudentTablePage(page)} style={{ width: 32, height: 32, padding: 0, fontSize: 11, fontWeight: 800, borderRadius: 6, border: `1px solid ${studentTablePage === page ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: studentTablePage === page ? DEEP_BLUE_PRIMARY : "#ffffff", color: studentTablePage === page ? "#ffffff" : "#0f172a", cursor: "pointer", transition: "all 0.15s ease" }}>{page}</button>))}
                         </div>
-                        <div style={{ fontWeight: 700 }}>{row.committeeCode ?? "-"}</div>
-                        <div style={{ fontWeight: 900, color: DEEP_BLUE_PRIMARY }}>
-                          {row.finalScore != null ? row.finalScore : row.currentScore != null ? row.currentScore : (row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount) ? "..." : "-"}
-                        </div>
-                        <div>
-                          {(row.submittedCount != null && row.requiredCount != null && row.submittedCount >= row.requiredCount && !row.isLocked)
-                            ? <span style={{ color: "#b45309", fontWeight: 700 }}>Chờ công bố</span>
-                            : row.finalScore != null
-                              ? getGradeFromScore(Number(row.finalScore))
-                              : row.currentScore != null
-                                ? getGradeFromScore(Number(row.currentScore))
-                                : "-"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div style={{ border: "1px solid #e6eef6", borderRadius: 10, padding: 10, background: "#ffffff" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a" }}>Top 10 điểm cao nhất</div>
-                      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                        {topHigh10.map((r, i) => (
-                          <div key={`high-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                            <div style={{ fontWeight: 700 }}>{i + 1}. {r.topicTitle ?? "-"}</div>
-                            <div style={{ fontWeight: 900, color: "#16a34a" }}>{r.finalScore ?? r.currentScore ?? "-"}</div>
-                          </div>
-                        ))}
+                        <button type="button" onClick={() => setStudentTablePage(Math.min(totalPages, studentTablePage + 1))} disabled={studentTablePage === totalPages} style={{ padding: "6px 12px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1px solid #cbd5e1", background: studentTablePage === totalPages ? "#f1f5f9" : "#ffffff", color: studentTablePage === totalPages ? "#94a3b8" : "#0f172a", cursor: studentTablePage === totalPages ? "default" : "pointer", transition: "all 0.2s ease", display: "inline-flex", alignItems: "center", gap: 6 }}>Sau <ChevronRight size={14} /></button>
                       </div>
                     </div>
-
-                    <div style={{ border: "1px solid #e6eef6", borderRadius: 10, padding: 10, background: "#ffffff" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a" }}>Top 10 điểm thấp nhất</div>
-                      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                        {topLow10.map((r, i) => (
-                          <div key={`low-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                            <div style={{ fontWeight: 700 }}>{i + 1}. {r.topicTitle ?? "-"}</div>
-                            <div style={{ fontWeight: 900, color: "#ef4444" }}>{r.finalScore ?? r.currentScore ?? "-"}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </section>
             </>
           )}
@@ -3144,7 +3883,7 @@ const CommitteeOperationsManagement: React.FC = () => {
                 <section style={cardStyle}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
                     <div>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Chi tiết hội đồng</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}><Users size={14} /> Chi tiết hội đồng</div>
                       <h2 style={{ margin: "6px 0 0 0", fontSize: 18, color: "#0f172a" }}>{selectedCommittee.name}</h2>
                       <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>{selectedCommittee.code} · Phòng {selectedCommittee.room}</div>
                     </div>
@@ -3172,19 +3911,19 @@ const CommitteeOperationsManagement: React.FC = () => {
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
                     <div style={cardStyle}>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Giảng viên hướng dẫn</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}><User size={12} /> Giảng viên hướng dẫn</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 6 }}>{selectedCommitteeSupervisor}</div>
                     </div>
                     <div style={cardStyle}>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Chủ tịch hội đồng</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}><Gavel size={12} /> Chủ tịch hội đồng</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 6 }}>{selectedCommittee.chair || "-"}</div>
                     </div>
                     <div style={cardStyle}>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Ủy viên thư ký</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}><MessageSquare size={12} /> Ủy viên thư ký</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 6 }}>{selectedCommittee.secretary || "-"}</div>
                     </div>
                     <div style={cardStyle}>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Ủy viên phản biện</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}><Users size={12} /> Ủy viên phản biện</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 6 }}>{selectedCommittee.reviewer || "-"}</div>
                     </div>
                   </div>
@@ -3266,7 +4005,7 @@ const CommitteeOperationsManagement: React.FC = () => {
                 <section style={cardStyle}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                     <div>
-                      <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Danh sách đề tài</div>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}><Table size={14} /> Danh sách đề tài</div>
                       <div style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>{selectedCommitteeRows.length} hàng</div>
                     </div>
                   </div>
@@ -3514,16 +4253,13 @@ const CommitteeOperationsManagement: React.FC = () => {
       )}
 
       {activeTab === "audit" && (
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))", gap: 12 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
           {/* Audit Timeline */}
           <section style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Lịch trình kiểm toán</div>
               </div>
-              <button type="button" onClick={() => setExportModalOpen(true)} style={{ border: "none", background: DEEP_BLUE_PRIMARY, color: "#ffffff", borderRadius: 8, minHeight: 30, padding: "0 10px", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <Download size={12} /> Xuất
-              </button>
             </div>
             <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
               <label style={{ display: "grid", gap: 6 }}>
@@ -3576,64 +4312,389 @@ const CommitteeOperationsManagement: React.FC = () => {
           </section>
 
           {/* Export Center */}
-          <section style={cardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
-              <div>
-                <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Trung tâm xuất file</div>
-                <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>PDF · Excel · CSV · Word</div>
-              </div>
+          <section style={{ ...cardStyle, display: "grid", gap: 12, overflowX: "hidden" }}>
+            <div>
+              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Trung tâm xuất bảng điểm</div>
+              <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>Preset + nhóm field, tối ưu cho thao tác nhanh.</div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
-              {reportFormatOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setReportFormat(opt.value as ReportFormat)}
-                  style={{
-                    border: `1px solid ${reportFormat === opt.value ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`,
-                    borderRadius: 10,
-                    background: reportFormat === opt.value ? LIGHT_BLUE_SOFTEN : "#ffffff",
-                    color: reportFormat === opt.value ? DEEP_BLUE_PRIMARY : "#0f172a",
-                    padding: 10,
-                    textAlign: "center",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 700,
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Gói xuất</div>
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>PDF: biên bản, bảng điểm, tổng hợp</div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>Excel: tiến độ, thống kê</div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>CSV: raw scores</div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>Word: nhận xét</div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>ZIP: archive</div>
-              </div>
-            </div>
-            <button type="button" onClick={() => setExportModalOpen(true)} style={{ width: "100%", border: "none", background: DEEP_BLUE_PRIMARY, color: "#ffffff", borderRadius: 10, minHeight: 38, marginTop: 12, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <Download size={14} /> Xuất ngay
-            </button>
-            <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Recent exports</div>
-              {recentExports.length === 0 ? (
-                <div style={{ fontSize: 12, color: "#64748b" }}>Chưa có export gần đây.</div>
-              ) : (
-                recentExports.slice(0, 4).map((item, index) => (
-                  <div key={`${String(item?.name ?? item?.fileName ?? "export")}-${index}`} style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{String(item?.name ?? item?.fileName ?? "Export")}</div>
-                    <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{String(item?.timestamp ?? item?.createdAt ?? "-")}</div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, alignItems: "start" }}>
+              <div style={{ border: "1px solid #dbe4ee", borderRadius: 14, padding: 14, background: "#ffffff", display: "grid", gap: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Phạm vi dữ liệu</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {exportScopeOptions.map((option) => (
+                    <label key={option.value} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "#0f172a", cursor: "pointer" }}>
+                      <input
+                        type="radio"
+                        name="export-scope"
+                        checked={exportScopeMode === option.value}
+                        onChange={() => setExportScopeMode(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+
+                {exportScopeMode === "per-council" && (
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>Hội đồng</span>
+                    <select
+                      value={reportCouncilId}
+                      onChange={(event) => setReportCouncilId(event.target.value)}
+                      style={{ minHeight: 36, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 10px", fontSize: 13, color: "#0f172a", background: "#ffffff" }}
+                    >
+                      <option value="">Chọn hội đồng</option>
+                      {exportCouncilOptions.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {exportScopeMode === "per-topic" && (
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>Đề tài / Sinh viên</span>
+                    <input
+                      value={exportTopicKeyword}
+                      onChange={(event) => setExportTopicKeyword(event.target.value)}
+                      placeholder="Nhập mã đề tài, tên đề tài hoặc MSSV"
+                      style={{ minHeight: 36, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 10px", fontSize: 13 }}
+                    />
+                  </label>
+                )}
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>Bộ lọc</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => setExportOnlyLocked((prev) => !prev)}
+                      style={{ border: `1px solid ${exportOnlyLocked ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: exportOnlyLocked ? LIGHT_BLUE_SOFTEN : "#f8fafc", color: exportOnlyLocked ? DEEP_BLUE_PRIMARY : "#334155", borderRadius: 999, minHeight: 28, padding: "0 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Đã khóa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportOnlyPublished((prev) => !prev)}
+                      style={{ border: `1px solid ${exportOnlyPublished ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: exportOnlyPublished ? LIGHT_BLUE_SOFTEN : "#f8fafc", color: exportOnlyPublished ? DEEP_BLUE_PRIMARY : "#334155", borderRadius: 999, minHeight: 28, padding: "0 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Đã công bố
+                    </button>
                   </div>
-                ))
-              )}
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #dbe4ee", borderRadius: 14, padding: 14, background: "#ffffff", display: "grid", gap: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Template báo cáo</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                  {exportTemplateOptions.map((template) => {
+                    const isActive = exportTemplateMode === template.value;
+                    return (
+                      <button
+                        key={template.value}
+                        type="button"
+                        onClick={() => setExportTemplateMode(template.value)}
+                        style={{ border: `1.5px solid ${isActive ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: isActive ? "#eff6ff" : "#ffffff", borderRadius: 12, padding: 12, cursor: "pointer", textAlign: "left", display: "grid", gap: 4 }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: isActive ? DEEP_BLUE_PRIMARY : "#0f172a", fontWeight: 800 }}>
+                          {template.icon} {template.label}
+                        </span>
+                        <span style={{ fontSize: 12, color: "#64748b" }}>{template.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Fields</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button type="button" onClick={selectAllExportFields} style={{ border: "1px solid #cbd5e1", background: "#ffffff", borderRadius: 8, minHeight: 28, padding: "0 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>All</button>
+                    <button type="button" onClick={resetExportFields} style={{ border: "1px solid #cbd5e1", background: "#ffffff", borderRadius: 8, minHeight: 28, padding: "0 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Reset</button>
+                  </div>
+                </div>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Tìm field</span>
+                  <div style={{ position: "relative" }}>
+                    <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+                    <input
+                      value={exportFieldSearch}
+                      onChange={(event) => setExportFieldSearch(event.target.value)}
+                      placeholder="Tìm theo tên hoặc key"
+                      style={{ width: "100%", minHeight: 36, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 10px 0 30px", fontSize: 13 }}
+                    />
+                  </div>
+                </label>
+
+                <div style={{ display: "grid", gap: 8, maxHeight: 300, overflowY: "auto", paddingRight: 2 }}>
+                  {exportFilteredGroups.map((group) => {
+                    const selectedCount = group.fields.filter((field) => exportSelectedFields.includes(field.key)).length;
+                    const allSelected = group.fields.length > 0 && selectedCount === group.fields.length;
+                    const expanded = exportExpandedGroups.includes(group.key);
+                    return (
+                      <div key={group.key} style={{ border: "1px solid #dbe4ee", borderRadius: 10, background: "#f8fafc" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleExportGroupExpand(group.key)}
+                            style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, color: "#0f172a", fontWeight: 800, fontSize: 12 }}
+                          >
+                            <ChevronDown size={13} style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.18s ease" }} />
+                            {group.label}
+                            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>({selectedCount}/{group.fields.length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleExportGroup(group)}
+                            style={{ border: `1px solid ${allSelected ? DEEP_BLUE_PRIMARY : "#cbd5e1"}`, background: allSelected ? LIGHT_BLUE_SOFTEN : "#ffffff", color: allSelected ? DEEP_BLUE_PRIMARY : "#0f172a", borderRadius: 999, minHeight: 24, padding: "0 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            {allSelected ? "Bỏ nhóm" : "Chọn nhóm"}
+                          </button>
+                        </div>
+                        {expanded && (
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, padding: "0 10px 10px" }}>
+                            {group.fields.map((field) => (
+                              <label key={field.key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#0f172a", cursor: "pointer" }}>
+                                <input type="checkbox" checked={exportSelectedFields.includes(field.key)} onChange={() => toggleExportField(field.key)} />
+                                {field.label}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #dbe4ee", borderRadius: 14, padding: 14, background: "#ffffff", display: "grid", gap: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Preview & Export</div>
+
+                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, overflowX: "auto", overflowY: "hidden" }}>
+                  <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead style={{ background: "#f1f5f9" }}>
+                      <tr>
+                        {exportPreviewColumns.map((columnKey) => (
+                          <th key={columnKey} style={{ textAlign: "left", padding: "8px 10px", fontWeight: 800, color: "#0f172a", borderBottom: "1px solid #cbd5e1" }}>
+                            {exportFieldLabelMap.get(columnKey) ?? columnKey}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exportPreviewRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={exportPreviewColumns.length} style={{ padding: "10px", color: "#64748b" }}>
+                            Không có dữ liệu phù hợp bộ lọc hiện tại.
+                          </td>
+                        </tr>
+                      ) : (
+                        exportPreviewRows.map((row) => (
+                          <tr key={row.key}>
+                            {row.values.map((value, index) => (
+                              <td key={`${row.key}-${index}`} style={{ padding: "8px 10px", borderBottom: "1px solid #e2e8f0", color: "#0f172a" }}>
+                                {String(value)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f172a", cursor: "pointer" }}><input type="checkbox" checked={exportIncludeLogo} onChange={() => setExportIncludeLogo((prev) => !prev)} /> Bao gồm logo</label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f172a", cursor: "pointer" }}><input type="checkbox" checked={exportIncludeSignature} onChange={() => setExportIncludeSignature((prev) => !prev)} /> Bao gồm chữ ký</label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f172a", cursor: "pointer" }}><input type="checkbox" checked={exportPasswordProtect} onChange={() => setExportPasswordProtect((prev) => !prev)} /> Bảo vệ bằng mật khẩu</label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(true)}
+                  style={{ width: "100%", border: "1px solid #cbd5e1", background: LIGHT_BLUE_SOFTEN, color: DEEP_BLUE_PRIMARY, borderRadius: 12, minHeight: 42, fontSize: 14, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                >
+                  <Eye size={16} /> Xem trước bảng sẽ xuất
+                </button>
+
+                <div ref={exportDownloadMenuRef} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    onClick={() => setExportDownloadMenuOpen((prev) => !prev)}
+                    style={{ width: "100%", border: "none", background: DEEP_BLUE_PRIMARY, color: "#ffffff", borderRadius: 12, minHeight: 44, fontSize: 18, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                  >
+                    <Download size={16} /> Export Now <ChevronDown size={16} style={{ transform: exportDownloadMenuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.18s ease" }} />
+                  </button>
+
+                  {exportDownloadMenuOpen && (
+                    <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: 12, boxShadow: "0 12px 28px rgba(15, 23, 42, 0.15)", overflow: "hidden", zIndex: 45 }}>
+                      {[
+                        { value: "pdf" as ReportFormat, label: "Tải PDF", icon: <FileText size={14} /> },
+                        { value: "excel" as ReportFormat, label: "Tải Excel", icon: <FileSpreadsheet size={14} /> },
+                        { value: "csv" as ReportFormat, label: "Tải CSV", icon: <Table size={14} /> },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setExportDownloadMenuOpen(false);
+                            setReportFormat(option.value);
+                            setReportType(exportResolvedReportType);
+                            exportReport({
+                              reportType: exportResolvedReportType,
+                              format: option.value,
+                              councilId: exportScopeMode === "per-council" ? reportCouncilId : undefined,
+                            });
+                          }}
+                          style={{ width: "100%", border: "none", borderTop: "1px solid #e2e8f0", background: "#ffffff", minHeight: 42, padding: "0 12px", fontSize: 13, fontWeight: 700, color: "#0f172a", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "flex-start", gap: 8 }}
+                        >
+                          {option.icon}
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 4, display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Export gần đây</div>
+                  {recentExports.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#64748b" }}>Chưa có export gần đây.</div>
+                  ) : (
+                    recentExports.slice(0, 3).map((item, index) => (
+                      <div key={`${String(item?.name ?? item?.fileName ?? "export")}-${index}`} style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{String(item?.name ?? item?.fileName ?? "Export")}</div>
+                        <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{String(item?.timestamp ?? item?.createdAt ?? "-")}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </section>
         </section>
       )}
+
+        {exportModalOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(15, 23, 42, 0.45)",
+              zIndex: 4005,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 18,
+            }}
+            onClick={() => setExportModalOpen(false)}
+          >
+            <div
+              style={{
+                width: "min(1120px, calc(100vw - 24px))",
+                maxHeight: "calc(100vh - 36px)",
+                overflowY: "auto",
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: 14,
+                padding: 16,
+                boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
+                display: "grid",
+                gap: 12,
+              }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "#0f172a" }}>Xem trước bảng sẽ xuất</div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+                    Kiểm tra phạm vi, template, định dạng và các trường sẽ được đưa vào file trước khi tải xuống.
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", height: "fit-content", display: "inline-flex", alignItems: "center", gap: 8 }}
+                    onClick={() => setExportModalOpen(false)}
+                  >
+                    <X size={14} /> Đóng
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, background: "#f8fafc" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Phạm vi</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>
+                    {exportScopeOptions.find((option) => option.value === exportScopeMode)?.label ?? exportScopeMode}
+                  </div>
+                </div>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, background: "#f8fafc" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Template</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>
+                    {exportTemplateOptions.find((template) => template.value === exportTemplateMode)?.label ?? exportTemplateMode}
+                  </div>
+                </div>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, background: "#f8fafc" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Định dạng</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{reportFormat.toUpperCase()}</div>
+                </div>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, background: "#f8fafc" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Số field</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{exportSelectedFields.length}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>Các trường sẽ xuất</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {exportPreviewModalColumns.map((fieldKey) => (
+                    <span key={fieldKey} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 999, border: "1px solid #cbd5e1", background: "#ffffff", fontSize: 12, fontWeight: 700, color: "#0f172a" }}>
+                      {exportFieldLabelMap.get(fieldKey) ?? fieldKey}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#ffffff" }}>
+                <div style={{ overflowX: "auto", overflowY: "hidden" }}>
+                  <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead style={{ background: "#f1f5f9" }}>
+                      <tr>
+                        {exportPreviewModalColumns.map((columnKey) => (
+                          <th key={columnKey} style={{ textAlign: "left", padding: "8px 10px", fontWeight: 800, color: "#0f172a", borderBottom: "1px solid #cbd5e1" }}>
+                            {exportFieldLabelMap.get(columnKey) ?? columnKey}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exportPreviewModalRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={exportPreviewModalColumns.length} style={{ padding: "10px", color: "#64748b" }}>
+                            Không có dữ liệu phù hợp với bộ lọc hiện tại.
+                          </td>
+                        </tr>
+                      ) : (
+                        exportPreviewModalRows.map((row) => (
+                          <tr key={row.key}>
+                            {row.values.map((value, index) => (
+                              <td key={`${row.key}-${index}`} style={{ padding: "8px 10px", borderBottom: "1px solid #e2e8f0", color: "#0f172a" }}>
+                                {String(value)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       {previewModalType && (
         <div
@@ -3730,10 +4791,10 @@ const CommitteeOperationsManagement: React.FC = () => {
 
                 <button
                   type="button"
-                  style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", height: "fit-content" }}
+                  style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", height: "fit-content", display: "inline-flex", alignItems: "center", gap: 8 }}
                   onClick={() => { setPreviewModalType(null); setShowDownloadDropdown(false); }}
                 >
-                  Đóng
+                  <X size={14} /> Đóng
                 </button>
               </div>
             </div>
@@ -3785,23 +4846,55 @@ const CommitteeOperationsManagement: React.FC = () => {
 
                   {previewModalType === "meeting" ? (
                     <div style={{ display: "grid", gap: 12 }}>
-                      <div style={{ fontWeight: "bold" }}>I. Nội dung nhận xét chung:</div>
-                      <div style={{ whiteSpace: "pre-wrap", padding: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-                        {selectedTopic.commentTk || selectedTopic.commentCt || (selectedTopic as any).minutes || (selectedTopic as any).commentSecretary || "Chưa có nội dung biên bản chi tiết."}
+                      <div style={{ fontWeight: "bold" }}>I. Thông tin bảo vệ:</div>
+                      <div style={{ display: "grid", gap: 8, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                        <div><strong>Giảng viên hướng dẫn:</strong> {selectedTopic.supervisorName || selectedTopic.supervisorLecturerName || "-"}</div>
+                        <div><strong>Chủ tịch hội đồng:</strong> {selectedTopic.chairName || selectedTopic.committeeChairName || "-"}</div>
+                        <div><strong>Thư ký hội đồng:</strong> {selectedTopic.secretaryName || selectedTopic.committeeSecretaryName || "-"}</div>
+                        <div><strong>Phản biện:</strong> {selectedTopic.reviewerName || selectedTopic.committeeReviewerName || "-"}</div>
+                        {selectedTopic.room && <div><strong>Phòng:</strong> {selectedTopic.room}</div>}
+                        {selectedTopic.startTime && <div><strong>Thời gian:</strong> {selectedTopic.startTime} {selectedTopic.endTime ? `- ${selectedTopic.endTime}` : ""}</div>}
                       </div>
                       <div style={{ fontWeight: "bold" }}>II. Điểm thành phần:</div>
-                      <div style={{ display: "flex", gap: 20 }}>
-                        <span>Chủ tịch: <strong>{getLockedScoreValue(selectedTopic, selectedTopic.scoreCt)}</strong></span>
-                        <span>Thư ký: <strong>{getLockedScoreValue(selectedTopic, selectedTopic.scoreTk)}</strong></span>
-                        <span>Phản biện: <strong>{getLockedScoreValue(selectedTopic, selectedTopic.scorePb)}</strong></span>
-                        <span>GVHD: <strong>{getLockedScoreValue(selectedTopic, selectedTopic.scoreGvhd ?? selectedTopic.topicSupervisorScore)}</strong></span>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#ffffff" }}>
+                          <div style={{ fontSize: 11, color: "#475569", fontWeight: 700 }}>Chủ tịch</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: "#1e3a5f", marginTop: 6 }}>{getLockedScoreValue(selectedTopic, selectedTopic.scoreCt)}</div>
+                        </div>
+                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#ffffff" }}>
+                          <div style={{ fontSize: 11, color: "#475569", fontWeight: 700 }}>Thư ký</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: "#1e3a5f", marginTop: 6 }}>{getLockedScoreValue(selectedTopic, selectedTopic.scoreTk)}</div>
+                        </div>
+                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#ffffff" }}>
+                          <div style={{ fontSize: 11, color: "#475569", fontWeight: 700 }}>Phản biện</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: "#1e3a5f", marginTop: 6 }}>{getLockedScoreValue(selectedTopic, selectedTopic.scorePb)}</div>
+                        </div>
+                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#ffffff" }}>
+                          <div style={{ fontSize: 11, color: "#475569", fontWeight: 700 }}>GVHD</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: "#1e3a5f", marginTop: 6 }}>{getLockedScoreValue(selectedTopic, selectedTopic.scoreGvhd ?? selectedTopic.topicSupervisorScore)}</div>
+                        </div>
                       </div>
+                      {selectedTopic.commentTk || selectedTopic.commentCt && (
+                        <>
+                          <div style={{ fontWeight: "bold" }}>III. Nhận xét chung:</div>
+                          <div style={{ whiteSpace: "pre-wrap", padding: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                            {selectedTopic.commentTk || selectedTopic.commentCt || "Không có nhận xét"}
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 12 }}>
-                      <div style={{ fontWeight: "bold" }}>Nội dung nhận xét phản biện:</div>
+                      <div style={{ fontWeight: "bold" }}>I. Điểm đánh giá của phản biện:</div>
+                      <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 12, background: "#f8fafc" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                          <div><strong>Điểm phản biện:</strong> {getLockedScoreValue(selectedTopic, selectedTopic.scorePb)}</div>
+                          <div><strong>Phản biện:</strong> {selectedTopic.reviewerName || selectedTopic.committeeReviewerName || "-"}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: "bold" }}>II. Nội dung nhận xét phản biện:</div>
                       <div style={{ whiteSpace: "pre-wrap", padding: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-                        {selectedTopic.commentPb || (selectedTopic as any).reviewNote || (selectedTopic as any).commentReviewer || "Chưa có nội dung nhận xét phản biện chi tiết."}
+                        {selectedTopic.commentPb || "Không có nhận xét phản biện chi tiết. Vui lòng tải file PDF để xem đầy đủ."}
                       </div>
                     </div>
                   )}
@@ -3828,44 +4921,83 @@ const CommitteeOperationsManagement: React.FC = () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
                 <div style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Sinh viên</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <User size={14} color="#0f172a" />
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Sinh viên</div>
+                  </div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", marginTop: 6 }}>{selectedTopic.studentName ?? "-"}</div>
                   <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>{selectedTopic.studentCode ?? "-"}</div>
                 </div>
                 <div style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Hội đồng</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <Users size={14} color="#0f172a" />
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Hội đồng</div>
+                  </div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", marginTop: 6 }}>{selectedCommittee?.name ?? selectedTopic.committeeName ?? selectedTopic.committeeCode ?? "-"}</div>
                   <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>{selectedTopic.committeeCode ?? selectedCommittee?.code ?? "-"}</div>
                 </div>
                 <div style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Điểm cuối</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <Star size={14} color="#f59e0b" fill="#f59e0b" />
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#475569" }}>Điểm cuối</div>
+                  </div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: DEEP_BLUE_PRIMARY, marginTop: 6 }}>{getTopicScoreDisplay(selectedTopic)}</div>
                   <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>{getTopicGradeDisplay(selectedTopic)}</div>
                 </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
-                <div style={cardStyle}><div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Giảng viên hướng dẫn</div><div style={{ marginTop: 6, fontWeight: 700 }}>{selectedTopic.supervisorLecturerName ?? selectedTopic.supervisorName ?? "-"}</div></div>
-                <div style={cardStyle}><div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Chủ tịch hội đồng</div><div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.chair ?? "-"}</div></div>
-                <div style={cardStyle}><div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Ủy viên thư ký</div><div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.secretary ?? "-"}</div></div>
-                <div style={cardStyle}><div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Ủy viên phản biện</div><div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.reviewer ?? "-"}</div></div>
+                <div style={cardStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <FileText size={13} color="#0f172a" />
+                    <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Giảng viên hướng dẫn</div>
+                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{selectedTopic.supervisorLecturerName ?? selectedTopic.supervisorName ?? "-"}</div>
+                </div>
+                <div style={cardStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <User size={13} color="#0f172a" />
+                    <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Chủ tịch hội đồng</div>
+                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.chair ?? "-"}</div>
+                </div>
+                <div style={cardStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <FileText size={13} color="#0f172a" />
+                    <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Ủy viên thư ký</div>
+                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.secretary ?? "-"}</div>
+                </div>
+                <div style={cardStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <MessageSquare size={13} color="#0f172a" />
+                    <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase" }}>Ủy viên phản biện</div>
+                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>{selectedCommittee?.reviewer ?? "-"}</div>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12 }}>
                 <section style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Thông tin đề tài</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                    <FileText size={14} color="#0f172a" />
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Thông tin đề tài</div>
+                  </div>
                   <div style={{ display: "grid", gap: 8, marginTop: 10, fontSize: 13, color: "#0f172a" }}>
-                    <div>Mã đề tài: <strong>{selectedTopic.topicCode ?? "-"}</strong></div>
-                    <div>Lớp: <strong>{selectedTopic.className ?? "-"}</strong></div>
-                    <div>Khoá: <strong>{selectedTopic.cohortCode ?? "-"}</strong></div>
-                    <div>Thời gian: <strong>{selectedTopic.startTime ?? "-"} - {selectedTopic.endTime ?? "-"}</strong></div>
-                    <div>Trạng thái: <strong>{getStatusLabel(selectedTopic.status ?? (selectedTopic.isLocked ? "LOCKED" : "ONGOING"))}</strong></div>
-                    <div>Đã nộp / cần nộp: <strong>{selectedTopic.submittedCount ?? 0} / {selectedTopic.requiredCount ?? 0}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Mã:</span> <strong>{selectedTopic.topicCode ?? "-"}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Lớp:</span> <strong>{selectedTopic.className ?? "-"}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Khoá:</span> <strong>{selectedTopic.cohortCode ?? "-"}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Thời gian:</span> <strong>{selectedTopic.startTime ?? "-"} - {selectedTopic.endTime ?? "-"}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Trạng thái:</span> <strong>{getStatusLabel(selectedTopic.status ?? (selectedTopic.isLocked ? "LOCKED" : "ONGOING"))}</strong></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "#475569", fontWeight: 600, minWidth: 90 }}>Đã nộp:</span> <strong>{selectedTopic.submittedCount ?? 0} / {selectedTopic.requiredCount ?? 0}</strong></div>
                   </div>
                 </section>
 
                 <section style={cardStyle}>
-                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Tệp đính kèm</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                    <Paperclip size={14} color="#0f172a" />
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Tệp đính kèm</div>
+                  </div>
                   <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                     {(selectedTopic.defenseDocuments ?? []).length > 0 ? (
                       selectedTopic.defenseDocuments!.map((doc, index) => (
@@ -3882,7 +5014,10 @@ const CommitteeOperationsManagement: React.FC = () => {
               </div>
 
               <section style={cardStyle}>
-                <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Bảng điểm thành phần</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                  <BarChart3 size={14} color="#0f172a" />
+                  <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "#0f172a" }}>Bảng điểm thành phần</div>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 10, marginTop: 12 }}>
                   {[
                     { label: "GVHD", value: getLockedScoreValue(selectedTopic, selectedTopic.scoreGvhd ?? selectedTopic.topicSupervisorScore) },
@@ -3900,9 +5035,9 @@ const CommitteeOperationsManagement: React.FC = () => {
               </section>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => downloadCommitteeReport(selectedCommittee ?? { code: String(selectedTopic.committeeCode ?? "-"), name: "-", room: "-", chair: "-", secretary: "-", reviewer: "-", totalTopics: 0, scoredTopics: 0, lockedTopics: 0, status: "ONGOING", currentTopic: "-", currentStudent: "-", progressPercent: 0, estimatedCompletion: "-", delayLabel: "On time", key: String(selectedTopic.committeeCode ?? "-") }, "minutes", "pdf")} style={{ border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 14px", borderRadius: 8, cursor: "pointer" }}>Tải biên bản</button>
-                <button type="button" onClick={() => downloadCommitteeReport(selectedCommittee ?? { code: String(selectedTopic.committeeCode ?? "-"), name: "-", room: "-", chair: "-", secretary: "-", reviewer: "-", totalTopics: 0, scoredTopics: 0, lockedTopics: 0, status: "ONGOING", currentTopic: "-", currentStudent: "-", progressPercent: 0, estimatedCompletion: "-", delayLabel: "On time", key: String(selectedTopic.committeeCode ?? "-") }, "review", "pdf")} style={{ border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 14px", borderRadius: 8, cursor: "pointer" }}>Tải nhận xét</button>
-                <button type="button" onClick={() => setTopicDetailModalOpen(false)} style={{ border: "none", background: DEEP_BLUE_PRIMARY, color: "#ffffff", padding: "8px 14px", borderRadius: 8, cursor: "pointer" }}>Đóng</button>
+                <button type="button" onClick={() => downloadCommitteeReport(selectedCommittee ?? { code: String(selectedTopic.committeeCode ?? "-"), name: "-", room: "-", chair: "-", secretary: "-", reviewer: "-", totalTopics: 0, scoredTopics: 0, lockedTopics: 0, status: "ONGOING", currentTopic: "-", currentStudent: "-", progressPercent: 0, estimatedCompletion: "-", delayLabel: "On time", key: String(selectedTopic.committeeCode ?? "-") }, "minutes", "pdf")} style={{ border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 14px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={14} /> Tải biên bản</button>
+                <button type="button" onClick={() => downloadCommitteeReport(selectedCommittee ?? { code: String(selectedTopic.committeeCode ?? "-"), name: "-", room: "-", chair: "-", secretary: "-", reviewer: "-", totalTopics: 0, scoredTopics: 0, lockedTopics: 0, status: "ONGOING", currentTopic: "-", currentStudent: "-", progressPercent: 0, estimatedCompletion: "-", delayLabel: "On time", key: String(selectedTopic.committeeCode ?? "-") }, "review", "pdf")} style={{ border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 14px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={14} /> Tải nhận xét</button>
+                <button type="button" onClick={() => setTopicDetailModalOpen(false)} style={{ border: "none", background: DEEP_BLUE_PRIMARY, color: "#ffffff", padding: "8px 14px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><X size={14} /> Đóng</button>
               </div>
             </div>
           </div>

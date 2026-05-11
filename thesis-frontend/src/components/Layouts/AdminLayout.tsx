@@ -7,8 +7,6 @@ import {
   Bell,
   Menu,
   X,
-  PanelLeftClose,
-  PanelLeftOpen,
 } from "lucide-react";
 
 const AdminLayout: React.FC = () => {
@@ -16,6 +14,9 @@ const AdminLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
+  const collapseSidebarOnActivity = () => {
+    setIsSidebarCollapsed(true);
+  };
 
   return (
     <>
@@ -132,13 +133,43 @@ const AdminLayout: React.FC = () => {
           <div
             style={{
               textAlign: "center",
-              padding: "28px 20px",
+              padding: "44px 20px 28px",
               background:
                 "linear-gradient(180deg, rgba(243, 112, 33, 0.1) 0%, #001C3D 100%)",
               borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
               position: "relative",
             }}
           >
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed(false)}
+                title="Mở rộng thanh nav"
+                aria-label="Mở rộng thanh nav"
+                style={{
+                  position: "absolute",
+                  top: "14px",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 38,
+                  height: 38,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255, 255, 255, 0.3)",
+                  background: "linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255,255,255,0.06) 100%)",
+                  color: "#FFFFFF",
+                  boxShadow: "0 6px 16px rgba(0, 0, 0, 0.18)",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <Menu size={18} strokeWidth={2.5} />
+              </button>
+            )}
+
             {/* Close Button for Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(false)}
@@ -160,24 +191,46 @@ const AdminLayout: React.FC = () => {
               <X size={20} />
             </button>
 
-            <img
-              src="/dnu_logo.png"
-              alt="Đại học Đại Nam"
-              style={{
-                width: isSidebarCollapsed ? 52 : 90,
-                display: "block",
-                margin: isSidebarCollapsed ? "16px auto 10px" : "0 auto 14px",
-                filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
-                transition:
-                  "transform 0.3s ease, width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
+            <button
+              type="button"
+              onClick={() => {
+                if (isSidebarCollapsed) {
+                  setIsSidebarCollapsed(false);
+                }
               }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.transform = "scale(1.05)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.transform = "scale(1)")
-              }
-            />
+              aria-label="Mở rộng thanh nav"
+              title={isSidebarCollapsed ? "Mở rộng thanh nav" : "Logo Đại học Đại Nam"}
+              style={{
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                margin: 0,
+                cursor: isSidebarCollapsed ? "pointer" : "default",
+                display: "block",
+                width: "100%",
+              }}
+            >
+              <img
+                src={isSidebarCollapsed ? "/favicon_dnu.png" : "/dnu_logo.png"}
+                alt="Đại học Đại Nam"
+                style={{
+                  width: isSidebarCollapsed ? 44 : 90,
+                  display: "block",
+                  margin: isSidebarCollapsed ? "16px auto 10px" : "0 auto 14px",
+                  filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+                  transition:
+                    "transform 0.3s ease, width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (isSidebarCollapsed) {
+                    e.currentTarget.style.transform = "scale(1.06)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+              />
+            </button>
             <h3
               className="sidebar-brand-text"
               style={{
@@ -300,36 +353,6 @@ const AdminLayout: React.FC = () => {
                 className="mobile-menu-btn"
               >
                 {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                title={
-                  isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-                }
-                aria-label={
-                  isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-                }
-                style={{
-                  width: 36,
-                  height: 36,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  background: "rgba(255,255,255,0.08)",
-                  color: "#fff",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                }}
-              >
-                {isSidebarCollapsed ? (
-                  <PanelLeftOpen size={18} />
-                ) : (
-                  <PanelLeftClose size={18} />
-                )}
               </button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
@@ -477,6 +500,8 @@ const AdminLayout: React.FC = () => {
               height: "calc(100vh - 72px)",
               overflowY: "auto",
             }}
+            onPointerDownCapture={collapseSidebarOnActivity}
+            onFocusCapture={collapseSidebarOnActivity}
           >
             <Outlet />
           </div>

@@ -10,8 +10,7 @@ import {
   Menu,
   X,
   KeyRound,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Sidebar,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -55,6 +54,9 @@ const LecturerLayout: React.FC = () => {
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
+  const collapseSidebarOnActivity = () => {
+    setIsSidebarCollapsed(true);
+  };
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -373,6 +375,33 @@ const LecturerLayout: React.FC = () => {
             position: "relative",
           }}
         >
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              title="Mở rộng thanh nav"
+              aria-label="Mở rộng thanh nav"
+              style={{
+                position: "absolute",
+                top: "12px",
+                right: "12px",
+                width: 34,
+                height: 34,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <Sidebar size={18} />
+            </button>
+          )}
+
           {/* Close Button for Mobile */}
           <button
             onClick={() => setIsMobileMenuOpen(false)}
@@ -413,41 +442,17 @@ const LecturerLayout: React.FC = () => {
               fontSize: 17,
               fontWeight: 700,
               margin: 0,
-              letterSpacing: "0.5px",
-              textShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
-              opacity: isSidebarCollapsed ? 0 : 1,
-              transform: isSidebarCollapsed
-                ? "translateY(-8px) scale(0.96)"
-                : "translateY(0) scale(1)",
-              maxHeight: isSidebarCollapsed ? 0 : 40,
-              overflow: "hidden",
-              transition:
-                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
-            }}
-          >
-            Hệ thống Quản lý Đồ án
-          </h3>
-          <div
-            className="sidebar-brand-text"
-            style={{
-              fontSize: 12,
-              color: "#e2e8f0",
-              marginTop: 6,
-              opacity: isSidebarCollapsed ? 0 : 1,
-              transform: isSidebarCollapsed
-                ? "translateY(-8px) scale(0.96)"
-                : "translateY(0) scale(1)",
-              maxHeight: isSidebarCollapsed ? 0 : 28,
-              overflow: "hidden",
-              transition:
-                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
             }}
           >
             Vai trò: <strong style={{ color: "#f37021" }}>Giảng viên</strong>
-          </div>
+          </h3>
         </div>
 
-        <div style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}>
+        <div
+          style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}
+          onPointerDownCapture={collapseSidebarOnActivity}
+          onFocusCapture={collapseSidebarOnActivity}
+        >
           <LecturerNav
             collapsed={isSidebarCollapsed}
             onNavigate={() => setIsMobileMenuOpen(false)}
@@ -528,35 +533,6 @@ const LecturerLayout: React.FC = () => {
               {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-              title={
-                isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-              }
-              aria-label={
-                isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-              }
-              style={{
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 12,
-                border: "1px solid rgba(255, 255, 255, 0.2)",
-                background: "rgba(255, 255, 255, 0.1)",
-                color: "#fff",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              {isSidebarCollapsed ? (
-                <PanelLeftOpen size={18} />
-              ) : (
-                <PanelLeftClose size={18} />
-              )}
-            </button>
           </div>
 
           {/* Right Section - Time and User Menu */}

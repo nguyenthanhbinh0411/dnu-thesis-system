@@ -62,6 +62,7 @@ const StudentNav: React.FC<StudentNavProps> = ({
               onClick={onNavigate}
               title={item.label}
               aria-label={item.label}
+              data-tooltip={item.label}
             >
               <span className="icon">{item.icon}</span>
               <span className="label">{item.label}</span>

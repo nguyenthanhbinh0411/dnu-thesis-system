@@ -167,7 +167,7 @@ const cardStyle: React.CSSProperties = {
   maxHeight: "92vh",
   overflow: "hidden",
   background: "#ffffff",
-  borderRadius: 18,
+  borderRadius: 10,
   border: "1px solid #cbd5e1",
   boxShadow: "0 28px 90px rgba(15, 23, 42, 0.24)",
   display: "flex",
@@ -175,7 +175,7 @@ const cardStyle: React.CSSProperties = {
 };
 
 const headerStyle: React.CSSProperties = {
-  padding: 18,
+  padding: 14,
   borderBottom: "1px solid #e2e8f0",
   display: "flex",
   justifyContent: "space-between",
@@ -187,20 +187,21 @@ const buttonBase: React.CSSProperties = {
   border: "1px solid #cbd5e1",
   background: "#ffffff",
   color: "#0f172a",
-  borderRadius: 10,
-  padding: "10px 12px",
-  fontWeight: 700,
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontWeight: 600,
+  fontSize: 12,
   display: "inline-flex",
   alignItems: "center",
-  gap: 8,
+  gap: 6,
   cursor: "pointer",
 };
 
 const buttonPrimary: React.CSSProperties = {
   ...buttonBase,
-  background: "#f37021",
+  background: "#1e3a5f",
   color: "#ffffff",
-  borderColor: "#f37021",
+  borderColor: "#1e3a5f",
 };
 
 const buttonGhost: React.CSSProperties = {
@@ -217,40 +218,42 @@ const bodyStyle: React.CSSProperties = {
 
 const sidePanelStyle: React.CSSProperties = {
   borderRight: "1px solid #e2e8f0",
-  padding: 16,
+  padding: 12,
   overflowY: "auto",
   background: "linear-gradient(180deg, #ffffff 0%, #fffaf5 100%)",
 };
 
 const mainPanelStyle: React.CSSProperties = {
-  padding: 16,
+  padding: 12,
   overflowY: "auto",
   minHeight: 0,
 };
 
 const panelCardStyle: React.CSSProperties = {
   border: "1px solid #e2e8f0",
-  borderRadius: 14,
+  borderRadius: 8,
   background: "#ffffff",
   boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)",
 };
 
 const tabButtonStyle = (active: boolean): React.CSSProperties => ({
   border: "1px solid",
-  borderColor: active ? "#f37021" : "#cbd5e1",
-  background: active ? "#f37021" : "#ffffff",
+  borderColor: active ? "#1e3a5f" : "#cbd5e1",
+  background: active ? "#1e3a5f" : "#ffffff",
   color: active ? "#ffffff" : "#0f172a",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontWeight: 800,
+  padding: "8px 12px",
+  fontWeight: 600,
+  fontSize: 12,
   cursor: "pointer",
 });
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
   border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 12px",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontSize: 12,
   outline: "none",
   background: "#ffffff",
 };
@@ -618,13 +621,13 @@ const DefenseTermLecturersPickerModal: React.FC<
       <div style={cardStyle}>
         <div style={headerStyle}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
               {title}
             </div>
-            <div style={{ marginTop: 6, color: "#334155", fontSize: 13 }}>
+            <div style={{ marginTop: 4, color: "#475569", fontSize: 12 }}>
               {subtitle}
             </div>
-            <div style={{ marginTop: 8, color: "#0f172a", fontSize: 12 }}>
+            <div style={{ marginTop: 6, color: "#0f172a", fontSize: 11 }}>
               Đã chọn <strong>{selectedCount}</strong> giảng viên
             </div>
           </div>
@@ -654,7 +657,7 @@ const DefenseTermLecturersPickerModal: React.FC<
                 </div>
                 <div style={{ padding: 14, display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Tìm kiếm
                     </span>
                     <div style={{ position: "relative" }}>
@@ -677,7 +680,7 @@ const DefenseTermLecturersPickerModal: React.FC<
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Khoa/Bộ môn
                     </span>
                     <input
@@ -693,7 +696,7 @@ const DefenseTermLecturersPickerModal: React.FC<
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Học vị
                     </span>
                     <input
@@ -709,7 +712,7 @@ const DefenseTermLecturersPickerModal: React.FC<
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Tag codes
                     </span>
                     <input

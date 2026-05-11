@@ -7,14 +7,18 @@ import React, {
 } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   CalendarDays,
   CheckCircle,
   Clock3,
   Columns3,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   Filter,
+  Flag,
+  Grid,
   History,
   Pencil,
   Plus,
@@ -24,14 +28,18 @@ import {
   Search,
   Send,
   Shield,
+  Tag,
   Trash2,
   Rows3,
   Workflow,
+  X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchData } from "../../api/fetchData";
 import { useToast } from "../../context/useToast";
 import type { ApiResponse } from "../../types/api";
+import { getRoleClaimFromAccessToken } from "../../services/auth-session.service";
+import { normalizeRole, ROLE_ADMIN, ROLE_LECTURER, ROLE_STUDENT } from "../../utils/role";
 import {
   pickCaseInsensitiveValue,
   readEnvelopeData,
@@ -50,6 +58,7 @@ import DefenseTermLecturersSection, {
 import DefenseTermStudentsSection, {
   type DefenseTermStudentsSectionHandle,
 } from "../../components/admin/DefenseTermStudentsSection";
+import DefenseTopicsSection from "../../components/admin/DefenseTopicsSection";
 import "./Dashboard.css";
 
 type DefenseTermStatus =
@@ -60,6 +69,10 @@ type DefenseTermStatus =
   | "Archived";
 
 type DetailTab = "overview" | "state" | "workflow" | "history";
+
+type MainTab = "overview" | "students" | "lecturers" | "topics" | "progress" | "reports";
+
+type UserRole = "SystemAdmin" | "FacultyCoordinator" | "Lecturer" | "Student" | "Unknown";
 
 type RoadmapLayout = "horizontal" | "vertical";
 
@@ -159,9 +172,9 @@ const pageStyles: Record<string, React.CSSProperties> = {
   hero: {
     position: "relative",
     overflow: "hidden",
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    padding: 18,
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: "16px 18px",
     marginBottom: 16,
     background: "#ffffff",
     boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
@@ -225,18 +238,17 @@ const pageStyles: Record<string, React.CSSProperties> = {
   primaryButton: {
     border: "none",
     borderRadius: 10,
-    padding: "10px 14px",
-    minHeight: 40,
-    fontWeight: 700,
+    padding: "0 16px",
+    minHeight: 44,
+    fontWeight: 600,
     fontSize: 14,
     color: "#ffffff",
     cursor: "pointer",
     background: "#f37021",
-    boxShadow: "0 2px 8px rgba(243,112,33,0.2)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     whiteSpace: "nowrap",
     lineHeight: 1.2,
     flexShrink: 0,
@@ -244,17 +256,17 @@ const pageStyles: Record<string, React.CSSProperties> = {
   ghostButton: {
     border: "1px solid #cbd5e1",
     borderRadius: 10,
-    padding: "10px 14px",
+    padding: "8px 12px",
     minHeight: 40,
-    fontWeight: 700,
-    fontSize: 14,
+    fontWeight: 600,
+    fontSize: 13,
     color: "#0f172a",
     cursor: "pointer",
     background: "#ffffff",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     whiteSpace: "nowrap",
     lineHeight: 1.2,
     flexShrink: 0,
@@ -262,17 +274,17 @@ const pageStyles: Record<string, React.CSSProperties> = {
   dangerButton: {
     border: "1px solid #fecaca",
     borderRadius: 10,
-    padding: "10px 14px",
+    padding: "8px 12px",
     minHeight: 40,
-    fontWeight: 700,
-    fontSize: 14,
+    fontWeight: 600,
+    fontSize: 13,
     color: "#b91c1c",
     cursor: "pointer",
     background: "#ffffff",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     whiteSpace: "nowrap",
     lineHeight: 1.2,
     flexShrink: 0,
@@ -310,30 +322,36 @@ const selectControlStyle: React.CSSProperties = {
   WebkitAppearance: "none",
   MozAppearance: "none",
   border: "1px solid #cbd5e1",
-  borderRadius: 8,
-  padding: "13px 40px 13px 12px",
+  borderRadius: 10,
+  minHeight: 42,
+  padding: "0 34px 0 12px",
   backgroundColor: "#ffffff",
   backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23f37021' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
   backgroundRepeat: "no-repeat",
   backgroundPosition: "right 12px center",
   backgroundSize: "14px",
   color: "#0f172a",
+  fontSize: 14,
+  lineHeight: 1.2,
 };
 
 const tableHeadCellStyle: React.CSSProperties = {
   borderBottom: "1px solid #e2e8f0",
-  padding: "12px 14px",
+  padding: "10px 12px",
   fontSize: 12,
+  fontWeight: 600,
   color: "#0f172a",
   textTransform: "uppercase",
-  letterSpacing: 0.4,
+  letterSpacing: "0.02em",
   background: "#ffffff",
 };
 
 const tableCellStyle: React.CSSProperties = {
-  padding: "12px 14px",
+  padding: "10px 12px",
   borderBottom: "1px solid #e2e8f0",
+  color: "#0f172a",
+  fontSize: 13,
 };
 
 const roadmapStatusTheme: Record<
@@ -360,7 +378,7 @@ const roadmapStatusTheme: Record<
     dotBg: "#fff7ed",
     cardBorder: "#f37021",
     cardBg: "#ffffff",
-    text: "#c2410c",
+    text: "#f37021",
     line: "#f37021",
   },
   pending: {
@@ -459,6 +477,16 @@ const normalizeStatus = (value: unknown): DefenseTermStatus => {
     return "Preparing";
   }
   return "Draft";
+};
+
+const getUserRole = (): UserRole => {
+  const roleClaim = getRoleClaimFromAccessToken();
+  const normalized = normalizeRole(roleClaim || "");
+  if (normalized === "ADMIN") return "SystemAdmin";
+  if (normalized === "LECTURER") return "Lecturer";
+  if (normalized === "STUDENT") return "Student";
+  if (normalized === "STUDENTSERVICE") return "FacultyCoordinator";
+  return "Unknown";
 };
 
 const parseRoundIndex = (code: string, fallback: number): number => {
@@ -563,6 +591,8 @@ const defensePeriodApi = {
 const DefensePeriodsManagement: React.FC = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userRole = getUserRole();
 
   const notifyError = useCallback(
     (message: string) => addToast(message, "error"),
@@ -612,6 +642,15 @@ const DefensePeriodsManagement: React.FC = () => {
   const [roadmapLayout, setRoadmapLayout] = useState<RoadmapLayout>("vertical");
   const [roadmapAnimated, setRoadmapAnimated] = useState(false);
   const roadmapTrackRef = useRef<HTMLDivElement | null>(null);
+  
+  // Main tab system state
+  const initialMainTab = (searchParams.get("tab") || "overview") as MainTab;
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>(initialMainTab);
+
+  const updateMainTab = (tab: MainTab) => {
+    setActiveMainTab(tab);
+    setSearchParams({ ...Object.fromEntries(searchParams), tab });
+  };
 
   const [formState, setFormState] = useState({
     name: "",
@@ -884,36 +923,6 @@ const DefensePeriodsManagement: React.FC = () => {
     navigate(`/admin/committees/management?periodId=${selectedPeriodId}`);
   }, [navigate, notifyWarning, selectedPeriodId]);
 
-  const heroStats = useMemo(
-    () => [
-      {
-        label: "Tổng đợt",
-        value: rows.length,
-        note: "Tất cả trạng thái",
-      },
-      {
-        label: "Đang vận hành",
-        value: rows.filter((item) => item.status === "Preparing").length,
-        note: "Đang chuẩn bị bảo vệ",
-      },
-      {
-        label: "Đã finalize",
-        value: rows.filter((item) =>
-          ["Finalized", "Published", "Archived"].includes(item.status),
-        ).length,
-        note: "Danh sách đã chốt",
-      },
-      {
-        label: "Đã publish",
-        value: rows.filter((item) =>
-          ["Published", "Archived"].includes(item.status),
-        ).length,
-        note: "Đã công bố kết quả",
-      },
-    ],
-    [rows],
-  );
-
   const openCreate = () => {
     setEditingPeriodId(null);
     setFormState({
@@ -1112,11 +1121,11 @@ const DefensePeriodsManagement: React.FC = () => {
   };
 
   const handleArchive = () => {
-    if (!window.confirm("Xác nhận archive đợt bảo vệ này?")) {
+    if (!window.confirm("Xác nhận kết thúc đợt bảo vệ này?")) {
       return;
     }
     void executeLifecycle("ARCHIVE", {
-      reason: "Archive từ module Quản lý đợt",
+      reason: "Kết thúc đợt từ module Quản lý đợt",
     });
   };
 
@@ -1143,6 +1152,9 @@ const DefensePeriodsManagement: React.FC = () => {
       revisionCount: asNumber(
         pickValue(dashboardPayload, ["revisionCount", "RevisionCount"], 0),
       ),
+      topicCount: asNumber(
+        pickValue(dashboardPayload, ["topicCount", "TopicCount"], 0),
+      ),
       eligibleStudentCount: asNumber(
         pickValue(
           dashboardPayload,
@@ -1150,10 +1162,38 @@ const DefensePeriodsManagement: React.FC = () => {
           0,
         ),
       ),
+      assignedStudentCount: asNumber(
+        pickValue(
+          dashboardPayload,
+          ["assignedStudentCount", "AssignedStudentCount"],
+          0,
+        ),
+      ),
+      eligibleSupervisorCount: asNumber(
+        pickValue(
+          dashboardPayload,
+          ["eligibleSupervisorCount", "EligibleSupervisorCount"],
+          0,
+        ),
+      ),
+      assignedSupervisorCount: asNumber(
+        pickValue(
+          dashboardPayload,
+          ["assignedSupervisorCount", "AssignedSupervisorCount"],
+          0,
+        ),
+      ),
       capabilityLecturerCount: asNumber(
         pickValue(
           dashboardPayload,
           ["capabilityLecturerCount", "CapabilityLecturerCount"],
+          0,
+        ),
+      ),
+      committeeLecturerCount: asNumber(
+        pickValue(
+          dashboardPayload,
+          ["committeeLecturerCount", "CommitteeLecturerCount"],
           0,
         ),
       ),
@@ -1166,6 +1206,57 @@ const DefensePeriodsManagement: React.FC = () => {
       ),
     };
   }, [dashboardPayload]);
+
+  const heroStats = useMemo(() => {
+    const stats = [
+      {
+        label: "Sinh viên tham gia",
+        value: dashboardNumbers.eligibleStudentCount,
+      },
+      {
+        label: "Giảng viên tham gia",
+        value: dashboardNumbers.capabilityLecturerCount,
+      },
+      {
+        label: "Tổng số đề tài",
+        value: dashboardNumbers.topicCount,
+      },
+      {
+        label: "Đã đăng ký",
+        value: dashboardNumbers.assignmentCount,
+      },
+      {
+        label: "Chờ xử lý",
+        value: dashboardNumbers.resultCount,
+      },
+      {
+        label: "Lỗi dữ liệu",
+        value: dashboardNumbers.revisionCount,
+      },
+      {
+        label: "Tag chuyên môn",
+        value: asNumber(pickValue(dashboardPayload, ["tagCount", "TagCount"], 0)),
+      },
+      {
+        label: "Tiến độ hoàn thành",
+        value: `${dashboardNumbers.assignmentCoveragePercent.toFixed(1)}%`,
+      },
+    ];
+
+    // Filter based on role
+    if (userRole === "Lecturer") {
+      return stats.filter((s) => 
+        ["Tổng số đề tài", "Sinh viên tham gia", "Tiến độ hoàn thành"].includes(s.label)
+      );
+    }
+    if (userRole === "Student") {
+      return stats.filter((s) => 
+        ["Tiến độ hoàn thành", "Trạng thái đề tài"].includes(s.label)
+      );
+    }
+
+    return stats;
+  }, [dashboardNumbers, dashboardPayload, userRole]);
 
   const stateFlags = useMemo(() => {
     return {
@@ -1198,6 +1289,61 @@ const DefensePeriodsManagement: React.FC = () => {
         .filter(Boolean),
     };
   }, [statePayload]);
+
+  // Alert Center items
+  const alertCenterItems = useMemo(() => {
+    const alerts: Array<{ icon: string; count: number; message: string; filterId: string }> = [];
+    
+    const unregisteredStudents = asNumber(
+      pickValue(dashboardPayload, ["unregisteredStudentCount", "UnregisteredStudentCount"], 0)
+    );
+    if (unregisteredStudents > 0) {
+      alerts.push({
+        icon: "warning",
+        count: unregisteredStudents,
+        message: `${unregisteredStudents} sinh viên chưa đăng ký`,
+        filterId: "unregistered",
+      });
+    }
+
+    const topicsWithoutLecturer = asNumber(
+      pickValue(dashboardPayload, ["topicsWithoutLecturerCount", "TopicsWithoutLecturerCount"], 0)
+    );
+    if (topicsWithoutLecturer > 0) {
+      alerts.push({
+        icon: "warning",
+        count: topicsWithoutLecturer,
+        message: `${topicsWithoutLecturer} đề tài chưa có GVHD`,
+        filterId: "no-lecturer",
+      });
+    }
+
+    const overdueMillestones = asNumber(
+      pickValue(dashboardPayload, ["overdueMillestoneCount", "OverdueMillestoneCount"], 0)
+    );
+    if (overdueMillestones > 0) {
+      alerts.push({
+        icon: "warning",
+        count: overdueMillestones,
+        message: `${overdueMillestones} milestone quá hạn`,
+        filterId: "overdue",
+      });
+    }
+
+    const tagConflicts = asNumber(
+      pickValue(dashboardPayload, ["tagConflictCount", "TagConflictCount"], 0)
+    );
+    if (tagConflicts > 0) {
+      alerts.push({
+        icon: "warning",
+        count: tagConflicts,
+        message: `${tagConflicts} tag bị conflict`,
+        filterId: "conflict",
+      });
+    }
+
+    return alerts;
+  }, [dashboardPayload]);
 
   const workflowSteps = useMemo(() => {
     const raw = pickValue(workflowPayload, ["steps", "Steps"], [] as unknown[]);
@@ -1573,9 +1719,7 @@ const DefensePeriodsManagement: React.FC = () => {
                   lineHeight: 1.6,
                 }}
               >
-                Màn hình này chỉ quản lý thông tin đợt và vòng đời đợt (CRUD +
-                lifecycle). Các thao tác setup, generate và chỉnh sửa hội đồng
-                được tách riêng sang module Quản lý hội đồng.
+                Quản lý thông tin cơ bản của các đợt bảo vệ, bao gồm CRUD và quản lý vòng đời.
               </p>
             </div>
 
@@ -1667,11 +1811,11 @@ const DefensePeriodsManagement: React.FC = () => {
             >
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 11,
                   color: "#0f172a",
-                  fontWeight: 800,
+                  fontWeight: 700,
                   textTransform: "uppercase",
-                  letterSpacing: 0.4,
+                  letterSpacing: "0.08em",
                 }}
               >
                 {item.label}
@@ -1679,18 +1823,531 @@ const DefensePeriodsManagement: React.FC = () => {
               <div
                 style={{
                   marginTop: 10,
-                  fontSize: 30,
-                  fontWeight: 900,
+                  fontSize: 24,
+                  fontWeight: 700,
                   color: "#0f172a",
                 }}
               >
                 {item.value}
               </div>
-              <div style={{ marginTop: 8, fontSize: 13, color: "#0f172a" }}>
-                {item.note}
-              </div>
             </div>
           ))}
+        </section>
+
+        {alertCenterItems.length > 0 && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
+          <section
+            style={{
+              ...pageStyles.sectionCard,
+              marginBottom: 18,
+              padding: 18,
+              borderRadius: 14,
+              background: "#ffffff",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 14,
+                color: "#0f172a",
+                fontWeight: 800,
+                fontSize: 16,
+              }}
+            >
+              <AlertTriangle size={18} color="#f37021" /> Trung tâm cảnh báo
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {alertCenterItems.map((alert) => (
+                <div
+                  key={alert.filterId}
+                  onClick={() => updateMainTab("topics")}
+                  style={{
+                    border: "1px solid #fecaca",
+                    borderRadius: 10,
+                    padding: 12,
+                    background: "#ffffff",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "#fffbeb";
+                    (e.currentTarget as HTMLDivElement).style.borderColor = "#f37021";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "#ffffff";
+                    (e.currentTarget as HTMLDivElement).style.borderColor = "#fecaca";
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 40,
+                      height: 40,
+                      borderRadius: 8,
+                      background: "#fef3c7",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <AlertTriangle size={20} color="#f37021" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#0f172a",
+                        marginBottom: 2,
+                      }}
+                    >
+                      {alert.message}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#64748b",
+                      }}
+                    >
+                      Nhấn để xem chi tiết
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: 32,
+                      height: 32,
+                      borderRadius: 6,
+                      background: "#f37021",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {alert.count}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section
+          style={{
+            ...pageStyles.sectionCard,
+            marginBottom: 18,
+            padding: 18,
+            borderRadius: 14,
+            background: "#ffffff",
+          }}
+        >
+          <div
+            className="dp-roadmap-header"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  color: "#0f172a",
+                  fontWeight: 800,
+                }}
+              >
+                <Workflow size={16} /> Timeline quá trình đợt bảo vệ
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <button
+                type="button"
+                style={{
+                  ...pageStyles.ghostButton,
+                  width: 42,
+                  height: 42,
+                  padding: 0,
+                  background:
+                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
+                  borderColor:
+                    roadmapLayout === "horizontal" ? "#f37021" : "#cbd5e1",
+                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onClick={() =>
+                  setRoadmapLayout((prev) =>
+                    prev === "horizontal" ? "vertical" : "horizontal",
+                  )
+                }
+                title={
+                  roadmapLayout === "horizontal"
+                    ? "Chuyển sang chế độ dọc"
+                    : "Chuyển sang chế độ slide"
+                }
+                aria-label={
+                  roadmapLayout === "horizontal"
+                    ? "Chuyển sang chế độ dọc"
+                    : "Chuyển sang chế độ slide"
+                }
+              >
+                {roadmapLayout === "horizontal" ? (
+                  <Columns3 size={16} />
+                ) : (
+                  <Rows3 size={16} />
+                )}
+              </button>
+              <span
+                style={{
+                  ...pageStyles.chip,
+                  background:
+                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
+                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
+                  border: "1px solid #cbd5e1",
+                }}
+              >
+                {roadmapLayout === "horizontal" ? "Chế độ slide" : "Chế độ dọc"}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <span
+                style={{
+                  ...pageStyles.chip,
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  fontWeight: 800,
+                }}
+              >
+                Hoàn thành: {roadmapCompletionPercent.toFixed(1)}%
+              </span>
+              <span
+                style={{
+                  ...pageStyles.chip,
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  fontWeight: 800,
+                }}
+              >
+                {activeRoadmapStep
+                  ? `Đang xử lý: ${activeRoadmapStep.title}`
+                  : "Chưa có dữ liệu bước"}
+              </span>
+              <span
+                style={{
+                  ...pageStyles.chip,
+                  background: "#ffffff",
+                  color: "#0f172a",
+                }}
+              >
+                API rút gọn: /api/defense-periods
+              </span>
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                height: 8,
+                borderRadius: 999,
+                background: "#f8fafc",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${roadmapCompletionPercent}%`,
+                  height: "100%",
+                  background: "#f37021",
+                  transition: "width 0.8s ease",
+                }}
+              />
+            </div>
+          </div>
+
+          {roadmapLayout === "horizontal" ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div
+                style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}
+              >
+                <button
+                  type="button"
+                  style={{ ...pageStyles.ghostButton, padding: "8px 12px" }}
+                  onClick={() => scrollRoadmap(-1)}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  style={{ ...pageStyles.ghostButton, padding: "8px 12px" }}
+                  onClick={() => scrollRoadmap(1)}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <div
+                ref={roadmapTrackRef}
+                className="dp-roadmap-scroll dp-roadmap-track"
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  alignItems: "stretch",
+                  overflowX: "auto",
+                  paddingBottom: 8,
+                }}
+              >
+                {roadmapSteps.map((step, index) => {
+                  const theme = roadmapStatusTheme[step.status];
+                  return (
+                    <div
+                      key={step.key}
+                      style={{
+                        flex: "0 0 260px",
+                        opacity: roadmapAnimated ? undefined : 0,
+                        animation: roadmapAnimated
+                          ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
+                          : undefined,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <span
+                          className={
+                            step.status === "in-progress"
+                              ? "dp-roadmap-pulse"
+                              : undefined
+                          }
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: "50%",
+                            border: `2px solid ${theme.dotBorder}`,
+                            background: theme.dotBg,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {step.status === "completed" ? (
+                            <CheckCircle size={14} color="#0f172a" />
+                          ) : step.status === "in-progress" ? (
+                            <Clock3 size={14} color="#f37021" />
+                          ) : (
+                            <AlertCircle size={14} color="#0f172a" />
+                          )}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: "#0f172a",
+                          }}
+                        >
+                          Bước {String(index + 1).padStart(2, "0")}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          border: `1px solid ${theme.cardBorder}`,
+                          borderRadius: 12,
+                          background: theme.cardBg,
+                          padding: 12,
+                          minHeight: 130,
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                          {step.title}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 12,
+                            color: "#0f172a",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {step.description}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 11,
+                            color: theme.text,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {roadmapStatusLabel[step.status]}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {roadmapSteps.map((step, index) => {
+                const theme = roadmapStatusTheme[step.status];
+                const isLast = index === roadmapSteps.length - 1;
+                return (
+                  <div
+                    key={step.key}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "34px minmax(0, 1fr)",
+                      gap: 10,
+                      opacity: roadmapAnimated ? undefined : 0,
+                      animation: roadmapAnimated
+                        ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
+                        : undefined,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "relative",
+                        display: "flex",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <span
+                        className={
+                          step.status === "in-progress"
+                            ? "dp-roadmap-pulse"
+                            : undefined
+                        }
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: "50%",
+                          border: `2px solid ${theme.dotBorder}`,
+                          background: theme.dotBg,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          zIndex: 1,
+                        }}
+                      >
+                        {step.status === "completed" ? (
+                          <CheckCircle size={14} color="#0f172a" />
+                        ) : step.status === "in-progress" ? (
+                          <Clock3 size={14} color="#0f172a" />
+                        ) : (
+                          <AlertCircle size={14} color="#0f172a" />
+                        )}
+                      </span>
+
+                      {!isLast && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: 28,
+                            bottom: -12,
+                            width: 2,
+                            background: theme.line,
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 12,
+                        background: theme.cardBg,
+                        padding: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                          {step.title}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#0f172a",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Bước {String(index + 1).padStart(2, "0")}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 12,
+                          color: "#0f172a",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {step.description}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: 11,
+                          color: theme.text,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {roadmapStatusLabel[step.status]}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section style={{ ...pageStyles.sectionCard, marginBottom: 18 }}>
@@ -1712,8 +2369,10 @@ const DefensePeriodsManagement: React.FC = () => {
                 style={{
                   width: "100%",
                   border: "1px solid #cbd5e1",
-                  borderRadius: 8,
-                  padding: "13px 14px 13px 38px",
+                  borderRadius: 10,
+                  padding: "0 12px 0 38px",
+                  minHeight: 42,
+                  fontSize: 14,
                   background: "#ffffff",
                   outline: "none",
                 }}
@@ -1737,8 +2396,10 @@ const DefensePeriodsManagement: React.FC = () => {
               onChange={(event) => setDateFrom(event.target.value)}
               style={{
                 border: "1px solid #cbd5e1",
-                borderRadius: 8,
-                padding: "13px 12px",
+                borderRadius: 10,
+                padding: "0 12px",
+                minHeight: 42,
+                fontSize: 14,
                 background: "#ffffff",
               }}
             />
@@ -1748,8 +2409,10 @@ const DefensePeriodsManagement: React.FC = () => {
               onChange={(event) => setDateTo(event.target.value)}
               style={{
                 border: "1px solid #cbd5e1",
-                borderRadius: 8,
-                padding: "13px 12px",
+                borderRadius: 10,
+                padding: "0 12px",
+                minHeight: 42,
+                fontSize: 14,
                 background: "#ffffff",
               }}
             />
@@ -1813,10 +2476,6 @@ const DefensePeriodsManagement: React.FC = () => {
                   style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}
                 >
                   Danh sách đợt
-                </div>
-                <div style={{ color: "#0f172a", fontSize: 13, marginTop: 4 }}>
-                  Quản lý thông tin đợt bảo vệ, không thao tác chi tiết hội đồng
-                  tại đây.
                 </div>
               </div>
               <button
@@ -2165,7 +2824,7 @@ const DefensePeriodsManagement: React.FC = () => {
                       onClick={handleArchive}
                       disabled={isActionBusy || !canRunAction("ARCHIVE")}
                     >
-                      Lưu trữ
+                      Kết thúc đợt
                     </button>
                     <button
                       type="button"
@@ -2225,10 +2884,12 @@ const DefensePeriodsManagement: React.FC = () => {
                         onClick={() => setActiveTab(item.key as DetailTab)}
                         style={{
                           ...pageStyles.ghostButton,
-                          padding: "9px 12px",
+                          padding: "8px 12px",
                           background: active ? "#f37021" : "#ffffff",
                           color: active ? "#ffffff" : "#0f172a",
                           borderColor: active ? "#f37021" : "#cbd5e1",
+                          fontSize: 13,
+                          fontWeight: 600,
                         }}
                       >
                         {item.label}
@@ -2463,421 +3124,495 @@ const DefensePeriodsManagement: React.FC = () => {
             background: "#ffffff",
           }}
         >
+          {/* Main Tab Navigation */}
           <div
-            className="dp-roadmap-header"
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 10,
               flexWrap: "wrap",
-              marginBottom: 10,
+              gap: 8,
+              marginBottom: 16,
+              borderBottom: "1px solid #e2e8f0",
+              paddingBottom: 12,
             }}
           >
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                <Workflow size={16} /> Timeline roadmap theo đợt
-              </div>
-              <div style={{ marginTop: 4, color: "#0f172a", fontSize: 13 }}>
-                Shell quản trị đợt giữ tab nội bộ
-                (overview/state/workflow/history), không tách route con khi
-                snapshot tổng đã đủ.
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <button
-                type="button"
-                style={{
-                  ...pageStyles.ghostButton,
-                  width: 42,
-                  height: 42,
-                  padding: 0,
-                  background:
-                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
-                  borderColor:
-                    roadmapLayout === "horizontal" ? "#f37021" : "#cbd5e1",
-                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                onClick={() =>
-                  setRoadmapLayout((prev) =>
-                    prev === "horizontal" ? "vertical" : "horizontal",
-                  )
-                }
-                title={
-                  roadmapLayout === "horizontal"
-                    ? "Chuyển sang chế độ dọc"
-                    : "Chuyển sang chế độ slide"
-                }
-                aria-label={
-                  roadmapLayout === "horizontal"
-                    ? "Chuyển sang chế độ dọc"
-                    : "Chuyển sang chế độ slide"
-                }
-              >
-                {roadmapLayout === "horizontal" ? (
-                  <Columns3 size={16} />
-                ) : (
-                  <Rows3 size={16} />
-                )}
-              </button>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background:
-                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
-                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
-                  border: "1px solid #cbd5e1",
-                }}
-              >
-                {roadmapLayout === "horizontal" ? "Chế độ slide" : "Chế độ dọc"}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                Hoàn thành: {roadmapCompletionPercent.toFixed(1)}%
-              </span>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                {activeRoadmapStep
-                  ? `Đang xử lý: ${activeRoadmapStep.title}`
-                  : "Chưa có dữ liệu bước"}
-              </span>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                }}
-              >
-                API rút gọn: /api/defense-periods
-              </span>
-            </div>
-
-            <div
-              style={{
-                width: "100%",
-                height: 8,
-                borderRadius: 999,
-                background: "#f8fafc",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${roadmapCompletionPercent}%`,
-                  height: "100%",
-                  background: "#f37021",
-                  transition: "width 0.8s ease",
-                }}
-              />
-            </div>
-          </div>
-
-          {roadmapLayout === "horizontal" ? (
-            <div style={{ display: "grid", gap: 10 }}>
-              <div
-                style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}
-              >
-                <button
-                  type="button"
-                  style={{ ...pageStyles.ghostButton, padding: "7px 10px" }}
-                  onClick={() => scrollRoadmap(-1)}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  type="button"
-                  style={{ ...pageStyles.ghostButton, padding: "7px 10px" }}
-                  onClick={() => scrollRoadmap(1)}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-
-              <div
-                ref={roadmapTrackRef}
-                className="dp-roadmap-scroll dp-roadmap-track"
-                style={{
-                  display: "flex",
-                  gap: 14,
-                  alignItems: "stretch",
-                  overflowX: "auto",
-                  paddingBottom: 8,
-                }}
-              >
-                {roadmapSteps.map((step, index) => {
-                  const theme = roadmapStatusTheme[step.status];
-                  return (
-                    <div
-                      key={step.key}
-                      style={{
-                        flex: "0 0 260px",
-                        opacity: roadmapAnimated ? undefined : 0,
-                        animation: roadmapAnimated
-                          ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
-                          : undefined,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <span
-                          className={
-                            step.status === "in-progress"
-                              ? "dp-roadmap-pulse"
-                              : undefined
-                          }
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: "50%",
-                            border: `2px solid ${theme.dotBorder}`,
-                            background: theme.dotBg,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {step.status === "completed" ? (
-                            <CheckCircle size={14} color="#0f172a" />
-                          ) : step.status === "in-progress" ? (
-                            <Clock3 size={14} color="#f37021" />
-                          ) : (
-                            <AlertCircle size={14} color="#0f172a" />
-                          )}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            color: "#0f172a",
-                          }}
-                        >
-                          Bước {String(index + 1).padStart(2, "0")}
-                        </span>
-                      </div>
-
-                      <div
-                        style={{
-                          border: `1px solid ${theme.cardBorder}`,
-                          borderRadius: 12,
-                          background: theme.cardBg,
-                          padding: 12,
-                          minHeight: 130,
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {step.title}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 6,
-                            fontSize: 12,
-                            color: "#0f172a",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {step.description}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: 11,
-                            color: theme.text,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {roadmapStatusLabel[step.status]}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {roadmapSteps.map((step, index) => {
-                const theme = roadmapStatusTheme[step.status];
-                const isLast = index === roadmapSteps.length - 1;
+            {(
+              [
+                { key: "overview", label: "Tổng quan", icon: <Grid size={14} /> },
+                { 
+                  key: "students", 
+                  label: "Sinh viên đợt", 
+                  icon: <Flag size={14} />,
+                  visible: userRole === "SystemAdmin" || userRole === "FacultyCoordinator",
+                },
+                { 
+                  key: "lecturers", 
+                  label: "Giảng viên đợt", 
+                  icon: <Flag size={14} />,
+                  visible: userRole !== "Student" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator"),
+                },
+                { 
+                  key: "topics", 
+                  label: "Đề tài", 
+                  icon: <Grid size={14} />,
+                  visible: userRole !== "Student" || userRole === "Student",
+                },
+                { 
+                  key: "progress", 
+                  label: "Theo dõi tiến độ", 
+                  icon: <Flag size={14} />,
+                },
+                { 
+                  key: "reports", 
+                  label: "Báo cáo", 
+                  icon: <Download size={14} />,
+                  visible: userRole === "SystemAdmin" || userRole === "FacultyCoordinator",
+                },
+              ] as Array<{
+                key: MainTab;
+                label: string;
+                icon: React.ReactNode;
+                visible?: boolean;
+              }>
+            )
+              .filter((tab) => tab.visible !== false)
+              .map((tab) => {
+                const active = activeMainTab === tab.key;
                 return (
-                  <div
-                    key={step.key}
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => updateMainTab(tab.key)}
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "34px minmax(0, 1fr)",
-                      gap: 10,
-                      opacity: roadmapAnimated ? undefined : 0,
-                      animation: roadmapAnimated
-                        ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
-                        : undefined,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      border: "none",
+                      background: active ? "#f37021" : "#ffffff",
+                      color: active ? "#ffffff" : "#0f172a",
+                      cursor: "pointer",
+                      fontWeight: active ? 600 : 500,
+                      fontSize: 13,
+                      transition: "all 0.2s ease",
                     }}
                   >
-                    <div
-                      style={{
-                        position: "relative",
-                        display: "flex",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <span
-                        className={
-                          step.status === "in-progress"
-                            ? "dp-roadmap-pulse"
-                            : undefined
-                        }
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: "50%",
-                          border: `2px solid ${theme.dotBorder}`,
-                          background: theme.dotBg,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          zIndex: 1,
-                        }}
-                      >
-                        {step.status === "completed" ? (
-                          <CheckCircle size={14} color="#0f172a" />
-                        ) : step.status === "in-progress" ? (
-                          <Clock3 size={14} color="#0f172a" />
-                        ) : (
-                          <AlertCircle size={14} color="#0f172a" />
-                        )}
-                      </span>
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                );
+              })}
+          </div>
 
-                      {!isLast && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: 28,
-                            bottom: -12,
-                            width: 2,
-                            background: theme.line,
-                          }}
+          {/* Tab Contents */}
+          {selectedRow && activeMainTab === "overview" && (
+            <div style={{ display: "grid", gap: 24, animation: "fadeIn 0.3s ease-out" }}>
+              {/* Key Metrics Row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 16,
+                }}
+              >
+                {[
+                  { 
+                    label: "Hội đồng bảo vệ", 
+                    value: dashboardNumbers.councilCount, 
+                    sub: "Hội đồng đã lập", 
+                    icon: <Shield size={20} color="#f37021" />,
+                    color: "#fff7ed"
+                  },
+                  { 
+                    label: "Tổng số đề tài", 
+                    value: dashboardNumbers.topicCount, 
+                    sub: "Trong kho đề tài", 
+                    icon: <Grid size={20} color="#0ea5e9" />,
+                    color: "#f0f9ff"
+                  },
+                  { 
+                    label: "Sinh viên", 
+                    value: dashboardNumbers.eligibleStudentCount, 
+                    sub: "Đủ điều kiện", 
+                    icon: <Flag size={20} color="#10b981" />,
+                    color: "#ecfdf5"
+                  },
+                  { 
+                    label: "Giảng viên", 
+                    value: dashboardNumbers.capabilityLecturerCount, 
+                    sub: "Trong pool năng lực", 
+                    icon: <Tag size={20} color="#8b5cf6" />,
+                    color: "#f5f3ff"
+                  },
+                ].map((stat, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      ...pageStyles.statCard,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      position: "relative",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{stat.label}</div>
+                        <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a" }}>{stat.value}</div>
+                      </div>
+                      <div style={{ padding: 10, borderRadius: 12, background: stat.color }}>
+                        {stat.icon}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                      <CheckCircle size={10} /> {stat.sub}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Progress & Breakdown Section */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))", gap: 20 }}>
+                {/* Topic Assignment Progress */}
+                <div style={{ ...pageStyles.panel, padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Phân bổ đề tài vào hội đồng</h3>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#f37021", background: "#fff7ed", padding: "4px 10px", borderRadius: 8 }}>
+                      {dashboardNumbers.assignmentCoveragePercent}%
+                    </div>
+                  </div>
+                  
+                  <div style={{ height: 12, width: "100%", background: "#f1f5f9", borderRadius: 6, marginBottom: 20, overflow: "hidden" }}>
+                    <div 
+                      style={{ 
+                        height: "100%", 
+                        width: `${dashboardNumbers.assignmentCoveragePercent}%`, 
+                        background: "linear-gradient(90deg, #f37021, #fb923c)",
+                        borderRadius: 6,
+                        transition: "width 1s ease-in-out"
+                      }} 
+                    />
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ padding: 16, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 }}>Đề tài đã phân</div>
+                      <div style={{ fontSize: 20, fontWeight: 900 }}>{dashboardNumbers.assignmentCount}</div>
+                    </div>
+                    <div style={{ padding: 16, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 }}>Đề tài chờ phân</div>
+                      <div style={{ fontSize: 20, fontWeight: 900 }}>{Math.max(0, dashboardNumbers.eligibleStudentCount - dashboardNumbers.assignmentCount)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resource Pool Utilization */}
+                <div style={{ ...pageStyles.panel, padding: 20 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 20 }}>Sử dụng nguồn lực giảng viên</h3>
+                  
+                  <div style={{ display: "grid", gap: 16 }}>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>Giảng viên tham gia hội đồng</span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{dashboardNumbers.committeeLecturerCount} / {dashboardNumbers.capabilityLecturerCount}</span>
+                      </div>
+                      <div style={{ height: 8, width: "100%", background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
+                        <div 
+                          style={{ 
+                            height: "100%", 
+                            width: `${dashboardNumbers.capabilityLecturerCount > 0 ? (dashboardNumbers.committeeLecturerCount * 100 / dashboardNumbers.capabilityLecturerCount) : 0}%`, 
+                            background: "#8b5cf6",
+                            borderRadius: 4
+                          }} 
                         />
-                      )}
+                      </div>
                     </div>
 
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>Giảng viên hướng dẫn</span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{dashboardNumbers.assignedSupervisorCount} / {dashboardNumbers.eligibleSupervisorCount}</span>
+                      </div>
+                      <div style={{ height: 8, width: "100%", background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
+                        <div 
+                          style={{ 
+                            height: "100%", 
+                            width: `${dashboardNumbers.eligibleSupervisorCount > 0 ? (dashboardNumbers.assignedSupervisorCount * 100 / dashboardNumbers.eligibleSupervisorCount) : 0}%`, 
+                            background: "#0ea5e9",
+                            borderRadius: 4
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 24, padding: 12, borderRadius: 10, background: "#fef9c3", border: "1px solid #fde047", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <AlertTriangle size={16} color="#854d0e" style={{ marginTop: 2 }} />
+                    <div style={{ fontSize: 12, color: "#854d0e", lineHeight: 1.5 }}>
+                      <strong>Lưu ý:</strong> Nguồn lực giảng viên được tính dựa trên pool năng lực đã chốt. Nếu số lượng hội đồng tăng, hãy kiểm tra lại định mức của từng giảng viên.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Summary & Quick Actions */}
+              <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 20 }}>
+                 <div style={{ ...pageStyles.panel, padding: 20 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 20 }}>Kết quả bảo vệ hiện tại</h3>
+                    <div style={{ display: "flex", gap: 40 }}>
+                       <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 32, fontWeight: 900, color: "#10b981" }}>{dashboardNumbers.resultCount}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Đề tài đã có điểm</div>
+                       </div>
+                       <div style={{ width: 1, background: "#e2e8f0" }} />
+                       <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 32, fontWeight: 900, color: "#f59e0b" }}>{dashboardNumbers.revisionCount}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Yêu cầu chỉnh sửa</div>
+                       </div>
+                       <div style={{ width: 1, background: "#e2e8f0" }} />
+                       <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 32, fontWeight: 900, color: "#64748b" }}>{dashboardNumbers.assignmentCount - dashboardNumbers.resultCount}</div>
+                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Chờ cập nhật điểm</div>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div style={{ ...pageStyles.panel, padding: 20, background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#ffffff" }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 12, color: "#ffffff" }}>Hành động tiếp theo</h3>
+                    <p style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6, marginBottom: 20 }}>
+                       Dựa trên trạng thái hiện tại (<strong>{selectedRow.status}</strong>), hệ thống gợi ý bạn thực hiện các bước tiếp theo trong quy trình.
+                    </p>
+                    <div style={{ display: "grid", gap: 10 }}>
+                       <button 
+                          style={{ ...pageStyles.primaryButton, width: "100%", justifyContent: "space-between", background: "#f37021" }}
+                          onClick={() => updateMainTab("workflow")}
+                       >
+                          <span>Kiểm tra Workflow</span>
+                          <ChevronRight size={16} />
+                       </button>
+                       <button 
+                          style={{ ...pageStyles.ghostButton, width: "100%", justifyContent: "space-between", background: "transparent", color: "#ffffff", border: "1px solid #334155" }}
+                          onClick={() => updateMainTab("reports")}
+                       >
+                          <span>Xuất báo cáo tổng hợp</span>
+                          <Download size={16} />
+                       </button>
+                    </div>
+                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeMainTab === "students" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  type="button"
+                  style={pageStyles.primaryButton}
+                  onClick={() => studentsSectionRef.current?.openAdd()}
+                >
+                  <Plus size={15} /> Thêm sinh viên
+                </button>
+              </div>
+              <DefenseTermStudentsSection
+                ref={studentsSectionRef}
+                defenseTermId={selectedPeriodId}
+              />
+            </div>
+          )}
+
+          {activeMainTab === "lecturers" && (userRole !== "Student" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator")) && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  type="button"
+                  style={pageStyles.primaryButton}
+                  onClick={() => lecturersSectionRef.current?.openAdd()}
+                >
+                  <Plus size={15} /> Thêm giảng viên
+                </button>
+              </div>
+              <DefenseTermLecturersSection
+                ref={lecturersSectionRef}
+                defenseTermId={selectedPeriodId}
+              />
+            </div>
+          )}
+
+          {activeMainTab === "topics" && (
+            <div style={{ display: "grid", gap: 12 }}>
+              <DefenseTopicsSection defenseTermId={selectedPeriodId} />
+            </div>
+          )}
+
+          {activeMainTab === "progress" && (
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                Tiến độ hoàn thành
+              </div>
+              <div style={{ color: "#64748b", fontSize: 13 }}>
+                Theo dõi tiến độ hoàn thành của sinh viên trong đợt bảo vệ này.
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                {["Chưa bắt đầu", "Đang thực hiện", "Chờ duyệt", "Đủ điều kiện"].map(
+                  (status) => (
                     <div
+                      key={status}
                       style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 12,
-                        background: theme.cardBg,
-                        padding: 12,
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 10,
+                        padding: 14,
+                        textAlign: "center",
+                        background: "#f8fafc",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {step.title}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#0f172a",
-                            fontWeight: 700,
-                          }}
-                        >
-                          Bước {String(index + 1).padStart(2, "0")}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 12,
-                          color: "#0f172a",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {step.description}
+                      <div style={{ fontSize: 12, color: "#64748b" }}>
+                        {status}
                       </div>
                       <div
                         style={{
                           marginTop: 8,
-                          fontSize: 11,
-                          color: theme.text,
-                          fontWeight: 700,
+                          fontSize: 24,
+                          fontWeight: 900,
+                          color: "#0f172a",
                         }}
                       >
-                        {roadmapStatusLabel[step.status]}
+                        0
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  ),
+                )}
+              </div>
             </div>
           )}
 
-          <div style={{ marginTop: 10, fontSize: 12, color: "#0f172a" }}>
-            Roadmap này chỉ điều hành tổng của đợt; tác vụ chi tiết hội đồng vẫn
-            xử lý tại module Quản lý hội đồng.
-          </div>
-        </section>
+          {activeMainTab === "reports" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                Xuất báo cáo
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                {[
+                  {
+                    title: "Danh sách sinh viên đợt",
+                    description: "Xuất danh sách sinh viên tham gia",
+                    icon: <Flag size={20} />,
+                  },
+                  {
+                    title: "Danh sách giảng viên đợt",
+                    description: "Xuất danh sách giảng viên tham gia",
+                    icon: <Flag size={20} />,
+                  },
+                  {
+                    title: "Danh sách đề tài theo GVHD",
+                    description: "Xuất danh sách đề tài phân theo giảng viên",
+                    icon: <Grid size={20} />,
+                  },
+                ].map((report) => (
+                  <div
+                    key={report.title}
+                    style={{
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 10,
+                      padding: 14,
+                      background: "#ffffff",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor =
+                        "#f37021";
+                      (e.currentTarget as HTMLDivElement).style.background =
+                        "#ffffff";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.borderColor =
+                        "#cbd5e1";
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 8,
+                          background: "#fff7ed",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#f37021",
+                        }}
+                      >
+                        {report.icon}
+                      </div>
+                      <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                        {report.title}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#64748b",
+                        marginBottom: 10,
+                      }}
+                    >
+                      {report.description}
+                    </div>
+                    <button
+                      type="button"
+                      style={{
+                        ...pageStyles.ghostButton,
+                        width: "100%",
+                        padding: "8px 12px",
+                      }}
+                    >
+                      <Download size={14} /> Xuất file
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-        <section style={{ marginTop: 16, display: "grid", gap: 16 }}>
-          <DefenseTermStudentsSection
-            ref={studentsSectionRef}
-            defenseTermId={selectedPeriodId}
-          />
-          <DefenseTermLecturersSection
-            ref={lecturersSectionRef}
-            defenseTermId={selectedPeriodId}
-          />
+          {!selectedRow && (
+            <div style={{ color: "#64748b", textAlign: "center", padding: "40px 20px" }}>
+              Vui lòng chọn một đợt để xem chi tiết
+            </div>
+          )}
         </section>
 
         {showForm && (

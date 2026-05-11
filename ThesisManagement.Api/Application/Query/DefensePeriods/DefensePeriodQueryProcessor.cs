@@ -91,6 +91,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         {
             public int CouncilId { get; set; }
             public string CommitteeCode { get; set; } = string.Empty;
+            public string CommitteeName { get; set; } = string.Empty;
             public string? Room { get; set; }
             public DateTime? DefenseDate { get; set; }
             public string Session { get; set; } = string.Empty;
@@ -99,6 +100,49 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             public string TopicTitle { get; set; } = string.Empty;
             public decimal? Score { get; set; }
             public string? Grade { get; set; }
+            // Extended fields
+            public string TopicCode { get; set; } = string.Empty;
+            public string? SupervisorLecturerCode { get; set; }
+            public string? SupervisorLecturerName { get; set; }
+            public string? SupervisorOrganization { get; set; }
+            public string? CommitteeChairCode { get; set; }
+            public string? CommitteeChairName { get; set; }
+            public string? CommitteeSecretaryCode { get; set; }
+            public string? CommitteeSecretaryName { get; set; }
+            public string? CommitteeReviewerCode { get; set; }
+            public string? CommitteeReviewerName { get; set; }
+            public decimal? ScoreCt { get; set; }
+            public decimal? ScoreTk { get; set; }
+            public decimal? ScorePb { get; set; }
+            public decimal? ScoreGvhd { get; set; }
+            public string? CommentCt { get; set; }
+            public string? CommentTk { get; set; }
+            public string? CommentPb { get; set; }
+            public string? CommentGvhd { get; set; }
+            public string? ClassName { get; set; }
+            public string? CohortCode { get; set; }
+            public string? AssignmentCode { get; set; }
+            public int AssignmentId { get; set; }
+            public string TopicTags { get; set; } = string.Empty;
+            public string? StartTime { get; set; }
+            public string? EndTime { get; set; }
+            public int SubmittedCount { get; set; }
+            public int RequiredCount { get; set; }
+            public bool IsLocked { get; set; }
+            public decimal? TopicSupervisorScore { get; set; }
+            public decimal? Variance { get; set; }
+            public string Status { get; set; } = string.Empty;
+            public int RowNumber { get; set; }
+            // Additional optional fields
+            public string? ChairDegree { get; set; }
+            public string? ChairOrganization { get; set; }
+            public string? SecretaryDegree { get; set; }
+            public string? SecretaryOrganization { get; set; }
+            public string? ReviewerDegree { get; set; }
+            public string? ReviewerOrganization { get; set; }
+            public string? SupervisorDegree { get; set; }
+            public int DocumentCount { get; set; }
+            public string SignedStatus { get; set; } = string.Empty;
         }
 
         private sealed record ReportColumnDefinition(string Key, string Header);
@@ -2566,25 +2610,58 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 return new List<ScoreRowData>();
             }
 
-            return await _db.DefenseAssignments.AsNoTracking()
-                .Where(a => a.CommitteeID.HasValue && config.CouncilIds.Contains(a.CommitteeID.Value))
-                .Join(_db.Topics.AsNoTracking(), a => a.TopicCode, t => t.TopicCode, (a, t) => new { a, t })
-                .Join(_db.Committees.AsNoTracking(), at => at.a.CommitteeID, c => c.CommitteeID, (at, c) => new { at.a, at.t, c })
-                .GroupJoin(_db.DefenseResults.AsNoTracking(), x => x.a.AssignmentID, r => r.AssignmentId, (x, r) => new { x, result = r.FirstOrDefault() })
-                .Select(x => new ScoreRowData
-                {
-                    CouncilId = x.x.c.CommitteeID,
-                    CommitteeCode = x.x.c.CommitteeCode ?? string.Empty,
-                    Room = x.x.c.Room,
-                    DefenseDate = x.x.c.DefenseDate,
-                    Session = ToSessionCode(x.x.a.Session),
-                    StudentCode = x.x.t.ProposerStudentCode ?? string.Empty,
-                    StudentName = _db.StudentProfiles.Where(s => s.StudentCode == x.x.t.ProposerStudentCode).Select(s => s.FullName).FirstOrDefault() ?? (x.x.t.ProposerStudentCode ?? string.Empty),
-                    TopicTitle = x.x.t.Title,
-                    Score = x.result != null ? x.result.FinalScoreNumeric : null,
-                    Grade = x.result != null ? x.result.FinalScoreText : null
-                })
-                .ToListAsync(cancellationToken);
+            // Reuse ScoringMatrixRowDto to provide richer row data for flexible export
+            var matrixResult = await GetScoringMatrixAsync(periodId, null, false, cancellationToken);
+            var matrixRows = matrixResult.Success && matrixResult.Data != null ? matrixResult.Data : new List<ScoringMatrixRowDto>();
+
+            var result = matrixRows.Select((m, idx) => new ScoreRowData
+            {
+                CouncilId = m.CommitteeId,
+                CommitteeCode = m.CommitteeCode ?? string.Empty,
+                CommitteeName = m.CommitteeName ?? string.Empty,
+                Room = m.Room,
+                DefenseDate = m.ScheduledAt ?? m.ScheduledAt,
+                Session = m.SessionCode ?? string.Empty,
+                StudentCode = m.StudentCode,
+                StudentName = m.StudentName,
+                TopicTitle = m.TopicTitle,
+                Score = m.FinalScore,
+                Grade = m.FinalGrade,
+                TopicCode = m.TopicCode,
+                SupervisorLecturerCode = m.SupervisorLecturerCode,
+                SupervisorLecturerName = m.SupervisorLecturerName,
+                SupervisorOrganization = m.SupervisorOrganization,
+                CommitteeChairCode = m.CommitteeChairCode,
+                CommitteeChairName = m.CommitteeChairName,
+                CommitteeSecretaryCode = m.CommitteeSecretaryCode,
+                CommitteeSecretaryName = m.CommitteeSecretaryName,
+                CommitteeReviewerCode = m.CommitteeReviewerCode,
+                CommitteeReviewerName = m.CommitteeReviewerName,
+                ScoreCt = m.ScoreCt,
+                ScoreTk = m.ScoreTk,
+                ScorePb = m.ScorePb,
+                ScoreGvhd = m.ScoreGvhd,
+                CommentCt = m.CommentCt,
+                CommentTk = m.CommentTk,
+                CommentPb = m.CommentPb,
+                CommentGvhd = m.CommentGvhd,
+                ClassName = m.ClassName,
+                CohortCode = m.CohortCode,
+                AssignmentCode = m.AssignmentCode,
+                AssignmentId = m.AssignmentId,
+                TopicTags = string.Join("; ", m.TopicTags),
+                StartTime = m.StartTime,
+                EndTime = m.EndTime,
+                SubmittedCount = m.SubmittedCount,
+                RequiredCount = m.RequiredCount,
+                IsLocked = m.IsLocked,
+                TopicSupervisorScore = m.TopicSupervisorScore,
+                Variance = m.Variance,
+                Status = m.Status,
+                RowNumber = idx + 1
+            }).ToList();
+
+            return result;
         }
 
         public async Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default)
@@ -3013,6 +3090,20 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             sheet.Row(1).Style.Font.SetBold(true);
             sheet.Columns().AdjustToContents();
 
+            var topicTitleColumnIndex = normalizedType switch
+            {
+                "review" => 4,
+                "minutes" => 6,
+                _ => 6
+            };
+
+            sheet.Column(topicTitleColumnIndex).Width = 38;
+            var lastRow = sheet.LastRowUsed()?.RowNumber() ?? 1;
+            for (var r = 2; r <= lastRow; r++)
+            {
+                sheet.Row(r).Height = Math.Max(sheet.Row(r).Height, 28);
+            }
+
             using var stream = new MemoryStream();
             workbook.SaveAs(stream);
             return stream.ToArray();
@@ -3106,9 +3197,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var numeric = rows.Where(r => r.Score.HasValue).Select(r => r.Score!.Value).ToList();
             if (numeric.Count > 0)
             {
-                sheet.Range(summaryRow, 1, summaryRow, 2).Merge().Value = "Diem cao nhat";
+                    sheet.Range(summaryRow, 1, summaryRow, 2).Merge().Value = "Điểm cao nhất";
                 sheet.Cell(summaryRow, 3).Value = numeric.Max();
-                sheet.Range(summaryRow + 1, 1, summaryRow + 1, 2).Merge().Value = "Diem thap nhat";
+                    sheet.Range(summaryRow + 1, 1, summaryRow + 1, 2).Merge().Value = "Điểm thấp nhất";
                 sheet.Cell(summaryRow + 1, 3).Value = numeric.Min();
                 sheet.Range(summaryRow + 2, 1, summaryRow + 2, 2).Merge().Value = "Diem trung binh";
                 sheet.Cell(summaryRow + 2, 3).Value = Math.Round(numeric.Average(), 2);
@@ -3397,21 +3488,54 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     new("Room", "Phong"),
                     new("StudentCount", "So De Tai"),
                     new("Avg", "Diem TB"),
-                    new("Max", "Diem Cao Nhat"),
-                    new("Min", "Diem Thap Nhat")
+                    new("Max", "Điểm Cao Nhất"),
+                    new("Min", "Điểm Thấp Nhất")
                 }
                 : new List<ReportColumnDefinition>
                 {
-                    new("CouncilId", "CouncilId"),
-                    new("CommitteeCode", "Ma Hoi Dong"),
-                    new("Room", "Phong"),
-                    new("DefenseDate", "Ngay Bao Ve"),
-                    new("Session", "Buoi"),
+                    new("RowNumber", "TT"),
+                    new("TopicCode", "Ma de tai"),
+                    new("TopicTitle", "Ten de tai"),
                     new("StudentCode", "MSSV"),
                     new("StudentName", "Ho va ten"),
-                    new("TopicTitle", "Ten de tai"),
-                    new("Score", "Diem"),
-                    new("Grade", "Diem chu")
+                    new("ClassName", "Lop"),
+                    new("CohortCode", "Khoa"),
+                    new("SupervisorLecturerCode", "Ma GVHD"),
+                    new("SupervisorLecturerName", "GVHD"),
+                    new("SupervisorOrganization", "Don vi GVHD"),
+                    new("CommitteeName", "Ten hoi dong"),
+                    new("CommitteeCode", "Ma hoi dong"),
+                    new("Room", "Phong"),
+                    new("CommitteeChairCode", "Ma CT"),
+                    new("CommitteeChairName", "CT"),
+                    new("ScoreCt", "Diem CT"),
+                    new("CommentCt", "Nhan xet CT"),
+                    new("CommitteeSecretaryCode", "Ma TK"),
+                    new("CommitteeSecretaryName", "TK"),
+                    new("ScoreTk", "Diem TK"),
+                    new("CommentTk", "Nhan xet TK"),
+                    new("CommitteeReviewerCode", "Ma PB"),
+                    new("CommitteeReviewerName", "PB"),
+                    new("ScorePb", "Diem PB"),
+                    new("CommentPb", "Nhan xet PB"),
+                    new("ScoreGvhd", "Diem GVHD"),
+                    new("CommentGvhd", "Nhan xet GVHD"),
+                    new("TopicSupervisorScore", "Diem GVHD (Topic)"),
+                    new("Score", "Trung binh"),
+                    new("Grade", "Xep loai"),
+                    new("Variance", "Chech lech diem"),
+                    new("Session", "Buoi"),
+                    new("DefenseDate", "Ngay"),
+                    new("StartTime", "Gio bat dau"),
+                    new("EndTime", "Gio ket thuc"),
+                    new("Status", "Trang thai"),
+                    new("IsLocked", "Da chot"),
+                    new("SubmittedCount", "So thanh phan da nop"),
+                    new("RequiredCount", "So thanh phan can"),
+                    new("AssignmentCode", "Ma phan cong"),
+                    new("TopicTags", "Tag chuan muc"),
+                    new("DocumentCount", "So tai lieu"),
+                    new("SignedStatus", "Trang thai ky")
                 };
 
             if (selectedFields == null || selectedFields.Count == 0)
@@ -3443,16 +3567,58 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         {
             return key switch
             {
+                "RowNumber" => row.RowNumber.ToString(),
                 "CouncilId" => row.CouncilId.ToString(),
                 "CommitteeCode" => row.CommitteeCode,
+                "CommitteeName" => row.CommitteeName,
                 "Room" => row.Room ?? string.Empty,
                 "DefenseDate" => row.DefenseDate.HasValue ? row.DefenseDate.Value.ToString("dd/MM/yyyy") : string.Empty,
                 "Session" => row.Session,
                 "StudentCode" => row.StudentCode,
                 "StudentName" => row.StudentName,
                 "TopicTitle" => row.TopicTitle,
+                "TopicCode" => row.TopicCode,
+                "SupervisorLecturerCode" => row.SupervisorLecturerCode ?? string.Empty,
+                "SupervisorLecturerName" => row.SupervisorLecturerName ?? string.Empty,
+                "SupervisorOrganization" => row.SupervisorOrganization ?? string.Empty,
+                "SupervisorDegree" => row.SupervisorDegree ?? string.Empty,
+                "CommitteeChairCode" => row.CommitteeChairCode ?? string.Empty,
+                "CommitteeChairName" => row.CommitteeChairName ?? string.Empty,
+                "ChairDegree" => row.ChairDegree ?? string.Empty,
+                "ChairOrganization" => row.ChairOrganization ?? string.Empty,
+                "CommitteeSecretaryCode" => row.CommitteeSecretaryCode ?? string.Empty,
+                "CommitteeSecretaryName" => row.CommitteeSecretaryName ?? string.Empty,
+                "SecretaryDegree" => row.SecretaryDegree ?? string.Empty,
+                "SecretaryOrganization" => row.SecretaryOrganization ?? string.Empty,
+                "CommitteeReviewerCode" => row.CommitteeReviewerCode ?? string.Empty,
+                "CommitteeReviewerName" => row.CommitteeReviewerName ?? string.Empty,
+                "ReviewerDegree" => row.ReviewerDegree ?? string.Empty,
+                "ReviewerOrganization" => row.ReviewerOrganization ?? string.Empty,
+                "ScoreCt" => row.ScoreCt.HasValue ? row.ScoreCt.Value.ToString("0.0") : string.Empty,
+                "ScoreTk" => row.ScoreTk.HasValue ? row.ScoreTk.Value.ToString("0.0") : string.Empty,
+                "ScorePb" => row.ScorePb.HasValue ? row.ScorePb.Value.ToString("0.0") : string.Empty,
+                "ScoreGvhd" => row.ScoreGvhd.HasValue ? row.ScoreGvhd.Value.ToString("0.0") : string.Empty,
+                "CommentCt" => row.CommentCt ?? string.Empty,
+                "CommentTk" => row.CommentTk ?? string.Empty,
+                "CommentPb" => row.CommentPb ?? string.Empty,
+                "CommentGvhd" => row.CommentGvhd ?? string.Empty,
                 "Score" => row.Score.HasValue ? row.Score.Value.ToString("0.0") : string.Empty,
                 "Grade" => row.Grade ?? string.Empty,
+                "ClassName" => row.ClassName ?? string.Empty,
+                "CohortCode" => row.CohortCode ?? string.Empty,
+                "AssignmentCode" => row.AssignmentCode ?? string.Empty,
+                "AssignmentId" => row.AssignmentId.ToString(),
+                "TopicTags" => row.TopicTags,
+                "StartTime" => row.StartTime ?? string.Empty,
+                "EndTime" => row.EndTime ?? string.Empty,
+                "SubmittedCount" => row.SubmittedCount.ToString(),
+                "RequiredCount" => row.RequiredCount.ToString(),
+                "IsLocked" => row.IsLocked ? "Co" : "Khong",
+                "TopicSupervisorScore" => row.TopicSupervisorScore.HasValue ? row.TopicSupervisorScore.Value.ToString("0.0") : string.Empty,
+                "Variance" => row.Variance.HasValue ? row.Variance.Value.ToString("0.0") : string.Empty,
+                "Status" => row.Status,
+                "DocumentCount" => row.DocumentCount.ToString(),
+                "SignedStatus" => row.SignedStatus,
                 _ => string.Empty
             };
         }
@@ -3513,8 +3679,8 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 }
             }
 
-            sb.AppendLine($"# NGUOI LAP BIEU,{DateTime.Now:dd/MM/yyyy}");
-            sb.AppendLine("# TRUONG KHOA");
+            sb.AppendLine($"# NGƯỜI LẬP BIỂU,{DateTime.Now:dd/MM/yyyy}");
+            sb.AppendLine("# TRƯỞNG KHOA");
 
             return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
         }
@@ -3553,6 +3719,15 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             sheet.Range(1, Math.Max(1, headerEndColumn - 3), 2, headerEndColumn).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
             sheet.Range(4, 1, 5, headerEndColumn).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
+            if (columns.Any(c => string.Equals(c.Key, "TopicTitle", StringComparison.OrdinalIgnoreCase)))
+            {
+                var topicTitleColumnIndex = columns.FindIndex(c => string.Equals(c.Key, "TopicTitle", StringComparison.OrdinalIgnoreCase)) + 1;
+                if (topicTitleColumnIndex > 0)
+                {
+                    sheet.Column(topicTitleColumnIndex).Width = 36;
+                }
+            }
+
             var headerRow = 7;
             for (var i = 0; i < columns.Count; i++)
             {
@@ -3568,6 +3743,10 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     {
                         sheet.Cell(currentRow, i + 1).Value = GetFlexibleSummaryValue(row, columns[i].Key);
                     }
+                    if (columns.Any(c => string.Equals(c.Key, "TopicTitle", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        sheet.Row(currentRow).Height = 30;
+                    }
                     currentRow++;
                 }
             }
@@ -3578,6 +3757,10 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     for (var i = 0; i < columns.Count; i++)
                     {
                         sheet.Cell(currentRow, i + 1).Value = GetFlexibleRowValue(row, columns[i].Key);
+                    }
+                    if (columns.Any(c => string.Equals(c.Key, "TopicTitle", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        sheet.Row(currentRow).Height = 30;
                     }
                     currentRow++;
                 }
@@ -3596,18 +3779,25 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 if (numeric.Count > 0)
                 {
                     var summaryRow = lastDataRow + 2;
-                    sheet.Range(summaryRow, 1, summaryRow, Math.Min(2, columnCount)).Merge().Value = "Diem cao nhat";
+                    sheet.Range(summaryRow, 1, summaryRow, Math.Min(2, columnCount)).Merge().Value = "Điểm cao nhất";
                     sheet.Cell(summaryRow, Math.Min(3, columnCount)).Value = numeric.Max();
-                    sheet.Range(summaryRow + 1, 1, summaryRow + 1, Math.Min(2, columnCount)).Merge().Value = "Diem thap nhat";
+                    sheet.Range(summaryRow + 1, 1, summaryRow + 1, Math.Min(2, columnCount)).Merge().Value = "Điểm thấp nhất";
                     sheet.Cell(summaryRow + 1, Math.Min(3, columnCount)).Value = numeric.Min();
                 }
             }
 
             var footerRow = lastDataRow + 6;
-            sheet.Range(footerRow, 1, footerRow, Math.Max(1, columnCount / 2)).Merge().Value = "NGƯỜI LẬP BIỂU";
-            sheet.Range(footerRow, Math.Max(2, columnCount / 2 + 1), footerRow, columnCount).Merge().Value = "TRƯỞNG KHOA";
-            sheet.Range(footerRow, 1, footerRow, columnCount).Style.Font.Bold = true;
-            sheet.Range(footerRow + 1, Math.Max(2, columnCount / 2 + 1), footerRow + 1, columnCount).Merge().Value = $"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}";
+            var leftStartCol = Math.Min(2, columnCount);
+            var leftEndCol = Math.Max(leftStartCol, Math.Max(2, columnCount / 2 + 1));
+            var rightStartCol = Math.Min(columnCount, Math.Max(leftEndCol + 1, columnCount / 2 + 2));
+
+            sheet.Range(footerRow, rightStartCol, footerRow, columnCount).Merge().Value = $"Hà Nội, ngày {DateTime.Now:dd} tháng {DateTime.Now:MM} năm {DateTime.Now:yyyy}";
+            sheet.Range(footerRow + 1, leftStartCol, footerRow + 1, leftEndCol).Merge().Value = "NGƯỜI LẬP BIỂU";
+            sheet.Range(footerRow + 1, rightStartCol, footerRow + 1, columnCount).Merge().Value = "TRƯỞNG KHOA";
+            sheet.Range(footerRow + 1, leftStartCol, footerRow + 1, columnCount).Style.Font.Bold = true;
+            sheet.Range(footerRow, rightStartCol, footerRow, columnCount).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+            sheet.Range(footerRow + 1, leftStartCol, footerRow + 1, leftEndCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            sheet.Range(footerRow + 1, rightStartCol, footerRow + 1, columnCount).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             using var ms = new MemoryStream();
             workbook.SaveAs(ms);
@@ -3706,7 +3896,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                             var numeric = rows.Where(r => r.Score.HasValue).Select(r => r.Score!.Value).ToList();
                             if (numeric.Count > 0)
                             {
-                                column.Item().PaddingTop(8).Text($"Diem cao nhat: {numeric.Max():0.0} | Diem thap nhat: {numeric.Min():0.0}").SemiBold();
+                                column.Item().PaddingTop(8).Text($"Điểm cao nhất: {numeric.Max():0.0} | Điểm thấp nhất: {numeric.Min():0.0}").SemiBold();
                             }
                         }
 

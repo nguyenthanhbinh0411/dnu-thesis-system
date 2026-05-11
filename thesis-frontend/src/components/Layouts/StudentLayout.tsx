@@ -9,8 +9,7 @@ import {
   Menu,
   X,
   KeyRound,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Sidebar,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -52,6 +51,9 @@ const StudentLayout: React.FC = () => {
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
+  const collapseSidebarOnActivity = () => {
+    setIsSidebarCollapsed(true);
+  };
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -343,6 +345,33 @@ const StudentLayout: React.FC = () => {
             position: "relative",
           }}
         >
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              title="Mở rộng thanh nav"
+              aria-label="Mở rộng thanh nav"
+              style={{
+                position: "absolute",
+                top: "12px",
+                right: "12px",
+                width: 34,
+                height: 34,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <Sidebar size={18} />
+            </button>
+          )}
+
           <button
             onClick={() => setIsMobileMenuOpen(false)}
             className="mobile-close-btn"
@@ -371,8 +400,7 @@ const StudentLayout: React.FC = () => {
               display: "block",
               margin: isSidebarCollapsed ? "16px auto 10px" : "0 auto 10px",
               filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.06))",
-              transition:
-                "width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
+              transition: "width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
             }}
           />
           <h3
@@ -382,40 +410,17 @@ const StudentLayout: React.FC = () => {
               fontSize: 17,
               fontWeight: 700,
               margin: 0,
-              letterSpacing: "0.5px",
-              opacity: isSidebarCollapsed ? 0 : 1,
-              transform: isSidebarCollapsed
-                ? "translateY(-8px) scale(0.96)"
-                : "translateY(0) scale(1)",
-              maxHeight: isSidebarCollapsed ? 0 : 40,
-              overflow: "hidden",
-              transition:
-                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
-            }}
-          >
-            Hệ thống Quản lý Đồ án
-          </h3>
-          <div
-            className="sidebar-brand-text"
-            style={{
-              fontSize: 12,
-              color: "#6B7280",
-              marginTop: 6,
-              opacity: isSidebarCollapsed ? 0 : 1,
-              transform: isSidebarCollapsed
-                ? "translateY(-8px) scale(0.96)"
-                : "translateY(0) scale(1)",
-              maxHeight: isSidebarCollapsed ? 0 : 28,
-              overflow: "hidden",
-              transition:
-                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
             }}
           >
             Vai trò: <strong style={{ color: "#F37021" }}>Sinh viên</strong>
-          </div>
+          </h3>
         </div>
 
-        <div style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}>
+        <div
+          style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}
+          onPointerDownCapture={collapseSidebarOnActivity}
+          onFocusCapture={collapseSidebarOnActivity}
+        >
           <StudentNav
             collapsed={isSidebarCollapsed}
             onNavigate={() => setIsMobileMenuOpen(false)}
@@ -434,8 +439,7 @@ const StudentLayout: React.FC = () => {
             transform: isSidebarCollapsed ? "translateY(8px)" : "translateY(0)",
             maxHeight: isSidebarCollapsed ? 0 : 80,
             overflow: "hidden",
-            transition:
-              "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
+            transition: "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
           }}
         >
           © 2025 Đại học Đại Nam
@@ -488,36 +492,6 @@ const StudentLayout: React.FC = () => {
               className="mobile-menu-btn"
             >
               {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-              title={
-                isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-              }
-              aria-label={
-                isSidebarCollapsed ? "Mở rộng thanh nav" : "Thu gọn thanh nav"
-              }
-              style={{
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 12,
-                border: "1px solid rgba(243, 112, 33, 0.2)",
-                background: "rgba(243, 112, 33, 0.08)",
-                color: "#F37021",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              {isSidebarCollapsed ? (
-                <PanelLeftOpen size={18} />
-              ) : (
-                <PanelLeftClose size={18} />
-              )}
             </button>
           </div>
 
@@ -890,6 +864,8 @@ const StudentLayout: React.FC = () => {
             height: "calc(100vh - 72px)",
             overflowY: "auto",
           }}
+          onPointerDownCapture={collapseSidebarOnActivity}
+          onFocusCapture={collapseSidebarOnActivity}
         >
           <Outlet />
         </div>

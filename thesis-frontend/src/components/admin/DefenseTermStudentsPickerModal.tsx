@@ -133,7 +133,7 @@ const cardStyle: React.CSSProperties = {
   maxHeight: "92vh",
   overflow: "hidden",
   background: "#ffffff",
-  borderRadius: 18,
+  borderRadius: 10,
   border: "1px solid #cbd5e1",
   boxShadow: "0 28px 90px rgba(15, 23, 42, 0.24)",
   display: "flex",
@@ -141,7 +141,7 @@ const cardStyle: React.CSSProperties = {
 };
 
 const headerStyle: React.CSSProperties = {
-  padding: 18,
+  padding: 14,
   borderBottom: "1px solid #e2e8f0",
   display: "flex",
   justifyContent: "space-between",
@@ -153,20 +153,21 @@ const sectionButton: React.CSSProperties = {
   border: "1px solid #cbd5e1",
   background: "#ffffff",
   color: "#0f172a",
-  borderRadius: 10,
-  padding: "10px 12px",
-  fontWeight: 700,
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontWeight: 600,
+  fontSize: 12,
   display: "inline-flex",
   alignItems: "center",
-  gap: 8,
+  gap: 6,
   cursor: "pointer",
 };
 
 const sectionButtonPrimary: React.CSSProperties = {
   ...sectionButton,
-  background: "#f37021",
+  background: "#1e3a5f",
   color: "#ffffff",
-  borderColor: "#f37021",
+  borderColor: "#1e3a5f",
 };
 
 const sectionButtonGhost: React.CSSProperties = {
@@ -196,27 +197,29 @@ const mainPanelStyle: React.CSSProperties = {
 
 const panelCardStyle: React.CSSProperties = {
   border: "1px solid #e2e8f0",
-  borderRadius: 14,
+  borderRadius: 8,
   background: "#ffffff",
   boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)",
 };
 
 const tabButtonStyle = (active: boolean): React.CSSProperties => ({
   border: "1px solid",
-  borderColor: active ? "#f37021" : "#cbd5e1",
-  background: active ? "#f37021" : "#ffffff",
+  borderColor: active ? "#1e3a5f" : "#cbd5e1",
+  background: active ? "#1e3a5f" : "#ffffff",
   color: active ? "#ffffff" : "#0f172a",
   borderRadius: 999,
-  padding: "8px 14px",
-  fontWeight: 800,
+  padding: "8px 12px",
+  fontWeight: 600,
+  fontSize: 12,
   cursor: "pointer",
 });
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
   border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: "10px 12px",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontSize: 12,
   outline: "none",
   background: "#ffffff",
 };
@@ -508,13 +511,13 @@ const DefenseTermStudentsPickerModal: React.FC<
       <div style={cardStyle}>
         <div style={headerStyle}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>
               {title}
             </div>
-            <div style={{ marginTop: 6, color: "#334155", fontSize: 13 }}>
+            <div style={{ marginTop: 4, color: "#475569", fontSize: 12 }}>
               {subtitle}
             </div>
-            <div style={{ marginTop: 8, color: "#0f172a", fontSize: 12 }}>
+            <div style={{ marginTop: 6, color: "#0f172a", fontSize: 11 }}>
               Đang chọn: <strong>{selectedCount}</strong> sinh viên
             </div>
           </div>
@@ -534,27 +537,28 @@ const DefenseTermStudentsPickerModal: React.FC<
               <div style={panelCardStyle as React.CSSProperties}>
                 <div
                   style={{
-                    padding: 14,
+                    padding: 12,
                     borderBottom: "1px solid #e2e8f0",
-                    fontWeight: 800,
+                    fontWeight: 700,
+                    fontSize: 12,
                     color: "#0f172a",
                   }}
                 >
                   Bộ lọc nguồn
                 </div>
-                <div style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                <div style={{ padding: 12, display: "grid", gap: 8 }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Tìm kiếm
                     </span>
                     <div style={{ position: "relative" }}>
                       <Search
-                        size={15}
+                        size={13}
                         style={{
                           position: "absolute",
-                          left: 12,
-                          top: 11,
-                          color: "#f37021",
+                          left: 10,
+                          top: 8,
+                          color: "#1e3a5f",
                         }}
                       />
                       <input
@@ -573,8 +577,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                       gridTemplateColumns: "1fr 1fr",
                     }}
                   >
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>
                         GPA từ
                       </span>
                       <input
@@ -590,8 +594,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                         style={inputStyle}
                       />
                     </label>
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>
                         GPA đến
                       </span>
                       <input
@@ -609,8 +613,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                     </label>
                   </div>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>Lớp</span>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>Lớp</span>
                     <input
                       value={filters.classCode}
                       onChange={(event) =>
@@ -623,8 +627,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                     />
                   </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>Khoa</span>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>Khoa</span>
                     <input
                       value={filters.facultyCode}
                       onChange={(event) =>
@@ -637,8 +641,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                     />
                   </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Bộ môn
                     </span>
                     <input
@@ -653,8 +657,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                     />
                   </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>Mã SV</span>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>Mã SV</span>
                     <input
                       value={filters.studentCode}
                       onChange={(event) =>
@@ -667,8 +671,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                     />
                   </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       Mã user
                     </span>
                     <input
@@ -722,15 +726,16 @@ const DefenseTermStudentsPickerModal: React.FC<
               <div style={panelCardStyle as React.CSSProperties}>
                 <div
                   style={{
-                    padding: 14,
+                    padding: 12,
                     borderBottom: "1px solid #e2e8f0",
-                    fontWeight: 800,
+                    fontWeight: 700,
+                    fontSize: 12,
                     color: "#0f172a",
                   }}
                 >
                   Chọn nhanh
                 </div>
-                <div style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div style={{ padding: 12, display: "grid", gap: 8 }}>
                   <button
                     type="button"
                     style={sectionButtonPrimary}
@@ -745,8 +750,8 @@ const DefenseTermStudentsPickerModal: React.FC<
                   >
                     <Square size={15} /> Bỏ chọn đang lọc
                   </button>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600 }}>
                       GPA &ge;
                     </span>
                     <input
@@ -858,13 +863,13 @@ const DefenseTermStudentsPickerModal: React.FC<
                           }
                         />
                       </th>
-                      <th style={{ padding: 12 }}>Sinh viên</th>
-                      <th style={{ padding: 12 }}>Mã SV</th>
-                      <th style={{ padding: 12 }}>User</th>
-                      <th style={{ padding: 12 }}>Lớp</th>
-                      <th style={{ padding: 12 }}>Khoa</th>
-                      <th style={{ padding: 12 }}>Bộ môn</th>
-                      <th style={{ padding: 12 }}>GPA</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>Sinh viên</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>Mã SV</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>User</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>Lớp</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>Khoa</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>Bộ môn</th>
+                      <th style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, borderBottom: "1px solid #e2e8f0" }}>GPA</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -944,22 +949,22 @@ const DefenseTermStudentsPickerModal: React.FC<
                               </div>
                             </div>
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.studentCode || "--"}
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.userCode || "--"}
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.classCode || "--"}
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.facultyCode || "--"}
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.departmentCode || "--"}
                           </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
+                          <td style={{ padding: "10px 12px", verticalAlign: "top", fontSize: 13 }}>
                             {row.gpa ?? "--"}
                           </td>
                         </tr>

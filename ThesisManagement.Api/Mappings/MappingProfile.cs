@@ -71,8 +71,16 @@ namespace ThesisManagement.Api.Mappings
             CreateMap<MessageReaction, MessageReactionReadDto>();
             CreateMap<MessageReadReceipt, MessageReadReceiptReadDto>();
             CreateMap<DefenseTerm, DefenseTermReadDto>();
-            CreateMap<DefenseTermStudent, DefenseTermStudentReadDto>();
-            CreateMap<DefenseTermLecturer, DefenseTermLecturerReadDto>();
+            CreateMap<DefenseTermStudent, DefenseTermStudentReadDto>()
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.FullName : null))
+                .ForMember(dest => dest.ClassCode, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.ClassCode : null))
+                .ForMember(dest => dest.FacultyCode, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.FacultyCode : null))
+                .ForMember(dest => dest.DepartmentCode, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.DepartmentCode : null))
+                .ForMember(dest => dest.GPA, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.GPA : null));
+            CreateMap<DefenseTermLecturer, DefenseTermLecturerReadDto>()
+                .ForMember(dest => dest.LecturerName, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.FullName : null))
+                .ForMember(dest => dest.DepartmentCode, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.DepartmentCode : null))
+                .ForMember(dest => dest.Degree, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.Degree : null));
             CreateMap<TopicRenameRequest, TopicRenameRequestReadDto>();
             CreateMap<TopicRenameRequestFile, TopicRenameRequestFileReadDto>();
             CreateMap<TopicTitleHistory, TopicTitleHistoryReadDto>();
