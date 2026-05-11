@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.AspNetCore.Http;
 using System.Linq;
 using System.Text.Json;
+using System.Reflection;
+using System.ComponentModel.DataAnnotations.Schema;
 using ThesisManagement.Api.Models;
 using ThesisManagement.Api.Services;
 
@@ -243,6 +245,25 @@ namespace ThesisManagement.Api.Data
                 b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasDefaultValueSql("SYSTIMESTAMP");
                 
+                // Evaluation review column mappings
+                b.Property(x => x.ReviewQuality).HasColumnName("REVIEW_QUALITY");
+                b.Property(x => x.ReviewAttitude).HasColumnName("REVIEW_ATTITUDE");
+                b.Property(x => x.ReviewCapability).HasColumnName("REVIEW_CAPABILITY");
+                b.Property(x => x.ReviewResultProcessing).HasColumnName("REVIEW_RESULT_PROCESSING");
+                b.Property(x => x.ReviewAchievements).HasColumnName("REVIEW_ACHIEVEMENTS");
+                b.Property(x => x.ReviewLimitations).HasColumnName("REVIEW_LIMITATIONS");
+                b.Property(x => x.ReviewConclusion).HasColumnName("REVIEW_CONCLUSION");
+                b.Property(x => x.ScoreInWords).HasColumnName("SCORE_IN_WORDS");
+
+                // Structural fields column mappings
+                b.Property(x => x.NumChapters).HasColumnName("NUM_CHAPTERS");
+                b.Property(x => x.NumPages).HasColumnName("NUM_PAGES");
+                b.Property(x => x.NumTables).HasColumnName("NUM_TABLES");
+                b.Property(x => x.NumFigures).HasColumnName("NUM_FIGURES");
+                b.Property(x => x.NumReferences).HasColumnName("NUM_REFERENCES");
+                b.Property(x => x.NumVietnameseReferences).HasColumnName("NUM_VN_REFERENCES");
+                b.Property(x => x.NumForeignReferences).HasColumnName("NUM_FOREIGN_REFERENCES");
+
                 // Configure CatalogTopic navigation
                 b.HasOne(x => x.CatalogTopic).WithMany().HasForeignKey(x => x.CatalogTopicCode).HasPrincipalKey(x => x.CatalogTopicCode).IsRequired(false);
                 b.HasOne(x => x.DefenseTerm).WithMany(x => x.Topics).HasForeignKey(x => x.DefenseTermId).OnDelete(DeleteBehavior.SetNull);
@@ -1440,6 +1461,12 @@ namespace ThesisManagement.Api.Data
 
                 foreach (var property in entityType.GetProperties())
                 {
+                    // Skip properties that have an explicit [Column] attribute mapping
+                    if (property.PropertyInfo?.GetCustomAttribute<ColumnAttribute>() != null)
+                    {
+                        continue;
+                    }
+
                     if (normalizedTableName == "DEFENSEASSIGNMENTS"
                         && string.Equals(property.Name, nameof(DefenseAssignment.Session), StringComparison.Ordinal))
                     {

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AdminNav from "../SideNavs/AdminNav";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import {
   LogOut,
@@ -9,13 +9,60 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  GraduationCap,
+  ChevronDown,
+  User,
+  KeyRound,
 } from "lucide-react";
+import { fetchData, getAvatarUrl } from "../../api/fetchData";
+import type { ApiResponse } from "../../types/api";
+import type { LecturerProfile } from "../../types/lecturer-profile";
 
 const AdminLayout: React.FC = () => {
   const auth = useAuth();
+  const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [profile, setProfile] = useState<LecturerProfile | null>(null);
+  const [lecturerImage, setLecturerImage] = useState<string | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        if (!auth.user?.userCode) return;
+        const res = await fetchData(
+          `/LecturerProfiles/get-list?UserCode=${auth.user.userCode}`,
+        );
+        const data = (res as ApiResponse<LecturerProfile[]>)?.data || [];
+        if (data.length > 0) {
+          setProfile(data[0]);
+          if (data[0].profileImage) {
+            setLecturerImage(data[0].profileImage as string);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading lecturer profile in admin:", err);
+      }
+    };
+    loadProfile();
+  }, [auth.user?.userCode]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest("[data-dropdown]")) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showDropdown]);
 
   return (
     <>
@@ -380,90 +427,231 @@ const AdminLayout: React.FC = () => {
                 </span>
               </div>
 
-              {/* User Info */}
-              <div
-                className="admin-avatar-section"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 14px",
-                  backgroundColor: "rgba(255, 255, 255, 0.1)",
-                  borderRadius: "12px",
-                  transition: "all 0.3s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255, 255, 255, 0.2)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255, 255, 255, 0.1)";
-                }}
-              >
-                <div
+              {/* User Dropdown */}
+              <div style={{ position: "relative" }} data-dropdown>
+                <button
+                  onClick={() => setShowDropdown(!showDropdown)}
                   style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    background:
-                      "linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(243, 112, 33, 0.1))",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "16px",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                    gap: "12px",
+                    background: "rgba(255, 255, 255, 0.1)",
+                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    padding: "8px 16px",
+                    borderRadius: "16px",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
+                    color: "#FFFFFF",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.15)";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
+                    e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
-                  👤
-                </div>
-                <span
-                  className="admin-user-info"
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                  }}
-                >
-                  {auth.user?.fullName || "Quản trị viên"}
-                </span>
-              </div>
+                  {lecturerImage ? (
+                    <img
+                      src={getAvatarUrl(lecturerImage)}
+                      alt={profile?.fullName || "avatar"}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                        border: "2px solid rgba(243, 112, 33, 0.2)",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(243, 112, 33, 0.1))",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "14px",
+                        fontWeight: 700,
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      {profile?.fullName ? profile.fullName.charAt(0) : "A"}
+                    </div>
+                  )}
+                  <ChevronDown
+                    size={16}
+                    style={{
+                      transition: "transform 0.3s ease",
+                      transform: showDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                    }}
+                  />
+                </button>
 
-              {/* Logout Button */}
-              <button
-                onClick={() => auth.logout()}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  backgroundColor: "#F37021",
-                  color: "#FFFFFF",
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 18px",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  boxShadow: "0 2px 8px rgba(243, 112, 33, 0.3)",
-                  textDecoration: "none",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#E55A1B";
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                  e.currentTarget.style.boxShadow =
-                    "0 4px 12px rgba(243, 112, 33, 0.4)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#F37021";
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.boxShadow =
-                    "0 2px 8px rgba(243, 112, 33, 0.3)";
-                }}
-              >
-                <LogOut size={17} strokeWidth={2.5} />
-                Đăng xuất
-              </button>
+                {/* Dropdown Menu */}
+                {showDropdown && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      right: 0,
+                      background: "linear-gradient(135deg, #001C3D, #002855)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "16px",
+                      boxShadow: "0 10px 25px rgba(0, 0, 0, 0.3)",
+                      minWidth: "240px",
+                      zIndex: 1000,
+                      marginTop: "12px",
+                      overflow: "hidden",
+                      backdropFilter: "blur(10px)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "20px",
+                        borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "16px",
+                        background: "rgba(255, 255, 255, 0.03)",
+                      }}
+                    >
+                      {lecturerImage ? (
+                        <img
+                          src={getAvatarUrl(lecturerImage)}
+                          alt="avatar"
+                          style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: "50%",
+                            objectFit: "cover",
+                            border: "2px solid rgba(243, 112, 33, 0.2)",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: "50%",
+                            background: "linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(243, 112, 33, 0.1))",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "20px",
+                            fontWeight: 700,
+                            color: "#FFFFFF",
+                          }}
+                        >
+                          {profile?.fullName ? profile.fullName.charAt(0) : "A"}
+                        </div>
+                      )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "16px", fontWeight: 700, color: "#FFFFFF", marginBottom: "2px" }}>
+                          {profile?.fullName || auth.user?.fullName || "Quản trị viên"}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                          {profile?.degree || "Quản trị hệ thống"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: "8px" }}>
+                      {auth.user?.roles?.includes("LECTURER") && (
+                        <button
+                          onClick={() => {
+                            setShowDropdown(false);
+                            auth.switchRole("LECTURER");
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "14px",
+                            width: "100%",
+                            padding: "14px 18px",
+                            background: "rgba(243, 112, 33, 0.1)",
+                            border: "none",
+                            borderRadius: "12px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            color: "#F37021",
+                            fontWeight: 600,
+                            transition: "all 0.3s ease",
+                            marginBottom: "8px"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "rgba(243, 112, 33, 0.2)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "rgba(243, 112, 33, 0.1)";
+                          }}
+                        >
+                          <GraduationCap size={18} />
+                          Giao diện Giảng viên
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          navigate("/admin/change-password");
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "14px",
+                          width: "100%",
+                          padding: "12px 18px",
+                          background: "none",
+                          border: "none",
+                          borderRadius: "12px",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          color: "#e2e8f0",
+                          fontWeight: 500,
+                          transition: "all 0.3s ease",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                      >
+                        <KeyRound size={18} />
+                        Đổi mật khẩu
+                      </button>
+
+                      <button
+                        onClick={() => auth.logout()}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "14px",
+                          width: "100%",
+                          padding: "12px 18px",
+                          background: "none",
+                          border: "none",
+                          borderRadius: "12px",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          color: "#ff4d4d",
+                          fontWeight: 600,
+                          transition: "all 0.3s ease",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255, 77, 77, 0.1)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                      >
+                        <LogOut size={18} />
+                        Đăng xuất
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </header>
 

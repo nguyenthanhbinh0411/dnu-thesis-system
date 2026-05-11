@@ -1,3 +1,5 @@
+import { normalizeRole } from "../utils/role";
+
 const ACCESS_TOKEN_KEY = "access_token";
 const EXPIRES_AT_KEY = "access_token_expires_at";
 const LOGIN_RESPONSE_KEY = "login_response";
@@ -29,7 +31,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-function pickRoleClaim(payload: Record<string, unknown>): string | null {
+function pickAllRoleClaims(payload: Record<string, unknown>): string[] {
   const roleCandidates = [
     payload.role,
     payload.Role,
@@ -37,21 +39,27 @@ function pickRoleClaim(payload: Record<string, unknown>): string | null {
     payload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"],
   ];
 
+  const allRoles: string[] = [];
+
   for (const candidate of roleCandidates) {
     if (typeof candidate === "string" && candidate.trim()) {
-      return candidate;
-    }
-    if (Array.isArray(candidate) && candidate.length > 0) {
-      const first = candidate.find(
-        (item) => typeof item === "string" && item.trim(),
-      );
-      if (typeof first === "string") {
-        return first;
-      }
+      allRoles.push(normalizeRole(candidate.trim()));
+    } else if (Array.isArray(candidate)) {
+      candidate.forEach((item) => {
+        if (typeof item === "string" && item.trim()) {
+          allRoles.push(normalizeRole(item.trim()));
+        }
+      });
     }
   }
 
-  return null;
+  // Deduplicate
+  return Array.from(new Set(allRoles));
+}
+
+function pickRoleClaim(payload: Record<string, unknown>): string | null {
+  const all = pickAllRoleClaims(payload);
+  return all.length > 0 ? all[0] : null;
 }
 
 function getStorageList(): Storage[] {
@@ -184,11 +192,18 @@ export function getAccessToken(): string | null {
 export function getRoleClaimFromAccessToken(
   token?: string | null,
 ): string | null {
+  const roles = getAllRolesFromAccessToken(token);
+  return roles.length > 0 ? roles[0] : null;
+}
+
+export function getAllRolesFromAccessToken(
+  token?: string | null,
+): string[] {
   const targetToken = token ?? getAccessToken();
-  if (!targetToken) return null;
+  if (!targetToken) return [];
   const payload = decodeJwtPayload(targetToken);
-  if (!payload) return null;
-  return pickRoleClaim(payload);
+  if (!payload) return [];
+  return pickAllRoleClaims(payload);
 }
 
 export function getTokenExpiresAt(): string | null {

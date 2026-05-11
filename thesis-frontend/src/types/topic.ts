@@ -24,6 +24,7 @@ export interface Topic {
   tagID: number | null;
   tagCode: string | null;
   lecturerComment?: string;
+  score?: number | null;
 }
 
 export interface ApiResponseTopics {

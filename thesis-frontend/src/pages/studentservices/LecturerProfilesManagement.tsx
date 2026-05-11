@@ -909,6 +909,7 @@ const LecturerProfilesManagement: React.FC = () => {
                             src={getAvatarUrl(String(row.profileImage))}
                             alt={getDisplayName(row)}
                             className="lecturer-avatar"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="lecturer-avatar lecturer-avatar-fallback">
@@ -1286,6 +1287,7 @@ const LecturerProfilesManagement: React.FC = () => {
                                           )}
                                           alt={getStudentName(item)}
                                           className="lecturer-item-avatar"
+                                          loading="lazy"
                                         />
                                       ) : (
                                         <div className="lecturer-item-avatar lecturer-item-avatar-fallback">

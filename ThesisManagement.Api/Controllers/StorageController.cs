@@ -18,6 +18,7 @@ namespace ThesisManagement.Api.Controllers
 
         [HttpGet("mega/{nodeId}")]
         [AllowAnonymous]
+        [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Any, NoStore = false)]
         public async Task<IActionResult> DownloadMegaFile(string nodeId, CancellationToken cancellationToken)
         {
             var result = await _storageService.OpenReadAsync($"/api/storage/mega/{nodeId}", cancellationToken);

@@ -16,5 +16,23 @@ namespace ThesisManagement.Api.DTOs.ProgressSubmissions.Command
     public record ProgressSubmissionUpdateDto(
         string? LecturerComment,
         string? LecturerState,
-        string? FeedbackLevel);
+        string? FeedbackLevel,
+        decimal? Score,
+        // Evaluation review fields (Phiếu đánh giá)
+        string? ReviewQuality = null,
+        string? ReviewAttitude = null,
+        string? ReviewCapability = null,
+        string? ReviewResultProcessing = null,
+        string? ReviewAchievements = null,
+        string? ReviewLimitations = null,
+        string? ReviewConclusion = null,
+        string? ScoreInWords = null,
+        // structural fields (Kết cấu đồ án)
+        int? NumChapters = null,
+        int? NumPages = null,
+        int? NumTables = null,
+        int? NumFigures = null,
+        int? NumReferences = null,
+        int? NumVietnameseReferences = null,
+        int? NumForeignReferences = null);
 }
