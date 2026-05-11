@@ -364,3 +364,10 @@
   padding: 48px;
   color: #999;
 }
+
+/* Defense Periods Specific Styles */
+.dp-stat-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 20px -10px rgba(15, 23, 42, 0.1);
+  border-color: #f37021 !important;
+}

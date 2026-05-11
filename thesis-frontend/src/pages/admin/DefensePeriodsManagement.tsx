@@ -1212,38 +1212,61 @@ const DefensePeriodsManagement: React.FC = () => {
       {
         label: "Sinh viên tham gia",
         value: dashboardNumbers.eligibleStudentCount,
+        icon: <Flag size={16} />,
+        color: "#0ea5e9",
+        bg: "#f0f9ff"
       },
       {
         label: "Giảng viên tham gia",
         value: dashboardNumbers.capabilityLecturerCount,
+        icon: <Tag size={16} />,
+        color: "#8b5cf6",
+        bg: "#f5f3ff"
       },
       {
         label: "Tổng số đề tài",
         value: dashboardNumbers.topicCount,
+        icon: <Grid size={16} />,
+        color: "#10b981",
+        bg: "#ecfdf5"
       },
       {
         label: "Đã đăng ký",
         value: dashboardNumbers.assignmentCount,
+        icon: <Save size={16} />,
+        color: "#f37021",
+        bg: "#fff7ed"
       },
       {
         label: "Chờ xử lý",
         value: dashboardNumbers.resultCount,
+        icon: <Clock3 size={16} />,
+        color: "#eab308",
+        bg: "#fefce8"
       },
       {
         label: "Lỗi dữ liệu",
         value: dashboardNumbers.revisionCount,
+        icon: <AlertCircle size={16} />,
+        color: "#ef4444",
+        bg: "#fef2f2"
       },
       {
         label: "Tag chuyên môn",
         value: asNumber(pickValue(dashboardPayload, ["tagCount", "TagCount"], 0)),
+        icon: <Tag size={16} />,
+        color: "#6366f1",
+        bg: "#eef2ff"
       },
       {
         label: "Tiến độ hoàn thành",
         value: `${dashboardNumbers.assignmentCoveragePercent.toFixed(1)}%`,
+        icon: <CheckCircle size={16} />,
+        color: "#10b981",
+        bg: "#ecfdf5"
       },
     ];
 
-    // Filter based on role
     if (userRole === "Lecturer") {
       return stats.filter((s) => 
         ["Tổng số đề tài", "Sinh viên tham gia", "Tiến độ hoàn thành"].includes(s.label)
@@ -1652,179 +1675,180 @@ const DefensePeriodsManagement: React.FC = () => {
         `}
       </style>
       <div className="dp-page" style={pageStyles.shell}>
-        <section style={pageStyles.hero}>
-          <div style={pageStyles.heroGlow} />
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-start",
-              alignItems: "flex-start",
-              gap: 18,
-              flexWrap: "wrap",
+        <section
+          style={{
+            ...pageStyles.hero,
+            padding: 0,
+            overflow: "visible",
+            border: "none",
+            boxShadow: "none",
+            marginBottom: 24
+          }}
+        >
+          <div 
+            style={{ 
+              display: "flex", 
+              gap: 20, 
+              alignItems: "stretch",
+              flexWrap: "wrap"
             }}
           >
-            <div style={{ flex: "1 1 720px", maxWidth: 980, minWidth: 0 }}>
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  color: "#f37021",
-                  fontWeight: 800,
-                  fontSize: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <Workflow size={14} /> FIT DNU · Quản lý đợt
-              </div>
-              <h1
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  color: "#0f172a",
-                  fontSize: "clamp(26px, 2.6vw, 32px)",
-                  lineHeight: 1.25,
-                  fontWeight: 700,
-                  margin: 0,
-                }}
-              >
-                <span
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    display: "inline-flex",
+            {/* Header Title Section */}
+            <div 
+              style={{ 
+                flex: 1, 
+                minWidth: 400, 
+                padding: "24px 28px", 
+                background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
+                border: "1px solid #e2e8f0",
+                borderRadius: 16,
+                boxShadow: "0 4px 12px rgba(15, 23, 42, 0.03)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span 
+                  style={{ 
+                    padding: "4px 12px", 
+                    borderRadius: 999, 
+                    background: "#fff7ed", 
+                    color: "#f37021", 
+                    fontSize: 11, 
+                    fontWeight: 800,
+                    border: "1px solid #ffedd5",
+                    display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    color: "#f37021",
+                    gap: 6
                   }}
                 >
-                  <Workflow size={20} />
+                  <Workflow size={12} /> FIT DNU · Quản lý đợt
                 </span>
-                Quản lý đợt bảo vệ
-              </h1>
-              <p
-                style={{
-                  margin: "12px 0 0",
+              </div>
+              <h1 
+                style={{ 
+                  margin: 0, 
+                  fontSize: 26, 
+                  fontWeight: 900, 
                   color: "#0f172a",
-                  fontSize: 14,
-                  maxWidth: 900,
-                  lineHeight: 1.6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12
                 }}
               >
-                Quản lý thông tin cơ bản của các đợt bảo vệ, bao gồm CRUD và quản lý vòng đời.
+                <div style={{ padding: 10, borderRadius: 12, background: "#ffffff", border: "1px solid #e2e8f0", color: "#f37021", display: "flex", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
+                  <Shield size={24} />
+                </div>
+                Quản lý đợt bảo vệ
+              </h1>
+              <p style={{ margin: "16px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.6, maxWidth: 600 }}>
+                Trung tâm điều phối và giám sát các đợt bảo vệ khóa luận. Thực hiện cấu hình, 
+                phân bổ hội đồng và quản lý vòng đời đợt tại đây.
               </p>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                width: "100%",
-                maxWidth: 320,
-                marginLeft: "auto",
+            {/* Selected Period Detail Card */}
+            <div 
+              style={{ 
+                width: 320, 
+                padding: 24, 
+                background: "#0f172a", 
+                borderRadius: 16, 
+                color: "#ffffff",
+                boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.2)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                position: "relative",
+                overflow: "hidden"
               }}
             >
-              <div style={{ ...pageStyles.sectionCard, padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#0f172a",
-                    fontWeight: 800,
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  ĐỢT ĐANG CHỌN
+              {/* Decorative Glow */}
+              <div style={{ position: "absolute", top: -20, right: -20, width: 100, height: 100, background: "rgba(243, 112, 33, 0.15)", filter: "blur(40px)", borderRadius: "50%" }} />
+              
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Đợt đang chọn
                 </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    marginTop: 4,
-                  }}
-                >
-                  {selectedRow?.name ?? "Chưa có đợt"}
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      ...pageStyles.chip,
-                      background: selectedBadge.bg,
-                      color: selectedBadge.text,
-                    }}
-                  >
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#ffffff", lineHeight: 1.3 }}>
+                  {selectedRow?.name ?? "N/A"}
+                </h2>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <span style={{ padding: "3px 10px", borderRadius: 6, background: selectedBadge.bg, color: selectedBadge.text, fontSize: 11, fontWeight: 700 }}>
                     {selectedRow?.status ?? "Draft"}
                   </span>
-                  <span
-                    style={{
-                      ...pageStyles.chip,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                    }}
-                  >
+                  <span style={{ padding: "3px 10px", borderRadius: 6, background: "rgba(255,255,255,0.1)", color: "#cbd5e1", fontSize: 11, fontWeight: 600, border: "1px solid rgba(255,255,255,0.1)" }}>
                     Mã: {selectedRow?.code ?? "--"}
                   </span>
                 </div>
-                <div style={{ marginTop: 10, fontSize: 12, color: "#0f172a" }}>
-                  Đợt thứ {selectedRow?.roundIndex ?? 0} -{" "}
-                  {selectedRow?.startDate ?? "--"} đến{" "}
-                  {selectedRow?.endDate ?? "--"}
+              </div>
+
+              <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: 10 }}>
+                <CalendarDays size={14} color="#f37021" />
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                  {selectedRow?.startDate ?? "--"} → {selectedRow?.endDate ?? "--"}
                 </div>
               </div>
             </div>
           </div>
         </section>
 
+        {/* Improved Stats Grid */}
         <section
-          className="dp-stats-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 14,
-            marginBottom: 16,
+            gap: 16,
+            marginBottom: 24,
           }}
         >
-          {heroStats.map((item, index) => (
+          {heroStats.map((item) => (
             <div
               key={item.label}
               style={{
                 ...pageStyles.statCard,
-                borderTop:
-                  index === 0 ? "3px solid #f37021" : "3px solid #e2e8f0",
+                padding: "16px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                cursor: "default",
+                border: "1px solid #e2e8f0"
               }}
+              className="dp-stat-card-hover"
             >
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "#0f172a",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {item.label}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div 
+                  style={{ 
+                    width: 32, 
+                    height: 32, 
+                    borderRadius: 10, 
+                    background: item.bg, 
+                    color: item.color, 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                >
+                  {item.icon}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#64748b",
+                    fontWeight: 600,
+                    lineHeight: 1.2
+                  }}
+                >
+                  {item.label}
+                </div>
               </div>
               <div
                 style={{
-                  marginTop: 10,
-                  fontSize: 24,
-                  fontWeight: 700,
+                  fontSize: 20,
+                  fontWeight: 900,
                   color: "#0f172a",
                 }}
               >
@@ -3386,7 +3410,7 @@ const DefensePeriodsManagement: React.FC = () => {
                     <div style={{ display: "grid", gap: 10 }}>
                        <button 
                           style={{ ...pageStyles.primaryButton, width: "100%", justifyContent: "space-between", background: "#f37021" }}
-                          onClick={() => updateMainTab("workflow")}
+                          onClick={() => updateMainTab("progress")}
                        >
                           <span>Kiểm tra Workflow</span>
                           <ChevronRight size={16} />
