@@ -54,6 +54,22 @@ interface TopicDisplay {
   lecturerProfile?: LecturerProfile | null;
 }
 
+interface CriterionRating {
+  name: string;
+  score: number;
+  comment: string;
+}
+
+interface ThesisAiAnalysisResult {
+  overallScore: number;
+  status: string;
+  criteria: CriterionRating[];
+  pros: string[];
+  cons: string[];
+  suggestions: string[];
+  summary: string;
+}
+
 interface LecturerTopicReviewProps {
   currentLecturerOnly?: boolean;
 }
@@ -115,6 +131,9 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
     isOpen: false,
     topic: null,
   });
+
+  const [aiAnalysis, setAiAnalysis] = useState<ThesisAiAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const [topicTags, setTopicTags] = useState<Tag[]>([]);
 
@@ -734,6 +753,36 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
       topic: null,
     });
     setTopicTags([]);
+    setAiAnalysis(null);
+    setIsAnalyzing(false);
+  };
+
+  const handleAiAnalysis = async () => {
+    if (!detailModal.topic) return;
+
+    try {
+      setIsAnalyzing(true);
+      const response = await fetchData<ApiResponse<ThesisAiAnalysisResult>>("/thesis-ai/analyze", {
+        method: "POST",
+        body: JSON.stringify({
+          title: detailModal.topic.title,
+          description: detailModal.topic.description,
+          techStack: "", // We can add this field later if available
+          major: detailModal.topic.studentProfile?.departmentCode || "Công nghệ thông tin",
+        }),
+      });
+
+      if (response.success && response.data) {
+        setAiAnalysis(response.data);
+      } else {
+        addToast(response.message || "Không thể phân tích đề tài.", "error");
+      }
+    } catch (err) {
+      console.error("AI Analysis error:", err);
+      addToast("Lỗi kết nối khi phân tích AI.", "error");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -1709,7 +1758,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
+            zIndex: 1100,
           }}
           onClick={closeCommentModal}
         >
@@ -1896,7 +1945,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
+            zIndex: 1100,
           }}
           onClick={closeViewCommentModal}
         >
@@ -2025,7 +2074,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
+            zIndex: 1100,
           }}
           onClick={closeConfirmationModal}
         >
@@ -2380,7 +2429,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
+            zIndex: 1100,
           }}
           onClick={closeSuccessModal}
         >
@@ -2738,96 +2787,181 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                     </div>
                   )}
 
-                  {/* Dates Info */}
-                  <div
-                    style={{
-                      marginTop: "16px",
-                      padding: "20px",
-                      background: "#f1f5f9",
-                      borderRadius: "16px",
-                      display: "flex",
-                      gap: "32px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <Calendar size={18} color="#64748b" />
-                      <div>
-                        <div style={{ fontSize: "10px", color: "#64748b", fontWeight: "800", textTransform: "uppercase" }}>Ngày đăng ký</div>
-                        <div style={{ fontSize: "14px", color: "#1e293b", fontWeight: "700" }}>
-                          {new Date(detailModal.topic.submissionDate).toLocaleDateString("vi-VN")}
+                  {/* AI Analysis Section */}
+                  <div style={{ marginTop: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                      <h3
+                        style={{
+                          fontSize: "16px",
+                          fontWeight: "700",
+                          color: "#1e293b",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          margin: 0
+                        }}
+                      >
+                        <TrendingUp size={18} color="#8B5CF6" />
+                        Trợ lý AI Thẩm định
+                        <span style={{ 
+                          fontSize: "10px", 
+                          background: "#8B5CF6", 
+                          color: "white", 
+                          padding: "2px 8px", 
+                          borderRadius: "99px",
+                          marginLeft: "8px",
+                          textTransform: "uppercase"
+                        }}>DNU-GPT</span>
+                      </h3>
+                      
+                      {!aiAnalysis && !isAnalyzing && (
+                        <button
+                          onClick={handleAiAnalysis}
+                          style={{
+                            padding: "8px 16px",
+                            background: "linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "12px",
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            boxShadow: "0 4px 6px -1px rgba(139, 92, 246, 0.3)"
+                          }}
+                        >
+                          <Loader2 size={14} />
+                          Phân tích đề tài ngay
+                        </button>
+                      )}
+                    </div>
+
+                    {isAnalyzing && (
+                      <div style={{ 
+                        padding: "40px", 
+                        background: "#F5F3FF", 
+                        borderRadius: "20px", 
+                        border: "2px dashed #DDD6FE",
+                        textAlign: "center"
+                      }}>
+                        <Loader2 size={32} color="#8B5CF6" className="animate-spin" style={{ margin: "0 auto 16px" }} />
+                        <div style={{ fontSize: "15px", fontWeight: "700", color: "#5B21B6", marginBottom: "4px" }}>Đang thẩm định đề tài...</div>
+                        <div style={{ fontSize: "13px", color: "#7C3AED" }}>Hệ thống đang phân tích hàm lượng khoa học và tính thực tiễn</div>
+                      </div>
+                    )}
+
+                    {aiAnalysis && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                        {/* Score and Summary Card */}
+                        <div style={{ 
+                          padding: "24px", 
+                          background: "linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)", 
+                          borderRadius: "24px",
+                          border: "1px solid #DDD6FE",
+                          position: "relative",
+                          overflow: "hidden"
+                        }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "24px", alignItems: "start" }}>
+                            <div style={{ textAlign: "center" }}>
+                              <div style={{ 
+                                width: "80px", 
+                                height: "80px", 
+                                borderRadius: "20px", 
+                                background: "white",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                boxShadow: "0 10px 15px -3px rgba(139, 92, 246, 0.2)",
+                                border: "2px solid #8B5CF6"
+                              }}>
+                                <span style={{ fontSize: "28px", fontWeight: "900", color: "#5B21B6" }}>{aiAnalysis.overallScore}</span>
+                                <span style={{ fontSize: "10px", fontWeight: "700", color: "#7C3AED", textTransform: "uppercase" }}>Điểm số</span>
+                              </div>
+                              <div style={{ 
+                                marginTop: "12px",
+                                padding: "4px 12px",
+                                background: aiAnalysis.status === "Đạt" ? "#22C55E" : "#EF4444",
+                                color: "white",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                fontWeight: "800"
+                              }}>
+                                {aiAnalysis.status.toUpperCase()}
+                              </div>
+                            </div>
+                            <div>
+                              <p style={{ margin: 0, fontSize: "14px", color: "#4C1D95", lineHeight: "1.6", fontWeight: "500", fontStyle: "italic" }}>
+                                "{aiAnalysis.summary}"
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Pros and Cons Grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                          <div style={{ padding: "20px", background: "#F0FDF4", borderRadius: "20px", border: "1px solid #DCFCE7" }}>
+                            <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#166534", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <CheckCircle size={14} /> Ưu điểm
+                            </h4>
+                            <ul style={{ margin: 0, paddingLeft: "18px", display: "grid", gap: "8px" }}>
+                              {aiAnalysis.pros.map((p, i) => (
+                                <li key={i} style={{ fontSize: "13px", color: "#166534", lineHeight: "1.4" }}>{p}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div style={{ padding: "20px", background: "#FEF2F2", borderRadius: "20px", border: "1px solid #FEE2E2" }}>
+                            <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#991B1B", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <AlertCircle size={14} /> Hạn chế
+                            </h4>
+                            <ul style={{ margin: 0, paddingLeft: "18px", display: "grid", gap: "8px" }}>
+                              {aiAnalysis.cons.map((c, i) => (
+                                <li key={i} style={{ fontSize: "13px", color: "#991B1B", lineHeight: "1.4" }}>{c}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        {/* Suggestions Card */}
+                        <div style={{ padding: "20px", background: "#FFFBEB", borderRadius: "20px", border: "1px solid #FEF3C7" }}>
+                          <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#92400E", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <Edit size={14} /> Gợi ý phát triển
+                          </h4>
+                          <div style={{ display: "grid", gap: "8px" }}>
+                            {aiAnalysis.suggestions.map((s, i) => (
+                              <div key={i} style={{ display: "flex", gap: "8px", fontSize: "13px", color: "#92400E", lineHeight: "1.5" }}>
+                                <span>•</span> <span>{s}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Detailed Criteria */}
+                        <div>
+                          <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#1E293B", marginBottom: "12px" }}>Bảng điểm chi tiết</h4>
+                          <div style={{ display: "grid", gap: "10px" }}>
+                            {aiAnalysis.criteria.map((c, i) => (
+                              <div key={i} style={{ padding: "12px 16px", background: "white", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                                  <span style={{ fontSize: "13px", fontWeight: "700", color: "#334155" }}>{c.name}</span>
+                                  <span style={{ fontSize: "13px", fontWeight: "800", color: "#8B5CF6" }}>{c.score}/10</span>
+                                </div>
+                                <div style={{ height: "4px", background: "#F1F5F9", borderRadius: "2px", marginBottom: "8px" }}>
+                                  <div style={{ height: "100%", width: `${c.score * 10}%`, background: "#8B5CF6", borderRadius: "2px" }}></div>
+                                </div>
+                                <p style={{ margin: 0, fontSize: "12px", color: "#64748B", fontStyle: "italic" }}>{c.comment}</p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Bottom Action Bar */}
-                  {detailModal.topic.status === "Chờ duyệt" && (
-                    <div
-                      style={{
-                        marginTop: "24px",
-                        padding: "24px",
-                        background: "white",
-                        borderRadius: "20px",
-                        border: "1px dashed #e2e8f0",
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        gap: "12px",
-                      }}
-                    >
-                      <button
-                        onClick={() => {
-                          openCommentModal("revision", detailModal.topic!.topicID, detailModal.topic!.title);
-                          closeDetailModal();
-                        }}
-                        style={{
-                          padding: "12px 20px",
-                          background: "#fff7ed",
-                          color: "#d97706",
-                          border: "1px solid #fed7aa",
-                          borderRadius: "12px",
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Yêu cầu sửa đổi
-                      </button>
-                      <button
-                        onClick={() => {
-                          openCommentModal("reject", detailModal.topic!.topicID, detailModal.topic!.title);
-                          closeDetailModal();
-                        }}
-                        style={{
-                          padding: "12px 20px",
-                          background: "#fef2f2",
-                          color: "#dc2626",
-                          border: "1px solid #fecaca",
-                          borderRadius: "12px",
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Từ chối
-                      </button>
-                      <button
-                        onClick={() => handleConfirmApprove()}
-                        style={{
-                          padding: "12px 32px",
-                          background: "#22c55e",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "12px",
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          cursor: "pointer",
-                          boxShadow: "0 4px 6px -1px rgba(34, 197, 94, 0.2)",
-                        }}
-                      >
-                        Duyệt đề tài
-                      </button>
-                    </div>
-                  )}
+
+
                 </div>
               </div>
               {/* Right Column: Sidebar */}
@@ -2908,6 +3042,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                   {[
                     { icon: <Users size={16} />, label: "Lớp", value: detailModal.topic.studentProfile?.classCode },
                     { icon: <TrendingUp size={16} />, label: "GPA", value: detailModal.topic.studentProfile?.gpa?.toFixed(2) },
+                    { icon: <Calendar size={16} />, label: "Ngày đăng ký", value: new Date(detailModal.topic.submissionDate).toLocaleDateString("vi-VN") },
                   ].map((item, idx) => (
                     <div
                       key={idx}
@@ -2962,6 +3097,92 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Vertical Action Buttons */}
+                {detailModal.topic.status === "Chờ duyệt" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                      marginTop: "auto",
+                    }}
+                  >
+                    <button
+                      onClick={() => openConfirmationModal(detailModal.topic!)}
+                      style={{
+                        padding: "16px",
+                        background: "#22c55e",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "16px",
+                        fontSize: "15px",
+                        fontWeight: "800",
+                        cursor: "pointer",
+                        boxShadow: "0 10px 15px -3px rgba(34, 197, 94, 0.25)",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow = "0 15px 20px -5px rgba(34, 197, 94, 0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = "0 10px 15px -3px rgba(34, 197, 94, 0.25)";
+                      }}
+                    >
+                      Duyệt đề tài
+                    </button>
+                    <button
+                      onClick={() => {
+                        openCommentModal("revision", detailModal.topic!.topicID, detailModal.topic!.title);
+                      }}
+                      style={{
+                        padding: "14px",
+                        background: "#fff7ed",
+                        color: "#d97706",
+                        border: "1px solid #fed7aa",
+                        borderRadius: "16px",
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#ffedd5";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#fff7ed";
+                      }}
+                    >
+                      Yêu cầu sửa đổi
+                    </button>
+                    <button
+                      onClick={() => {
+                        openCommentModal("reject", detailModal.topic!.topicID, detailModal.topic!.title);
+                      }}
+                      style={{
+                        padding: "14px",
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        border: "1px solid #fecaca",
+                        borderRadius: "16px",
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#fee2e2";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#fef2f2";
+                      }}
+                    >
+                      Từ chối
+                    </button>
+                  </div>
+                                )}
               </div>
             </div>
           </div>

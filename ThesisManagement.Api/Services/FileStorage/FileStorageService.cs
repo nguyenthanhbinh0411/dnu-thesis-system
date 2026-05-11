@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
 using ThesisManagement.Api.Application.Common;
 
 namespace ThesisManagement.Api.Services.FileStorage
@@ -16,19 +17,24 @@ namespace ThesisManagement.Api.Services.FileStorage
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILogger<FileStorageService> _logger;
         private readonly FileStorageOptions _options;
+        private readonly IMemoryCache _cache;
         private readonly MegaApiClient _megaClient = new();
         private readonly SemaphoreSlim _megaLoginLock = new(1, 1);
+
+        private const string MegaNodesCacheKey = "MegaNodesCache";
 
         public FileStorageService(
             IWebHostEnvironment env,
             IHttpContextAccessor httpContextAccessor,
             IOptions<FileStorageOptions> options,
-            ILogger<FileStorageService> logger)
+            ILogger<FileStorageService> logger,
+            IMemoryCache cache)
         {
             _env = env;
             _httpContextAccessor = httpContextAccessor;
             _logger = logger;
             _options = options.Value;
+            _cache = cache;
         }
 
         public long MaxUploadSizeBytes => _options.MaxUploadSizeBytes <= 0 ? 10 * 1024 * 1024 : _options.MaxUploadSizeBytes;
@@ -123,6 +129,7 @@ namespace ThesisManagement.Api.Services.FileStorage
 
                 await EnsureMegaLoggedInAsync(cancellationToken);
                 await _megaClient.DeleteAsync(node, false);
+                _cache.Remove(MegaNodesCacheKey);
                 return OperationResult<object?>.Succeeded(null);
             }
 
@@ -153,6 +160,7 @@ namespace ThesisManagement.Api.Services.FileStorage
                 await EnsureMegaLoggedInAsync(cancellationToken);
                 var destinationFolder = await EnsureMegaFolderAsync(NormalizeScope(targetScope), cancellationToken);
                 await _megaClient.MoveAsync(node, destinationFolder!);
+                _cache.Remove(MegaNodesCacheKey);
                 return OperationResult<string>.Succeeded(BuildManagedUrl(node.Id), 200);
             }
 
@@ -269,6 +277,7 @@ namespace ThesisManagement.Api.Services.FileStorage
 
                 await using var stream = new MemoryStream(content);
                 var created = await _megaClient.UploadAsync(stream, fileName, folder!, null, null, cancellationToken);
+                _cache.Remove(MegaNodesCacheKey);
                 return BuildManagedUrl(created.Id);
             }
             catch (Exception ex)
@@ -283,10 +292,17 @@ namespace ThesisManagement.Api.Services.FileStorage
             if (!UseMegaStorage())
                 return OperationResult<IReadOnlyList<INode>>.Failed("Mega storage is not configured", 503);
 
+            if (_cache.TryGetValue(MegaNodesCacheKey, out List<INode>? cachedNodes) && cachedNodes != null)
+            {
+                return OperationResult<IReadOnlyList<INode>>.Succeeded(cachedNodes);
+            }
+
             try
             {
                 await EnsureMegaLoggedInAsync(cancellationToken);
-                return OperationResult<IReadOnlyList<INode>>.Succeeded(_megaClient.GetNodes().ToList());
+                var nodes = _megaClient.GetNodes().ToList();
+                _cache.Set(MegaNodesCacheKey, nodes, TimeSpan.FromMinutes(30));
+                return OperationResult<IReadOnlyList<INode>>.Succeeded(nodes);
             }
             catch (Exception ex)
             {
@@ -299,6 +315,20 @@ namespace ThesisManagement.Api.Services.FileStorage
         {
             try
             {
+                var cacheFolder = Path.Combine(GetLocalRootPath(), "cache", "mega");
+                Directory.CreateDirectory(cacheFolder);
+
+                // Try to find in cache first (any file starting with nodeId)
+                var cachedFile = Directory.EnumerateFiles(cacheFolder, $"{nodeId}*").FirstOrDefault();
+                if (cachedFile != null)
+                {
+                    var stream = File.OpenRead(cachedFile);
+                    return OperationResult<FileStorageReadResult>.Succeeded(new FileStorageReadResult(
+                        stream,
+                        GetContentType(cachedFile),
+                        Path.GetFileName(cachedFile)));
+                }
+
                 await EnsureMegaLoggedInAsync(cancellationToken);
                 var node = _megaClient.GetNodes().FirstOrDefault(x => string.Equals(x.Id, nodeId, StringComparison.OrdinalIgnoreCase));
                 if (node == null)
@@ -308,6 +338,18 @@ namespace ThesisManagement.Api.Services.FileStorage
                 var memory = new MemoryStream();
                 await remoteStream.CopyToAsync(memory, cancellationToken);
                 memory.Position = 0;
+
+                // Save to cache asynchronously without blocking the return (optional, but let's do it safely)
+                try
+                {
+                    var extension = Path.GetExtension(node.Name);
+                    var cachePath = Path.Combine(cacheFolder, $"{node.Id}{extension}");
+                    await File.WriteAllBytesAsync(cachePath, memory.ToArray(), cancellationToken);
+                }
+                catch (Exception cacheEx)
+                {
+                    _logger.LogWarning(cacheEx, "Failed to save Mega node {NodeId} to cache.", nodeId);
+                }
 
                 return OperationResult<FileStorageReadResult>.Succeeded(new FileStorageReadResult(
                     memory,
@@ -325,7 +367,9 @@ namespace ThesisManagement.Api.Services.FileStorage
         {
             await EnsureMegaLoggedInAsync(cancellationToken);
 
-            var nodes = _megaClient.GetNodes().ToList();
+            var nodesResult = await GetMegaNodesAsync(cancellationToken);
+            if (!nodesResult.Success) return null;
+            var nodes = nodesResult.Data!;
             var root = nodes.FirstOrDefault(x => x.Type == NodeType.Root)
                 ?? nodes.FirstOrDefault(x => x.Type == NodeType.Inbox)
                 ?? throw new InvalidOperationException("Mega root node not found");
@@ -350,7 +394,9 @@ namespace ThesisManagement.Api.Services.FileStorage
                         return null;
 
                     existing = await _megaClient.CreateFolderAsync(segment, current);
-                    nodes = _megaClient.GetNodes().ToList();
+                    _cache.Remove(MegaNodesCacheKey);
+                    var refreshedNodesResult = await GetMegaNodesAsync(cancellationToken);
+                    nodes = refreshedNodesResult.Data ?? new List<INode>();
                 }
 
                 current = existing;

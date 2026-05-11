@@ -112,6 +112,7 @@ builder.Services.AddControllers(options =>
     options.JsonSerializerOptions.DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
+builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 
 // CORS
@@ -285,6 +286,7 @@ builder.Services.AddScoped<IDeleteTopicRenameRequestTemplateCommand, DeleteTopic
 builder.Services.AddScoped<IReviewTopicRenameRequestCommand, ReviewTopicRenameRequestCommand>();
 builder.Services.AddScoped<IGenerateTopicRenameRequestTemplateCommand, GenerateTopicRenameRequestTemplateCommand>();
 builder.Services.AddScoped<IReportQueryProcessor, ReportQueryProcessor>();
+builder.Services.AddScoped<IThesisAiAnalysisService, ThesisAiAnalysisService>();
 builder.Services.AddScoped<IProgressEvaluationDocumentService, ProgressEvaluationDocumentService>();
 builder.Services.AddScoped<IGetStudentDashboardQuery, GetStudentDashboardQuery>();
 builder.Services.AddScoped<IGetStudentProgressHistoryQuery, GetStudentProgressHistoryQuery>();

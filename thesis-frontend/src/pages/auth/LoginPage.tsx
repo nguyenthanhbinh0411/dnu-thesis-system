@@ -400,8 +400,8 @@ const LoginPage: React.FC = () => {
                   opacity: 0.6,
                   transition: "opacity 0.2s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = 1)}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = 0.6)}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
               >
                 Hủy và quay lại đăng nhập
               </button>

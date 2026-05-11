@@ -839,6 +839,7 @@ const StudentProfilesManagement: React.FC = () => {
                             src={getAvatarUrl(row.student.studentImage)}
                             alt={row.student.fullName}
                             className="spm-avatar"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="spm-avatar-fallback">
