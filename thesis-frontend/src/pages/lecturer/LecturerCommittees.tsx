@@ -2500,30 +2500,39 @@ const LecturerCommittees: React.FC = () => {
           }
           .lecturer-revamp-root .content > section {
             background: #ffffff !important;
-            border: 1px solid #cbd5e1 !important;
-            border-radius: 10px !important;
-            padding: 18px !important;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+            border: 1px solid #dbe4ef !important;
+            border-radius: 20px !important;
+            padding: 20px !important;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06) !important;
           }
           .lecturer-revamp-root .lec-committee-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 12px;
+            gap: 14px;
           }
           .lecturer-revamp-root .lec-committee-card {
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            padding: 16px;
-            background: #ffffff;
+            border: 1px solid #dbe4ef;
+            border-radius: 20px;
+            padding: 18px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
             display: grid;
             gap: 14px;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
             transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+            position: relative;
+            overflow: hidden;
           }
           .lecturer-revamp-root .lec-committee-card:hover {
-            transform: translateY(-1px);
+            transform: translateY(-3px);
             border-color: #f37021;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+            box-shadow: 0 18px 38px rgba(15, 23, 42, 0.10);
+          }
+          .lecturer-revamp-root .lec-committee-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 4px;
+            background: linear-gradient(90deg, #f37021 0%, #fb923c 100%);
           }
           .lecturer-revamp-root .lec-committee-main {
             display: grid;
@@ -2547,19 +2556,21 @@ const LecturerCommittees: React.FC = () => {
             align-items: center;
             justify-content: center;
             min-width: 100px;
-            padding: 7px 12px;
+            padding: 8px 12px;
             border-radius: 999px;
             border: 1px solid transparent;
             font-size: 12px;
             font-weight: 800;
+            letter-spacing: 0.02em;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
           }
           .lecturer-revamp-root .lec-progress-block {
             display: grid;
             gap: 6px;
             padding: 12px;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            background: transparent;
+            border: 1px solid #dbe4ef;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #fff7ed 0%, #ffffff 82%);
           }
           .lecturer-revamp-root .lec-progress-head {
             display: flex;
@@ -2589,20 +2600,20 @@ const LecturerCommittees: React.FC = () => {
             color: #64748b;
           }
           .lecturer-revamp-root .lec-committee-side {
-            border: none;
-            border-radius: 0;
-            background: transparent;
-            padding: 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            background: linear-gradient(180deg, #ffffff 0%, #fffaf5 100%);
+            padding: 14px;
             display: grid;
             gap: 10px;
             align-content: start;
           }
           .lecturer-revamp-root .lec-side-title {
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-            color: #475569;
+            color: #7c2d12;
           }
           .lecturer-revamp-root .lec-badge-row {
             display: flex;
@@ -2613,20 +2624,21 @@ const LecturerCommittees: React.FC = () => {
             display: inline-flex;
             gap: 6px;
             align-items: center;
-            border: 1px solid #cbd5e1;
+            border: 1px solid #e2e8f0;
             border-radius: 999px;
             padding: 4px 10px;
             font-size: 12px;
             font-weight: 600;
-            color: #111111;
-            background: #f8fafc;
+            color: #0f172a;
+            background: #ffffff;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
           }
           .lecturer-revamp-root .lec-info-row {
             display: flex;
             align-items: center;
             gap: 8px;
             font-size: 13px;
-            color: #111111;
+            color: #0f172a;
             line-height: 1.4;
           }
           .lecturer-revamp-root .lec-info-row svg {
@@ -2728,22 +2740,140 @@ const LecturerCommittees: React.FC = () => {
             grid-template-columns: 1fr;
           }
           .lecturer-revamp-root .lec-report-screen {
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            background: #ffffff;
-            padding: 16px;
+            border: 1px solid #dbe4ef;
+            border-radius: 20px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            padding: 18px;
             display: grid;
             gap: 10px;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
           }
           .lecturer-revamp-root .lec-alert-card {
             border: 1px solid #fecaca;
             border-left: 4px solid #f37021;
-            border-radius: 10px;
+            border-radius: 16px;
             padding: 18px;
-            background: #fff1f2;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+            background: linear-gradient(135deg, #fff7ed 0%, #fff1f2 100%);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
             color: #9f1239;
+          }
+          .lecturer-revamp-root .lec-detail-modal {
+            width: min(960px, calc(100vw - 24px));
+            max-height: calc(100vh - 36px);
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #dbe4ef;
+            border-radius: 24px;
+            box-shadow: 0 24px 54px rgba(2, 6, 23, 0.24);
+            display: grid;
+            gap: 14px;
+            position: relative;
+          }
+          .lecturer-revamp-root .lec-detail-modal::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 6px;
+            background: linear-gradient(90deg, #003d82 0%, #2563eb 48%, #f37021 100%);
+          }
+          .lecturer-revamp-root .lec-detail-modal-shell {
+            padding: 20px;
+            display: grid;
+            gap: 14px;
+          }
+          .lecturer-revamp-root .lec-detail-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            padding: 12px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
+          }
+          .lecturer-revamp-root .lec-detail-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 0;
+          }
+          .lecturer-revamp-root .lec-detail-subtitle {
+            margin-top: 4px;
+            font-size: 13px;
+            color: #475569;
+          }
+          .lecturer-revamp-root .lec-detail-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .lecturer-revamp-root .lec-detail-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            padding: 6px 10px;
+            background: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            color: #334155;
+          }
+          .lecturer-revamp-root .lec-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+          }
+          .lecturer-revamp-root .lec-detail-stat {
+            border: 1px solid #dbe4ef;
+            border-radius: 16px;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+          }
+          .lecturer-revamp-root .lec-detail-stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #64748b;
+            font-weight: 800;
+            margin-bottom: 6px;
+          }
+          .lecturer-revamp-root .lec-detail-stat-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1.45;
+          }
+          .lecturer-revamp-root .lec-detail-panel {
+            border: 1px solid #dbe4ef;
+            border-radius: 18px;
+            background: #ffffff;
+            padding: 14px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+          }
+          .lecturer-revamp-root .lec-detail-panel--topics {
+            background: linear-gradient(180deg, #ffffff 0%, #fffaf4 100%);
+          }
+          .lecturer-revamp-root .lec-detail-member {
+            padding: 12px 0;
+            display: grid;
+            grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+            gap: 10px;
+            border-bottom: 1px dashed #e2e8f0;
+          }
+          .lecturer-revamp-root .lec-detail-topic {
+            display: grid;
+            gap: 6px;
+            padding: 12px 0;
+            border-bottom: 1px dashed #e2e8f0;
+            padding-left: 12px;
+            border-left: 3px solid transparent;
+            border-radius: 12px;
           }
           @media (max-width: 1060px) {
             .lecturer-revamp-root .lec-committee-main {
@@ -2987,221 +3117,195 @@ const LecturerCommittees: React.FC = () => {
           }}
           onClick={() => setDetailCommitteeId("")}
         >
-          <div
-            style={{
-              width: "min(860px, calc(100vw - 24px))",
-              maxHeight: "calc(100vh - 36px)",
-              overflowY: "auto",
-              background: "#ffffff",
-              border: "1px solid #cbd5e1",
-              borderRadius: 14,
-              padding: 16,
-              boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div>
-                <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Info size={18} /> Chi tiết hội đồng {detailCommittee.id}
-                </h3>
-                <div style={{ marginTop: 4, fontSize: 13, color: "#334155" }}>{detailCommittee.name}</div>
+          <div className="lec-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="lec-detail-modal-shell">
+              <div className="lec-detail-header">
+                <div>
+                  <h3 className="lec-detail-title">
+                    <Info size={18} /> Chi tiết hội đồng {detailCommittee.id}
+                  </h3>
+                  <div className="lec-detail-subtitle">{detailCommittee.name}</div>
+                  <div className="lec-detail-chip-row" style={{ marginTop: 10 }}>
+                    <span className="lec-detail-chip">
+                      <Users2 size={13} color="#f37021" /> {detailCommittee.roleLabel}
+                    </span>
+                    <span className="lec-detail-chip">
+                      <CalendarDays size={13} color="#2563eb" /> {formatDate(detailCommittee.date)}
+                    </span>
+                    <span className="lec-detail-chip">
+                      <MapPin size={13} color="#0f766e" /> Phòng {detailCommittee.room}
+                    </span>
+                    {(() => {
+                      const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
+                      return (
+                        <span
+                          className="lec-detail-chip"
+                          style={{
+                            borderColor: statusVisual.chipBorder,
+                            background: statusVisual.chipBg,
+                            color: statusVisual.chipText,
+                          }}
+                        >
+                          {statusVisual.emoji} {statusVisual.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
               </div>
-              <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
-            </div>
 
-            <div className="lec-tab-bar">
-              {detailTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`lec-pill ${detailTab === tab.key ? "active" : ""}`}
-                  onClick={() => setDetailTab(tab.key)}
-                >
-                  {tab.icon} {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {detailTab === "overview" && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Mã hội đồng</div>
-                  <div style={{ fontWeight: 700 }}>{detailCommittee.id}</div>
-                </div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Vai trò của tôi</div>
-                  <div style={{ fontWeight: 700 }}>{detailCommittee.roleLabel}</div>
-                </div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Lịch bảo vệ</div>
-                  <div style={{ fontWeight: 700 }}>{formatDate(detailCommittee.date)} · Cả ngày</div>
-                </div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Phòng</div>
-                  <div style={{ fontWeight: 700 }}>{detailCommittee.room}</div>
-                </div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Trạng thái phiên</div>
-                  {(() => {
-                    const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
-
-                    return (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          width: "fit-content",
-                          borderRadius: 999,
-                          padding: "5px 10px",
-                          fontSize: 12,
-                          fontWeight: 500,
-                          border: `1px solid ${statusVisual.chipBorder}`,
-                          background: statusVisual.chipBg,
-                          color: statusVisual.chipText,
-                        }}
-                      >
-                        {statusVisual.label}
-                      </span>
-                    );
-                  })()}
-                </div>
-                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                  <div className="lec-kicker">Số đề tài</div>
-                  <div style={{ fontWeight: 700 }}>{committeeBadgeStats.get(detailCommittee.id)?.total ?? detailCommittee.studentCount}</div>
-                </div>
+              <div className="lec-tab-bar">
+                {detailTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`lec-pill ${detailTab === tab.key ? "active" : ""}`}
+                    onClick={() => setDetailTab(tab.key)}
+                  >
+                    {tab.icon} {tab.label}
+                  </button>
+                ))}
               </div>
-            )}
 
-            {detailTab === "members" && (
-              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                {detailCommittee.members.length === 0 && (
-                  <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
-                )}
-                {detailCommittee.members.map((member) => {
-                  return (
-                    <div
-                      key={member.memberId}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
-                        gap: 8,
-                        padding: "8px 0",
-                        borderBottom: "1px dashed #e2e8f0",
-                      }}
-                    >
-                      <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <div style={{ fontSize: 13 }}>
-                          {member.lecturerCode ? `${member.lecturerCode}` : ""}
-                          {member.degree ? ` - ${member.degree}` : ""}
-                          {member.lecturerCode || member.degree ? " - " : ""}
-                          {member.lecturerName}
-                          {member.organization ? ` (${member.organization})` : ""}
-                        </div>
-                      </div>
+              {detailTab === "overview" && (
+                <div className="lec-detail-grid">
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Mã hội đồng</div>
+                    <div className="lec-detail-stat-value">{detailCommittee.id}</div>
+                  </div>
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Vai trò của tôi</div>
+                    <div className="lec-detail-stat-value">{detailCommittee.roleLabel}</div>
+                  </div>
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Ngày bảo vệ</div>
+                    <div className="lec-detail-stat-value">{formatDate(detailCommittee.date)} · Cả ngày</div>
+                  </div>
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Phòng</div>
+                    <div className="lec-detail-stat-value">{detailCommittee.room}</div>
+                  </div>
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Trạng thái phiên</div>
+                    <div className="lec-detail-stat-value">
+                      {(() => {
+                        const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
+                        return `${statusVisual.emoji} ${statusVisual.label}`;
+                      })()}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                  <div className="lec-detail-stat">
+                    <div className="lec-detail-stat-label">Số đề tài</div>
+                    <div className="lec-detail-stat-value">{committeeBadgeStats.get(detailCommittee.id)?.total ?? detailCommittee.studentCount}</div>
+                  </div>
+                </div>
+              )}
 
-            {detailTab === "topics" && (
-              <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                {detailCommitteeRows.length === 0 && (
-                  <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có assignment trong scoring matrix cho hội đồng này.</div>
-                )}
-                {detailCommitteeRows.map((row) => {
-                  const isScored = row.finalScore != null && Number(row.finalScore) > 0;
-                  const scoredBgColor = isScored ? "#f0fdf4" : "transparent";
-                  const scoredBorderColor = isScored ? "#86efac" : "transparent";
-                  
-                  return (
-                    <div
-                      key={`detail-topic-${row.assignmentId}`}
-                      style={{
-                        display: "grid",
-                        gap: 4,
-                        padding: "8px 0",
-                        borderBottom: "1px dashed #e2e8f0",
-                        borderLeft: `3px solid ${scoredBorderColor}`,
-                        paddingLeft: "8px",
-                        background: scoredBgColor,
-                      }}
-                    >
-                      <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-                        {row.topicTitle}
-                        {isScored && (
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              background: "#22c55e",
-                              color: "#ffffff",
-                            }}
-                          >
-                            ✓ Đã chấm
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 13, color: "#475569" }}>
-                        {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                      </div>
-                      <div style={{ fontSize: 13, color: "#475569" }}>
-                        GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
-                      </div>
-                      {isScored && (
-                        <div style={{ fontSize: 13, color: "#166534", fontWeight: 600 }}>
-                          Điểm cuối cùng: <strong>{row.finalScore?.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}</strong>
-                          {row.finalGrade ? ` - ${row.finalGrade}` : ""}
+              {detailTab === "members" && (
+                <div className="lec-detail-panel">
+                  {detailCommittee.members.length === 0 && (
+                    <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
+                  )}
+                  {detailCommittee.members.map((member) => {
+                    return (
+                      <div key={member.memberId} className="lec-detail-member">
+                        <div style={{ fontWeight: 800, color: "#0f172a" }}>{member.roleLabel}</div>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
+                            {member.lecturerCode ? `${member.lecturerCode}` : ""}
+                            {member.degree ? ` - ${member.degree}` : ""}
+                            {member.lecturerCode || member.degree ? " - " : ""}
+                            {member.lecturerName}
+                            {member.organization ? ` (${member.organization})` : ""}
+                          </div>
                         </div>
-                      )}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {row.topicTags.length > 0 ? (
-                          row.topicTags.map((tag) => (
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {detailTab === "topics" && (
+                <div className="lec-detail-panel lec-detail-panel--topics">
+                  {detailCommitteeRows.length === 0 && (
+                    <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có assignment trong scoring matrix cho hội đồng này.</div>
+                  )}
+                  {detailCommitteeRows.map((row) => {
+                    const isScored = row.finalScore != null && Number(row.finalScore) > 0;
+                    return (
+                      <div
+                        key={`detail-topic-${row.assignmentId}`}
+                        className="lec-detail-topic"
+                        style={{ borderLeftColor: isScored ? "#22c55e" : "#cbd5e1", background: isScored ? "#f0fdf4" : "transparent" }}
+                      >
+                        <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8, color: "#0f172a" }}>
+                          {row.topicTitle}
+                          {isScored && (
                             <span
-                              key={`detail-tag-${row.assignmentId}-${tag}`}
                               style={{
-                                border: "1px solid #fdba74",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "2px 8px",
                                 borderRadius: 999,
-                                padding: "1px 8px",
                                 fontSize: 11,
-                                color: "#9a3412",
-                                background: "#fff7ed",
+                                fontWeight: 700,
+                                background: "#22c55e",
+                                color: "#ffffff",
                               }}
                             >
-                              {tag}
+                              ✓ Đã chấm
                             </span>
-                          ))
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#475569" }}>
+                          {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#475569" }}>
+                          GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
+                        </div>
+                        {isScored && (
+                          <div style={{ fontSize: 13, color: "#166534", fontWeight: 700 }}>
+                            Điểm cuối cùng: <strong>{row.finalScore?.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}</strong>
+                            {row.finalGrade ? ` - ${row.finalGrade}` : ""}
+                          </div>
                         )}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {row.topicTags.length > 0 ? (
+                            row.topicTags.map((tag) => (
+                              <span
+                                key={`detail-tag-${row.assignmentId}-${tag}`}
+                                className="lec-detail-chip"
+                                style={{ borderColor: "#fdba74", background: "#fff7ed", color: "#9a3412" }}
+                              >
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
 
-            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
-              <button
-                type="button"
-                className="lec-primary"
-                onClick={() => {
-                  openRoleWorkspace(detailCommittee);
-                  setDetailCommitteeId("");
-                }}
-                disabled={detailCommittee.status !== "Đang họp"}
-              >
-                <ArrowRight size={14} /> Tham gia
-              </button>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", paddingTop: 2 }}>
+                <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
+                <button
+                  type="button"
+                  className="lec-primary"
+                  onClick={() => {
+                    openRoleWorkspace(detailCommittee);
+                    setDetailCommitteeId("");
+                  }}
+                  disabled={detailCommittee.status !== "Đang họp"}
+                >
+                  <ArrowRight size={14} /> Tham gia
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,90 +1,40 @@
 /* Student SideNav Theme */
 .sidenav.student-theme {
-  --accent: #1e40af;
-  --text-color: #1a2736;
-  --hover-text: #1e40af;
-  --hover-bg: rgba(30, 64, 175, 0.18);
-  --inactive-bg: rgba(30, 64, 175, 0.1);
-  --active-bg: #1e40af;
+  --accent: #f37021;
+  --text-color: #000000;
+  --hover-text: #000000;
+  --hover-bg: rgba(243, 112, 33, 0.18);
+  --inactive-bg: rgba(243, 112, 33, 0.1);
+  --active-bg: #f37021;
   --active-text: #ffffff;
-  --active-shadow: 0 6px 16px rgba(30, 64, 175, 0.28);
+  --active-shadow: 0 6px 16px rgba(243, 112, 33, 0.28);
 }
 
-/* Tooltips for collapsed sidebar */
-.sidenav.student-theme.collapsed a {
-  position: relative;
+.sidenav.student-theme a {
+  color: var(--text-color);
 }
 
-.sidenav.student-theme.collapsed a::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 12px;
-  background: rgba(0, 0, 0, 0.95);
+.sidenav.student-theme a:hover {
+  color: var(--hover-text);
+}
+
+.sidenav.student-theme a.active {
   color: #ffffff;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-  visibility: hidden;
-  z-index: 100;
-  border: 1px solid rgba(30, 64, 175, 0.4);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-}
-
-.sidenav.student-theme.collapsed a:hover::after {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* Arrow for tooltip */
-.sidenav.student-theme.collapsed a::before {
-  content: '';
-  position: absolute;
-  left: calc(100% + 4px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
-  background: rgba(0, 0, 0, 0.95);
-  border-radius: 1px;
-  opacity: 0;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-  visibility: hidden;
-  z-index: 99;
-}
-
-.sidenav.student-theme.collapsed a:hover::before {
-  opacity: 1;
-  visibility: visible;
 }
 
 /* Mobile specific styles for student */
 @media (max-width: 768px) {
   .sidenav.student-theme a {
-    color: #1a2736;
+    color: #000000;
   }
 
   .sidenav.student-theme a:hover {
     background: rgba(243, 112, 33, 0.15);
-    color: #f37021;
+    color: #000000;
   }
 
   .sidenav.student-theme a.active {
     color: #ffffff;
     background: #f37021;
-  }
-
-  /* Disable tooltips on mobile */
-  .sidenav.student-theme.collapsed a::after,
-  .sidenav.student-theme.collapsed a::before {
-    display: none;
   }
 }

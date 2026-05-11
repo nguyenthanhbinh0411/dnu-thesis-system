@@ -1114,6 +1114,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const notifyInfo = (message: string) => addToast(message, "info");
 
     const downloadPreviewDocument = async (template: PreviewModalType, format: "word" | "pdf") => {
+        const committeeIsLocked = selectedCommittee?.status === "Đã chốt" || selectedCommittee?.status === "Đã đóng";
+
+        if (!committeeIsLocked) {
+            notifyError("Chỉ được tải tài liệu khi hội đồng đã chốt điểm.");
+            return;
+        }
         if ((template === "meeting" || template === "reviewer") && !selectedAssignmentId) {
             notifyError("Vui lòng chọn đề tài trước khi tải file.");
             return;
@@ -1300,7 +1306,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             .trimStart();
 
     const composeQuestionWithSource = (source: string, questionText: string) =>
-        `[${source}] ${questionText ?? ""}`.trimEnd();
+        `[${source}] ${questionText ?? ""}`;
 
     const getQuestionItemsBySource = (source: string) =>
         questionAnswers
@@ -2653,6 +2659,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     
     // Committee status is the source of truth
     const isCurrentSessionLocked = isSessionLocked || isSessionClosed;
+    const canDownloadPreviewDocuments = isCurrentSessionLocked;
     const canScoreNow = canSubmitScore && isSessionOpened;
 
     const myRoleLabel = isChairRole
@@ -4024,22 +4031,26 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                 </div>
                                             </div>
                                             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4, borderTop: "1px solid #fed7aa", paddingTop: 10 }}>
-                                                <button
-                                                    type="button"
-                                                    className="lec-soft"
-                                                    style={{ background: "#ffffff", border: "1px solid #fdba74" }}
-                                                    onClick={() => setPreviewModalType("meeting")}
-                                                >
-                                                    <Eye size={14} /> Xem biên bản
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="lec-soft"
-                                                    style={{ background: "#ffffff", border: "1px solid #fdba74" }}
-                                                    onClick={() => setPreviewModalType("reviewer")}
-                                                >
-                                                    <Eye size={14} /> Xem nhận xét
-                                                </button>
+                                                {canViewMinutesTab && (
+                                                    <button
+                                                        type="button"
+                                                        className="lec-soft"
+                                                        style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                        onClick={() => setPreviewModalType("meeting")}
+                                                    >
+                                                        <Eye size={14} /> Xem biên bản
+                                                    </button>
+                                                )}
+                                                {canViewReviewTab && (
+                                                    <button
+                                                        type="button"
+                                                        className="lec-soft"
+                                                        style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                        onClick={() => setPreviewModalType("reviewer")}
+                                                    >
+                                                        <Eye size={14} /> Xem nhận xét
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -4853,12 +4864,17 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                 <div style={{ position: "relative" }}>
                                     <button
                                         type="button"
-                                        style={{ border: "1px solid #cbd5e1", background: "#0f172a", color: "#ffffff", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}
-                                        disabled={isDownloadingPreviewFile}
+                                        style={{ border: "1px solid #cbd5e1", background: canDownloadPreviewDocuments ? "#0f172a" : "#94a3b8", color: "#ffffff", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: canDownloadPreviewDocuments ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}
+                                        disabled={isDownloadingPreviewFile || !canDownloadPreviewDocuments}
                                         onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
                                     >
                                         <Download size={14} /> {isDownloadingPreviewFile ? "Đang xử lý..." : "Tải xuống"} <ChevronDown size={14} style={{ transform: showDownloadDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
                                     </button>
+                                    {!canDownloadPreviewDocuments && (
+                                        <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>
+                                            Chỉ tải được khi hội đồng đã chốt điểm.
+                                        </div>
+                                    )}
                                     {showDownloadDropdown && (
                                         <div
                                             style={{

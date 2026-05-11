@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 
 type SessionCode = "MORNING" | "AFTERNOON";
-type StudentPanel = "overview" | "notifications" | "revision";
+type StudentPanel = "overview" | "revision";
 type RevisionStatusCode = 1 | 2 | 3;
 
 type DefenseInfoView = {
@@ -1365,21 +1365,47 @@ const StudentDefenseInfo: React.FC = () => {
       <style>
         {`
           .sd-root {
-            max-width: 1360px;
-            padding: 20px;
-            color: #0f172a;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px;
+            color: #111827;
+            font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif;
+            background:
+              radial-gradient(circle at 0% 0%, rgba(249, 115, 22, 0.2), transparent 38%),
+              radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.18), transparent 36%),
+              linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+            min-height: 100vh;
           }
           .sd-card {
             background: #ffffff;
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
+            border: 1px solid #dbe4ef;
+            border-radius: 24px;
             padding: 18px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
           }
           .sd-header {
             margin-bottom: 16px;
-            background: #ffffff;
+            background:
+              linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 247, 237, 0.96) 52%, rgba(239, 246, 255, 0.95) 100%);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            box-shadow:
+              0 18px 44px rgba(15, 23, 42, 0.08),
+              inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            position: relative;
+            overflow: hidden;
+          }
+          .sd-header::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+              linear-gradient(135deg, rgba(243, 112, 33, 0.08), transparent 42%),
+              linear-gradient(225deg, rgba(0, 61, 130, 0.08), transparent 34%);
+            pointer-events: none;
+          }
+          .sd-header > * {
+            position: relative;
+            z-index: 1;
           }
           .sd-hero-head {
             display: flex;
@@ -1391,17 +1417,30 @@ const StudentDefenseInfo: React.FC = () => {
           .sd-title {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             margin: 0;
-            font-size: 26px;
-            font-weight: 700;
+            font-size: 34px;
+            font-weight: 800;
             color: #0f172a;
             line-height: 1.25;
+            letter-spacing: -0.02em;
+          }
+          .sd-title-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #003d82 0%, #2563eb 45%, #f37021 100%);
+            color: #ffffff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24);
+            flex-shrink: 0;
           }
           .sd-sub {
-            margin: 8px 0 0;
-            color: #475569;
-            font-size: 14px;
+            margin: 10px 0 0;
+            color: #334155;
+            font-size: 15px;
             line-height: 1.6;
             max-width: 760px;
           }
@@ -1426,15 +1465,16 @@ const StudentDefenseInfo: React.FC = () => {
           .sd-period-select {
             min-height: 40px;
             border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            padding: 0 12px;
+            border-radius: 14px;
+            padding: 0 14px;
             font-size: 13px;
             color: #0f172a;
             background: #ffffff;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
           }
           .sd-refresh {
             min-height: 40px;
-            border-radius: 10px;
+            border-radius: 999px;
             border: 1px solid #f37021;
             background: #f37021;
             color: #fff;
@@ -1444,13 +1484,15 @@ const StudentDefenseInfo: React.FC = () => {
             align-items: center;
             justify-content: center;
             gap: 6px;
-            padding: 0 12px;
+            padding: 0 16px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            box-shadow: 0 10px 20px rgba(243, 112, 33, 0.16);
           }
           .sd-refresh:hover:enabled {
             background: #ea580c;
             border-color: #ea580c;
+            transform: translateY(-1px);
           }
           .sd-refresh:disabled {
             border-color: #cbd5e1;
@@ -1474,14 +1516,15 @@ const StudentDefenseInfo: React.FC = () => {
           .sd-chip {
             border: 1px solid #cbd5e1;
             border-radius: 999px;
-            padding: 6px 12px;
+            padding: 7px 12px;
             font-size: 12px;
             font-weight: 700;
             background: #ffffff;
-            color: #0f172a;
+            color: #1e293b;
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
           }
           .sd-chip--locked {
             border-color: #bbf7d0;
@@ -1499,9 +1542,57 @@ const StudentDefenseInfo: React.FC = () => {
             gap: 14px;
             margin-bottom: 16px;
           }
+          .sd-summary-card {
+            border: 1px solid #dbe4f0;
+            border-radius: 20px;
+            padding: 14px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            min-height: 138px;
+            position: relative;
+            overflow: hidden;
+          }
+          .sd-summary-card::before {
+            content: "";
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border-radius: 999px;
+            top: -68px;
+            right: -48px;
+            opacity: 0.45;
+          }
+          .sd-summary-card--blue {
+            border-color: rgba(59, 130, 246, 0.28);
+            background: linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, #ffffff 72%);
+          }
+          .sd-summary-card--blue::before {
+            background: radial-gradient(circle, rgba(96, 165, 250, 0.45), transparent 68%);
+          }
+          .sd-summary-card--indigo {
+            border-color: rgba(99, 102, 241, 0.28);
+            background: linear-gradient(135deg, rgba(238, 242, 255, 0.95) 0%, #ffffff 72%);
+          }
+          .sd-summary-card--indigo::before {
+            background: radial-gradient(circle, rgba(129, 140, 248, 0.45), transparent 68%);
+          }
+          .sd-summary-card--emerald {
+            border-color: rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, rgba(236, 253, 245, 0.96) 0%, #ffffff 72%);
+          }
+          .sd-summary-card--emerald::before {
+            background: radial-gradient(circle, rgba(52, 211, 153, 0.42), transparent 68%);
+          }
+          .sd-summary-card--amber {
+            border-color: rgba(245, 158, 11, 0.32);
+            background: linear-gradient(135deg, rgba(255, 247, 237, 0.96) 0%, #ffffff 72%);
+          }
+          .sd-summary-card--amber::before {
+            background: radial-gradient(circle, rgba(251, 191, 36, 0.45), transparent 68%);
+          }
           .sd-kicker {
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.07em;
             color: #64748b;
@@ -1535,59 +1626,115 @@ const StudentDefenseInfo: React.FC = () => {
           }
           .sd-toolbar {
             margin-bottom: 14px;
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            background: #ffffff;
-            padding: 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 22px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 12px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
           }
           .sd-pill {
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 999px;
             background: #ffffff;
-            padding: 8px 13px;
+            padding: 10px 16px;
             font-size: 13px;
             font-weight: 700;
-            color: #0f172a;
+            color: #111827;
             display: inline-flex;
             align-items: center;
             gap: 6px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03);
           }
           .sd-pill:hover {
             border-color: #94a3b8;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
           }
           .sd-pill.active {
             border-color: #f37021;
-            background: #fff7ed;
+            background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
             color: #9a3412;
+            box-shadow: 0 8px 18px rgba(243, 112, 33, 0.12);
           }
           .sd-grid-2 {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 14px;
+            gap: 16px;
+          }
+          .sd-panel {
+            overflow: hidden;
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+          }
+          .sd-panel--schedule {
+            background: linear-gradient(180deg, #ffffff 0%, #f3f8ff 100%);
+            border-color: rgba(59, 130, 246, 0.22);
+          }
+          .sd-panel--result {
+            background: linear-gradient(180deg, #ffffff 0%, #fff8ef 100%);
+            border-color: rgba(243, 112, 33, 0.28);
+          }
+          .sd-panel--revision {
+            border-color: rgba(16, 185, 129, 0.2);
+          }
+          .sd-panel--history {
+            border-color: rgba(99, 102, 241, 0.2);
           }
           .sd-panel-title {
-            margin: 0 0 10px;
-            font-size: 20px;
+            margin: 0 0 12px;
+            font-size: 24px;
             line-height: 1.3;
             display: flex;
             align-items: center;
             gap: 8px;
             color: #0f172a;
+            letter-spacing: -0.01em;
           }
           .sd-list {
             display: grid;
             gap: 10px;
           }
           .sd-list-item {
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
             padding: 12px;
-            background: #ffffff;
+            background: linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+          }
+          .sd-list-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+          }
+          .sd-list-item::after {
+            content: "";
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 3px;
+            background: transparent;
+          }
+          .sd-list-item--committee::after {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+          }
+          .sd-list-item--room::after {
+            background: linear-gradient(90deg, #06b6d4, #67e8f9);
+          }
+          .sd-list-item--time::after {
+            background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+          }
+          .sd-list-item--topic::after {
+            background: linear-gradient(90deg, #f37021, #fb923c);
+          }
+          .sd-list-item--score::after {
+            background: linear-gradient(90deg, #f97316, #f59e0b);
+          }
+          .sd-list-item--tips::after {
+            background: linear-gradient(90deg, #0ea5e9, #38bdf8);
           }
           .sd-list-title {
             font-weight: 700;
@@ -1603,15 +1750,16 @@ const StudentDefenseInfo: React.FC = () => {
           }
           .sd-empty {
             border: 1px dashed #cbd5e1;
-            border-radius: 10px;
+            border-radius: 16px;
             padding: 14px;
             font-size: 13px;
             color: #64748b;
             background: #f8fafc;
+            line-height: 1.55;
           }
           .sd-warning-card {
-            border-color: #fde68a;
-            background: #fffbeb;
+            border-color: #fed7aa;
+            background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
           }
           .sd-note-list {
             display: grid;
@@ -1619,14 +1767,17 @@ const StudentDefenseInfo: React.FC = () => {
             margin: 0;
             padding-left: 18px;
             color: #0f172a;
-            line-height: 1.55;
+            line-height: 1.65;
             font-size: 14px;
+          }
+          .sd-note-list li::marker {
+            color: #f37021;
           }
           .sd-upload {
             margin-top: 10px;
             border: 1px dashed #cbd5e1;
-            border-radius: 10px;
-            padding: 12px;
+            border-radius: 16px;
+            padding: 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -1643,8 +1794,8 @@ const StudentDefenseInfo: React.FC = () => {
           .sd-textarea {
             width: 100%;
             border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            padding: 10px 12px;
+            border-radius: 16px;
+            padding: 12px 14px;
             font-size: 14px;
             background: #ffffff;
             resize: vertical;
@@ -1665,21 +1816,22 @@ const StudentDefenseInfo: React.FC = () => {
           }
           .sd-btn-primary,
           .sd-btn-soft {
-            border-radius: 10px;
-            min-height: 40px;
-            padding: 8px 14px;
+            border-radius: 14px;
+            min-height: 42px;
+            padding: 8px 16px;
             font-size: 13px;
             font-weight: 700;
             cursor: pointer;
           }
           .sd-btn-primary {
             border: 1px solid #f37021;
-            background: #f37021;
+            background: linear-gradient(135deg, #f37021 0%, #ea580c 100%);
             color: #ffffff;
+            box-shadow: 0 10px 20px rgba(243, 112, 33, 0.2);
           }
           .sd-btn-primary:hover:enabled {
             border-color: #ea580c;
-            background: #ea580c;
+            background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
           }
           .sd-btn-primary:disabled {
             border-color: #cbd5e1;
@@ -1688,9 +1840,9 @@ const StudentDefenseInfo: React.FC = () => {
             cursor: not-allowed;
           }
           .sd-btn-soft {
-            border: 1px solid #cbd5e1;
+            border: 1px solid #e2e8f0;
             background: #ffffff;
-            color: #0f172a;
+            color: #111827;
           }
           .sd-btn-soft:hover {
             background: #f8fafc;
@@ -1764,6 +1916,9 @@ const StudentDefenseInfo: React.FC = () => {
             .sd-panel-title {
               font-size: 18px;
             }
+            .sd-summary-card {
+              min-height: 120px;
+            }
           }
         `}
       </style>
@@ -1772,7 +1927,10 @@ const StudentDefenseInfo: React.FC = () => {
         <div className="sd-hero-head">
           <div>
             <h1 className="sd-title">
-              <GraduationCap size={26} /> Thông tin bảo vệ
+              <span className="sd-title-icon">
+                <GraduationCap size={22} />
+              </span>
+              Thông tin bảo vệ
             </h1>
             <p className="sd-sub">
               Theo dõi lịch bảo vệ, kết quả và hồ sơ chỉnh sửa trong cùng một màn hình.
@@ -1822,7 +1980,7 @@ const StudentDefenseInfo: React.FC = () => {
       </section>
 
       <section className="sd-card sd-grid-4">
-        <div>
+        <div className="sd-summary-card sd-summary-card--blue">
           <div className="sd-kicker">
             <User size={14} /> Mã sinh viên
           </div>
@@ -1830,7 +1988,7 @@ const StudentDefenseInfo: React.FC = () => {
           <div className="sd-meta">Sinh viên: {defenseInfo.studentName || "Đang cập nhật"}</div>
         </div>
 
-        <div>
+        <div className="sd-summary-card sd-summary-card--indigo">
           <div className="sd-kicker">
             <FileText size={14} /> Đề tài
           </div>
@@ -1842,7 +2000,7 @@ const StudentDefenseInfo: React.FC = () => {
           </div>
         </div>
 
-        <div>
+        <div className="sd-summary-card sd-summary-card--emerald">
           <div className="sd-kicker">
             <CheckCircle2 size={14} /> Kết quả hiện tại
           </div>
@@ -1850,7 +2008,7 @@ const StudentDefenseInfo: React.FC = () => {
           <div className="sd-meta">Xếp loại: {gradeText}</div>
         </div>
 
-        <div>
+        <div className="sd-summary-card sd-summary-card--amber">
           <div className="sd-kicker">
             <Hash size={14} /> Tiến độ hồ sơ
           </div>
@@ -1876,8 +2034,8 @@ const StudentDefenseInfo: React.FC = () => {
             <div className="sd-list-item">
               <div className="sd-list-title">Gợi ý xử lý</div>
               <div className="sd-list-sub">
-                Nếu thông tin mapping vừa được cập nhật, vui lòng tải lại trang. Nếu lỗi tiếp diễn,
-                vui lòng liên hệ quản trị viên để kiểm tra mapping đợt bảo vệ.
+                Nếu dữ liệu vừa được cập nhật, bạn hãy tải lại trang một lần nữa nhé. Nếu vẫn chưa
+                ổn, nhờ quản trị viên kiểm tra lại mapping đợt bảo vệ giúp bạn.
               </div>
             </div>
           </div>
@@ -1893,13 +2051,13 @@ const StudentDefenseInfo: React.FC = () => {
                 <div className="sd-list-item">
                   <div className="sd-list-title">Thông tin lịch bảo vệ đang được cập nhật</div>
                   <div className="sd-list-sub">
-                    Khi hội đồng chưa chốt, phòng và lịch có thể chưa xuất hiện đầy đủ.
+                    Hội đồng đang hoàn thiện dữ liệu, nên phòng và giờ bảo vệ có thể chưa hiện hết.
                   </div>
                 </div>
                 <div className="sd-list-item">
-                  <div className="sd-list-title">Nếu hệ thống đã gửi thông báo chốt hội đồng</div>
+                  <div className="sd-list-title">Nếu bạn vừa nhận thông báo chốt hội đồng</div>
                   <div className="sd-list-sub">
-                    Vui lòng tải lại trang để đồng bộ dữ liệu mới nhất.
+                    Hãy tải lại trang nhẹ nhàng một lần để cập nhật dữ liệu mới nhất nha.
                   </div>
                 </div>
               </div>
@@ -1910,10 +2068,10 @@ const StudentDefenseInfo: React.FC = () => {
                 <Bell size={18} /> Lưu ý trước ngày bảo vệ
               </h2>
               <ul className="sd-note-list">
-                <li>Nên có mặt trước giờ hẹn khoảng 20-30 phút để ổn định tâm lý và kiểm tra thiết bị.</li>
-                <li>Trang phục gọn gàng, lịch sự; ưu tiên sự thoải mái để tự tin khi trình bày.</li>
-                <li>Khi hồi hộp, hãy thở chậm 3-5 nhịp trước khi vào phòng và tập trung vào ý chính.</li>
-                <li>Mang theo bản dự phòng tệp PDF trong USB hoặc cloud để phòng sự cố kỹ thuật.</li>
+                <li>Nên đến sớm khoảng 20-30 phút để mình có thời gian chuẩn bị thật thoải mái.</li>
+                <li>Trang phục gọn gàng, lịch sự một chút sẽ giúp bạn tự tin hơn khi trình bày.</li>
+                <li>Nếu hơi run, hãy hít thở chậm vài nhịp rồi nói theo từng ý nhỏ là ổn ngay.</li>
+                <li>Nên có sẵn bản PDF dự phòng trong USB hoặc cloud để yên tâm hơn nhé.</li>
               </ul>
             </section>
           </div>
@@ -1933,7 +2091,7 @@ const StudentDefenseInfo: React.FC = () => {
                 </div>
               ))}
               {!latestNotice && (
-                <div className="sd-empty">Chưa có thông báo nghiệp vụ trong đợt hiện tại.</div>
+                <div className="sd-empty">Hiện tại chưa có mục nào để hiển thị thêm. Bạn ghé lại sau nhé.</div>
               )}
             </div>
           </section>
@@ -1950,13 +2108,6 @@ const StudentDefenseInfo: React.FC = () => {
             </button>
             <button
               type="button"
-              className={`sd-pill ${activePanel === "notifications" ? "active" : ""}`}
-              onClick={() => setActivePanel("notifications")}
-            >
-              <Bell size={15} /> Thông báo
-            </button>
-            <button
-              type="button"
               className={`sd-pill ${activePanel === "revision" ? "active" : ""}`}
               onClick={() => setActivePanel("revision")}
             >
@@ -1966,31 +2117,37 @@ const StudentDefenseInfo: React.FC = () => {
 
           {activePanel === "overview" && (
             <div className="sd-grid-2">
-              <section className="sd-card">
+              <section className="sd-card sd-panel sd-panel--schedule">
                 <h2 className="sd-panel-title">
                   <CalendarClock size={18} /> Lịch bảo vệ
                 </h2>
                 <div className="sd-list">
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--committee">
                     <div className="sd-kicker">
                       <Users size={14} /> Hội đồng
                     </div>
                     <div className="sd-list-title">{displayDefenseInfo.committeeCode || "Đang cập nhật"}</div>
+                    <div className="sd-list-sub">
+                      Đây là thông tin hội đồng hiện tại của bạn, được cập nhật từ hệ thống.
+                    </div>
                   </div>
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--room">
                     <div className="sd-kicker">
                       <MapPin size={14} /> Phòng bảo vệ
                     </div>
                     <div className="sd-list-title">{displayDefenseInfo.room || "Đang cập nhật"}</div>
+                    <div className="sd-list-sub">
+                      Phòng sẽ hiện đầy đủ khi dữ liệu đợt bảo vệ đã được chốt.
+                    </div>
                   </div>
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--time">
                     <div className="sd-kicker">
                       <CalendarClock size={14} /> Ngày giờ
                     </div>
                     <div className="sd-list-title">{formatDateTime(displayDefenseInfo.scheduledAt, true)}</div>
                     <div className="sd-list-sub">Buổi: {formatSessionLabel(displayDefenseInfo.sessionCode)}</div>
                   </div>
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--topic">
                     <div className="sd-kicker">
                       <FileText size={14} /> Đề tài
                     </div>
@@ -2000,17 +2157,17 @@ const StudentDefenseInfo: React.FC = () => {
                 </div>
               </section>
 
-              <section className="sd-card">
+              <section className="sd-card sd-panel sd-panel--result">
                 <h2 className="sd-panel-title">
                   <FileText size={18} /> Kết quả và nhắc nhở
                 </h2>
                 <div className="sd-list">
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--score">
                     <div className="sd-kicker">Điểm tổng kết</div>
                     <div className="sd-list-title" style={{ fontSize: 20 }}>{scoreText}</div>
                     <div className="sd-list-sub">Xếp loại: {gradeText}</div>
                   </div>
-                  <div className="sd-list-item">
+                  <div className="sd-list-item sd-list-item--tips">
                     <div className="sd-kicker">Gợi ý trình bày hiệu quả</div>
                     <ul className="sd-note-list" style={{ marginTop: 8 }}>
                       <li>Mở đầu ngắn gọn, nêu ngay mục tiêu và kết quả chính trong 1-2 phút đầu.</li>
@@ -2024,31 +2181,9 @@ const StudentDefenseInfo: React.FC = () => {
             </div>
           )}
 
-          {activePanel === "notifications" && (
-            <section className="sd-card">
-              <h2 className="sd-panel-title">
-                <Clock3 size={18} /> Dòng thông báo
-              </h2>
-              <div className="sd-list">
-                {notifications.map((item, index) => (
-                  <div key={`${item.timestamp}-${item.message}-${index}`} className="sd-list-item">
-                    <div className="sd-kicker" style={{ textTransform: "none", letterSpacing: 0 }}>
-                      {formatDateTime(item.timestamp, true)}
-                    </div>
-                    <div className="sd-list-title">{item.message}</div>
-                    <div className="sd-list-sub">Loại sự kiện: {formatNotificationType(item.type)}</div>
-                  </div>
-                ))}
-                {notifications.length === 0 && (
-                  <div className="sd-empty">Chưa có thông báo nghiệp vụ trong đợt hiện tại.</div>
-                )}
-              </div>
-            </section>
-          )}
-
           {activePanel === "revision" && (
             <div className="sd-grid-2">
-              <section className="sd-card">
+              <section className="sd-card sd-panel sd-panel--revision">
                 <h2 className="sd-panel-title">
                   <Upload size={18} /> Nộp bản chỉnh sửa
                 </h2>
@@ -2137,7 +2272,7 @@ const StudentDefenseInfo: React.FC = () => {
                 </div>
               </section>
 
-              <section className="sd-card">
+              <section className="sd-card sd-panel sd-panel--history">
                 <h2 className="sd-panel-title">
                   <CheckCircle2 size={18} /> Lịch sử chỉnh sửa
                 </h2>
@@ -2174,7 +2309,7 @@ const StudentDefenseInfo: React.FC = () => {
                     );
                   })}
                   {revisionHistory.length === 0 && (
-                    <div className="sd-empty">Chưa có lịch sử nộp bản chỉnh sửa.</div>
+                      <div className="sd-empty">Chưa có lịch sử chỉnh sửa nào cả. Khi có, mình sẽ hiển thị ở đây nhé.</div>
                   )}
                 </div>
               </section>

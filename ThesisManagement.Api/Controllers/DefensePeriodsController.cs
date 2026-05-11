@@ -760,34 +760,18 @@ namespace ThesisManagement.Api.Controllers
             var totalCount = await query.CountAsync();
 
             var items = await query
-                .GroupJoin(
-                    _uow.StudentProfiles.Query().AsNoTracking(),
-                    dt => dt.StudentCode,
-                    sp => sp.StudentCode,
-                    (dt, profiles) => new
-                    {
-                        Row = dt,
-                        Profile = profiles.FirstOrDefault()
-                    })
-                .OrderByDescending(x => x.Row.LastUpdated)
-                .ThenByDescending(x => x.Row.DefenseTermStudentID)
+                .OrderByDescending(x => x.LastUpdated)
+                .ThenByDescending(x => x.DefenseTermStudentID)
                 .Skip((safePage - 1) * safeSize)
                 .Take(safeSize)
-                .Select(x => new DefenseTermStudentReadDto
-                {
-                    DefenseTermStudentID = x.Row.DefenseTermStudentID,
-                    DefenseTermId = x.Row.DefenseTermId,
-                    StudentProfileID = x.Row.StudentProfileID,
-                    StudentCode = x.Row.StudentCode ?? string.Empty,
-                    UserCode = x.Row.UserCode ?? string.Empty,
-                    FullName = x.Profile != null ? x.Profile.FullName : null,
-                    ClassCode = x.Profile != null ? x.Profile.ClassCode : null,
-                    FacultyCode = x.Profile != null ? x.Profile.FacultyCode : null,
-                    DepartmentCode = x.Profile != null ? x.Profile.DepartmentCode : null,
-                    GPA = x.Profile != null ? x.Profile.GPA : null,
-                    CreatedAt = x.Row.CreatedAt,
-                    LastUpdated = x.Row.LastUpdated
-                })
+                .Select(x => new DefenseTermStudentReadDto(
+                    x.DefenseTermStudentID,
+                    x.DefenseTermId,
+                    x.StudentProfileID,
+                    x.StudentCode,
+                    x.UserCode,
+                    x.CreatedAt,
+                    x.LastUpdated))
                 .ToListAsync();
 
             var data = new
@@ -845,27 +829,23 @@ namespace ThesisManagement.Api.Controllers
                     (dt, profiles) => new
                     {
                         Row = dt,
-                        Profile = profiles.FirstOrDefault()
+                        LecturerName = profiles.Select(p => p.FullName).FirstOrDefault()
                     })
                 .OrderByDescending(x => x.Row.LastUpdated)
                 .ThenByDescending(x => x.Row.DefenseTermLecturerID)
                 .Skip((safePage - 1) * safeSize)
                 .Take(safeSize)
-                .Select(x => new DefenseTermLecturerReadDto
-                {
-                    DefenseTermLecturerID = x.Row.DefenseTermLecturerID,
-                    DefenseTermId = x.Row.DefenseTermId,
-                    LecturerProfileID = x.Row.LecturerProfileID,
-                    LecturerCode = x.Row.LecturerCode ?? string.Empty,
-                    LecturerName = x.Profile != null ? x.Profile.FullName : string.Empty,
-                    UserCode = x.Row.UserCode ?? string.Empty,
-                    Role = x.Row.Role,
-                    IsPrimary = x.Row.IsPrimary,
-                    DepartmentCode = x.Profile != null ? x.Profile.DepartmentCode : null,
-                    Degree = x.Profile != null ? x.Profile.Degree : null,
-                    CreatedAt = x.Row.CreatedAt,
-                    LastUpdated = x.Row.LastUpdated
-                })
+                .Select(x => new DefenseTermLecturerReadDto(
+                    x.Row.DefenseTermLecturerID,
+                    x.Row.DefenseTermId,
+                    x.Row.LecturerProfileID,
+                    x.Row.LecturerCode,
+                    string.IsNullOrWhiteSpace(x.LecturerName) ? x.Row.LecturerCode : x.LecturerName!,
+                    x.Row.UserCode,
+                    x.Row.Role,
+                    x.Row.IsPrimary,
+                    x.Row.CreatedAt,
+                    x.Row.LastUpdated))
                 .ToListAsync();
 
             var data = new

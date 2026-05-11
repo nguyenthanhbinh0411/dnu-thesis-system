@@ -1,13 +1,13 @@
 /* Lecturer SideNav Theme */
 .sidenav.lecturer-theme {
-  --accent: #1e40af;
+  --accent: #f37021;
   --text-color: #e2e8f0;
-  --hover-text: #1e40af;
-  --hover-bg: rgba(30, 64, 175, 0.15);
-  --inactive-bg: rgba(30, 64, 175, 0.08);
-  --active-bg: #1e40af;
+  --hover-text: #fbbf24;
+  --hover-bg: rgba(243, 112, 33, 0.15);
+  --inactive-bg: rgba(243, 112, 33, 0.08);
+  --active-bg: #f37021;
   --active-text: #ffffff;
-  --active-shadow: 0 6px 14px rgba(30, 64, 175, 0.3);
+  --active-shadow: 0 6px 14px rgba(243, 112, 33, 0.3);
   --border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -30,62 +30,6 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* Tooltips for collapsed sidebar */
-.sidenav.lecturer-theme.collapsed a {
-  position: relative;
-}
-
-.sidenav.lecturer-theme.collapsed a::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 12px;
-  background: rgba(0, 0, 0, 0.95);
-  color: #ffffff;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-  visibility: hidden;
-  z-index: 100;
-  border: 1px solid rgba(30, 64, 175, 0.4);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-}
-
-.sidenav.lecturer-theme.collapsed a:hover::after {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* Arrow for tooltip */
-.sidenav.lecturer-theme.collapsed a::before {
-  content: '';
-  position: absolute;
-  left: calc(100% + 4px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
-  background: rgba(0, 0, 0, 0.95);
-  border-radius: 1px;
-  opacity: 0;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-  visibility: hidden;
-  z-index: 99;
-}
-
-.sidenav.lecturer-theme.collapsed a:hover::before {
-  opacity: 1;
-  visibility: visible;
-}
-
 /* Mobile specific styles for lecturer */
 @media (max-width: 768px) {
   .sidenav.lecturer-theme a {
@@ -102,11 +46,5 @@
     color: #ffffff;
     background: #f37021;
     border: 1px solid rgba(255, 255, 255, 0.2);
-  }
-
-  /* Disable tooltips on mobile */
-  .sidenav.lecturer-theme.collapsed a::after,
-  .sidenav.lecturer-theme.collapsed a::before {
-    display: none;
   }
 }

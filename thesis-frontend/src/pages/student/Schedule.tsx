@@ -463,7 +463,7 @@ const Schedule: React.FC = () => {
     const fetchSnapshot = async () => {
       if (!periodId) {
         setLoading(false);
-        setLoadingMessage("Chưa chọn đợt bảo vệ.");
+        setLoadingMessage("Bạn chưa chọn đợt bảo vệ nào hết. Mình đang chờ bạn nè.");
         setEvents([]);
         return;
       }
@@ -482,7 +482,7 @@ const Schedule: React.FC = () => {
         if (!readEnvelopeSuccess(response)) {
           setEvents([]);
           setLoadingMessage(
-            readEnvelopeMessage(response) || "Không tải được lịch từ snapshot.",
+            readEnvelopeMessage(response) || "Chưa lấy được lịch bảo vệ, mình thử lại sau nhé.",
           );
           return;
         }
@@ -491,7 +491,7 @@ const Schedule: React.FC = () => {
         const snapshot = toRecord(payload);
         if (!snapshot) {
           setEvents([]);
-          setLoadingMessage("Snapshot không có dữ liệu lịch để hiển thị.");
+          setLoadingMessage("Chưa có dữ liệu lịch bảo vệ để hiển thị đâu. Bạn ghé lại sau nhé.");
           return;
         }
 
@@ -499,12 +499,12 @@ const Schedule: React.FC = () => {
         setEvents(mappedEvents);
         setLoadingMessage(
           mappedEvents.length > 0
-            ? "Đã đồng bộ lịch thành công từ snapshot."
-            : "Chưa có sự kiện lịch trong snapshot hiện tại.",
+            ? "Đã cập nhật lịch bảo vệ rồi nè."
+            : "Hiện chưa có lịch bảo vệ trong đợt này. Mình chờ thêm nhé.",
         );
       } catch {
         setEvents([]);
-        setLoadingMessage("Không tải được lịch bảo vệ từ API.");
+        setLoadingMessage("Chưa tải được lịch bảo vệ, nhưng mình sẽ thử lại sớm thôi.");
       } finally {
         setLoading(false);
       }
@@ -650,22 +650,25 @@ const Schedule: React.FC = () => {
         <style>
           {`
             .sch-page {
-              max-width: 1200px;
+              max-width: 1440px;
               margin: 0 auto;
-              padding: 32px;
+              padding: 24px;
               font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif;
+              color: #111827;
             }
             .sch-card {
               background: #ffffff;
-              border: 1px solid #e5e7eb;
-              border-radius: 16px;
+              border: 1px solid #e2e8f0;
+              border-radius: 22px;
+              box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
             }
             .sch-loading-card {
-              padding: 42px;
+              padding: 48px;
               text-align: center;
-              color: #374151;
+              color: #475569;
               font-size: 16px;
-              font-weight: 500;
+              font-weight: 700;
+              background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
             }
           `}
         </style>
@@ -679,16 +682,17 @@ const Schedule: React.FC = () => {
       <style>
         {`
           .sch-page {
-            max-width: 1200px;
+            max-width: 1440px;
             margin: 0 auto;
-            padding: 32px;
+            padding: 24px;
             font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif;
             color: #111827;
           }
           .sch-card {
             background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 22px;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
           }
           .sch-hero {
             padding: 24px;
@@ -760,9 +764,9 @@ const Schedule: React.FC = () => {
             text-transform: capitalize;
           }
           .sch-nav-btn {
-            height: 36px;
-            width: 36px;
-            border-radius: 8px;
+            height: 40px;
+            width: 40px;
+            border-radius: 999px;
             border: 1px solid #f37021;
             background: #f37021;
             color: #ffffff;
@@ -770,6 +774,7 @@ const Schedule: React.FC = () => {
             align-items: center;
             justify-content: center;
             cursor: pointer;
+            box-shadow: 0 10px 24px rgba(243, 112, 33, 0.16);
           }
           .sch-nav-btn:hover {
             background: #ea580c;
@@ -849,7 +854,7 @@ const Schedule: React.FC = () => {
           }
           .sch-note-card {
             padding: 16px;
-            background: #f9fafb;
+            background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
           }
           .sch-note-head {
             margin: 0 0 8px;
@@ -864,7 +869,7 @@ const Schedule: React.FC = () => {
             margin: 0;
             font-size: 13px;
             color: #4b5563;
-            line-height: 1.55;
+            line-height: 1.65;
           }
           .sch-upcoming-card {
             padding: 18px;
@@ -947,12 +952,12 @@ const Schedule: React.FC = () => {
           }
           .sch-empty {
             border: 1px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 14px;
+            border-radius: 16px;
+            padding: 16px;
             background: #f8fafc;
             color: #64748b;
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.55;
           }
           .sch-overlay {
             position: fixed;
@@ -1045,7 +1050,7 @@ const Schedule: React.FC = () => {
             Lịch bảo vệ
           </h1>
           <p className="sch-subtitle">
-            Theo dõi lịch bảo vệ và các mốc thông báo quan trọng theo từng đợt.
+            Theo dõi lịch bảo vệ và các mốc thông báo quan trọng theo từng đợt, gọn gàng và dễ nhìn.
           </p>
         </div>
 
@@ -1129,11 +1134,11 @@ const Schedule: React.FC = () => {
           <section className="sch-card sch-note-card">
             <h3 className="sch-note-head">
               <Info size={16} color="#f37021" />
-              Ghi chú nhỏ
+              Một chút nhắc nhở dễ thương
             </h3>
             <p className="sch-note-text">
-              Khi hội đồng chưa chốt, lịch ngày giờ có thể chưa hiển thị đầy đủ. Bạn nên kiểm tra lại
-              trang này mỗi ngày và đọc thông báo mới nhất.
+              Khi hội đồng chưa chốt, lịch ngày giờ có thể chưa hiện đủ. Bạn cứ ghé lại mỗi ngày một
+              chút nhé, hệ thống sẽ cập nhật ngay khi có tin mới.
             </p>
           </section>
 
@@ -1198,7 +1203,9 @@ const Schedule: React.FC = () => {
               })}
 
               {upcomingEvents.length === 0 && (
-                <div className="sch-empty">{loadingMessage || "Chưa có sự kiện lịch sắp tới."}</div>
+                <div className="sch-empty">
+                  {loadingMessage || "Hiện tại chưa có lịch bảo vệ nào cả. Bạn quay lại sau nha."}
+                </div>
               )}
             </div>
           </section>
@@ -1282,7 +1289,7 @@ const Schedule: React.FC = () => {
               {selectedEventsForPopup.length === 0 && (
                 <div className="sch-empty" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <AlertCircle size={16} />
-                  Không có sự kiện để hiển thị.
+                  Hiện chưa có sự kiện nào để xem đâu. Bạn thử lại sau nhé.
                 </div>
               )}
             </div>

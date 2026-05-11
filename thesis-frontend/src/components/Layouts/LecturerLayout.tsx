@@ -11,9 +11,6 @@ import {
   X,
   KeyRound,
   Sidebar,
-  PanelLeftClose,
-  PanelLeftOpen,
-  ShieldCheck,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -197,7 +194,6 @@ const LecturerLayout: React.FC = () => {
             textColor: "#ffedd5",
             dotColor: "#fdba74",
           };
-
   return (
     <div
       style={{
@@ -386,22 +382,28 @@ const LecturerLayout: React.FC = () => {
               aria-label="Mở rộng thanh nav"
               style={{
                 position: "absolute",
-                top: "12px",
-                right: "12px",
-                width: 34,
-                height: 34,
+                top: "14px",
+                left: "50%",
+                width: 38,
+                height: 38,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(255,255,255,0.08)",
-                color: "#fff",
+                borderRadius: 12,
+                border: "1px solid rgba(255, 255, 255, 0.3)",
+                background:
+                  "linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255,255,255,0.06) 100%)",
+                color: "#FFFFFF",
+                boxShadow: "0 6px 16px rgba(0, 0, 0, 0.18)",
                 cursor: "pointer",
+                zIndex: 99999,
+                transform: isSidebarCollapsed ? "translateX(-50%) translateZ(0)" : "translateX(-50%)",
+                willChange: "transform",
                 flexShrink: 0,
+                backdropFilter: "blur(8px)",
               }}
             >
-              <Sidebar size={18} />
+              <Menu size={18} strokeWidth={2.5} />
             </button>
           )}
 
@@ -426,35 +428,89 @@ const LecturerLayout: React.FC = () => {
             <X size={20} />
           </button>
 
-          <img
-            src="/dnu_logo.png"
-            alt="Đại học Đại Nam"
-            style={{
-              width: isSidebarCollapsed ? 52 : 88,
-              display: "block",
-              margin: isSidebarCollapsed ? "16px auto 10px" : "0 auto 10px",
-              filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.06))",
-              transition:
-                "width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
+          <button
+            type="button"
+            onClick={() => {
+              if (isSidebarCollapsed) {
+                setIsSidebarCollapsed(false);
+              }
             }}
-          />
+            aria-label="Mở rộng thanh nav"
+            title={isSidebarCollapsed ? "Mở rộng thanh nav" : "Logo Đại học Đại Nam"}
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              margin: 0,
+              cursor: isSidebarCollapsed ? "pointer" : "default",
+              display: "block",
+              width: "100%",
+            }}
+          >
+            <img
+              src={isSidebarCollapsed ? "/favicon_dnu.png" : "/dnu_logo.png"}
+              alt="Đại học Đại Nam"
+              style={{
+                width: isSidebarCollapsed ? 44 : 90,
+                display: "block",
+                margin: isSidebarCollapsed ? "16px auto 10px" : "0 auto 14px",
+                filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+                transition:
+                  "transform 0.3s ease, width 0.28s ease, margin 0.28s ease, opacity 0.24s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (isSidebarCollapsed) {
+                  e.currentTarget.style.transform = "scale(1.06)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            />
+          </button>
           <h3
             className="sidebar-brand-text"
             style={{
-              color: "#f37021",
-              fontSize: 17,
+              color: "#F37021",
+              fontSize: 18,
               fontWeight: 700,
-              margin: 0,
+              marginBottom: 4,
+              letterSpacing: "0.5px",
+              opacity: isSidebarCollapsed ? 0 : 1,
+              transform: isSidebarCollapsed
+                ? "translateY(-8px) scale(0.96)"
+                : "translateY(0) scale(1)",
+              maxHeight: isSidebarCollapsed ? 0 : 40,
+              overflow: "hidden",
+              transition:
+                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
             }}
           >
-            Vai trò: <strong style={{ color: "#f37021" }}>Giảng viên</strong>
+            Vai trò: <strong style={{ color: "#F37021" }}>Giảng viên</strong>
           </h3>
+          <p
+            className="sidebar-brand-text"
+            style={{
+              fontSize: 12,
+              color: "#6B7280",
+              margin: 0,
+              fontWeight: 500,
+              opacity: isSidebarCollapsed ? 0 : 1,
+              transform: isSidebarCollapsed
+                ? "translateY(-8px) scale(0.96)"
+                : "translateY(0) scale(1)",
+              maxHeight: isSidebarCollapsed ? 0 : 28,
+              overflow: "hidden",
+              transition:
+                "opacity 0.24s ease, transform 0.24s ease, max-height 0.28s ease",
+            }}
+          >
+            Đại học Đại Nam
+          </p>
         </div>
 
         <div
           style={{ flex: 1, padding: "12px 16px", overflowY: "auto" }}
-          onPointerDownCapture={collapseSidebarOnActivity}
-          onFocusCapture={collapseSidebarOnActivity}
         >
           <LecturerNav
             collapsed={isSidebarCollapsed}
@@ -833,40 +889,6 @@ const LecturerLayout: React.FC = () => {
                   </div>
 
                   <div style={{ padding: "8px" }}>
-                    {auth.user?.roles?.includes("ADMIN") && (
-                      <button
-                        onClick={() => {
-                          setShowDropdown(false);
-                          auth.switchRole("ADMIN");
-                        }}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "14px",
-                          width: "100%",
-                          padding: "14px 18px",
-                          background: "rgba(59, 130, 246, 0.1)",
-                          border: "none",
-                          borderRadius: "12px",
-                          textAlign: "left",
-                          cursor: "pointer",
-                          fontSize: "14px",
-                          color: "#3b82f6",
-                          fontWeight: 600,
-                          transition: "all 0.3s ease",
-                          marginBottom: "8px"
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.1)";
-                        }}
-                      >
-                        <ShieldCheck size={18} color="#3b82f6" />
-                        Giao diện Quản trị
-                      </button>
-                    )}
                     <button
                       onClick={() => {
                         setShowDropdown(false);
@@ -985,6 +1007,7 @@ const LecturerLayout: React.FC = () => {
             height: "calc(100vh - 80px)",
             overflowY: "auto",
           }}
+          onPointerUpCapture={collapseSidebarOnActivity}
         >
           <Outlet />
         </div>
