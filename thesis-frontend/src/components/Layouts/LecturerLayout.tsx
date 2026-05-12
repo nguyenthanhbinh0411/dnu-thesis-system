@@ -11,6 +11,7 @@ import {
   X,
   KeyRound,
   Sidebar,
+  ShieldCheck,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -176,24 +177,24 @@ const LecturerLayout: React.FC = () => {
   const headerPeriodStyle =
     headerPeriod.tone === "error"
       ? {
-          borderColor: "rgba(248, 113, 113, 0.45)",
-          backgroundColor: "rgba(127, 29, 29, 0.45)",
-          textColor: "#fecaca",
-          dotColor: "#f87171",
-        }
+        borderColor: "rgba(248, 113, 113, 0.45)",
+        backgroundColor: "rgba(127, 29, 29, 0.45)",
+        textColor: "#fecaca",
+        dotColor: "#f87171",
+      }
       : headerPeriod.tone === "warning"
         ? {
-            borderColor: "rgba(251, 191, 36, 0.5)",
-            backgroundColor: "rgba(146, 64, 14, 0.35)",
-            textColor: "#fde68a",
-            dotColor: "#fbbf24",
-          }
+          borderColor: "rgba(251, 191, 36, 0.5)",
+          backgroundColor: "rgba(146, 64, 14, 0.35)",
+          textColor: "#fde68a",
+          dotColor: "#fbbf24",
+        }
         : {
-            borderColor: "rgba(243, 112, 33, 0.5)",
-            backgroundColor: "rgba(243, 112, 33, 0.2)",
-            textColor: "#ffedd5",
-            dotColor: "#fdba74",
-          };
+          borderColor: "rgba(243, 112, 33, 0.5)",
+          backgroundColor: "rgba(243, 112, 33, 0.2)",
+          textColor: "#ffedd5",
+          dotColor: "#fdba74",
+        };
   return (
     <div
       style={{
@@ -889,6 +890,40 @@ const LecturerLayout: React.FC = () => {
                   </div>
 
                   <div style={{ padding: "8px" }}>
+                    {auth.user?.roles?.includes("ADMIN") && (
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          auth.switchRole("ADMIN");
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "14px",
+                          width: "100%",
+                          padding: "14px 18px",
+                          background: "rgba(59, 130, 246, 0.1)",
+                          border: "none",
+                          borderRadius: "12px",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          color: "#3b82f6",
+                          fontWeight: 600,
+                          transition: "all 0.3s ease",
+                          marginBottom: "8px"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.2)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgba(59, 130, 246, 0.1)";
+                        }}
+                      >
+                        <ShieldCheck size={18} color="#3b82f6" />
+                        Giao diện Quản trị
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setShowDropdown(false);
@@ -1007,7 +1042,7 @@ const LecturerLayout: React.FC = () => {
             height: "calc(100vh - 80px)",
             overflowY: "auto",
           }}
-          onPointerUpCapture={collapseSidebarOnActivity}
+          /* onPointerUpCapture={collapseSidebarOnActivity} */
         >
           <Outlet />
         </div>

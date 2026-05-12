@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FC } from "react";
 import {
   AlertCircle,
@@ -10,7 +10,19 @@ import {
   RefreshCw,
   Trash2,
   X,
+  History,
+  FilePlus,
+  Send,
+  User,
+  Calendar as CalendarIcon,
+  ChevronRight,
+  ArrowRight,
+  FileCheck,
+  Clock,
+  Info,
+  FileText,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { FetchDataError, normalizeUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../../context/useToast";
@@ -120,130 +132,211 @@ const modalStyles = {
     position: "fixed",
     inset: 0,
     zIndex: 120,
-    background: "rgba(15, 23, 42, 0.55)",
+    background: "rgba(15, 23, 42, 0.4)",
+    backdropFilter: "blur(8px)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 12,
+    padding: 24,
   } satisfies CSSProperties,
   card: {
-    width: "min(1320px, 100%)",
-    maxHeight: "92vh",
-    minHeight: 0,
+    width: "min(1400px, 100%)",
+    height: "min(850px, 92vh)",
+    background: "rgba(255, 255, 255, 0.95)",
+    borderRadius: 32,
+    border: "1px solid rgba(255, 255, 255, 0.3)",
+    boxShadow: "0 40px 100px -20px rgba(0, 0, 0, 0.15), 0 20px 40px -10px rgba(0, 0, 0, 0.05)",
+    display: "grid",
+    gridTemplateColumns: "320px 1fr",
     overflow: "hidden",
-    background: "#fffefb",
-    borderRadius: 16,
-    border: "1px solid #e8d9bf",
-    boxShadow: "0 24px 80px rgba(15, 23, 42, 0.24)",
+  } satisfies CSSProperties,
+  sidebar: {
+    background: "linear-gradient(165deg, #0f172a 0%, #1e293b 100%)",
+    padding: "32px 24px",
     display: "flex",
     flexDirection: "column",
+    gap: 24,
+    color: "#fff",
+    borderRight: "1px solid rgba(255, 255, 255, 0.05)",
+  } satisfies CSSProperties,
+  content: {
+    display: "flex",
+    flexDirection: "column",
+    background: "#f8fafc",
+    overflow: "hidden",
   } satisfies CSSProperties,
   header: {
-    padding: 18,
-    borderBottom: "1px solid #f1e3cc",
+    padding: "24px 40px",
+    background: "#fff",
+    borderBottom: "1px solid #e2e8f0",
     display: "flex",
     justifyContent: "space-between",
-    gap: 16,
-    alignItems: "flex-start",
-    flexWrap: "wrap",
-    background: "linear-gradient(180deg, #fff8ea 0%, #fffefb 100%)",
+    alignItems: "center",
+    zIndex: 10,
   } satisfies CSSProperties,
   body: {
     flex: 1,
-    minHeight: 0,
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr)",
-  } satisfies CSSProperties,
-  main: {
-    padding: 18,
+    padding: "32px 40px 120px",
     overflowY: "auto",
-    minHeight: 0,
     display: "grid",
-    gap: 14,
+    gap: 32,
+    alignContent: "start",
   } satisfies CSSProperties,
   footer: {
-    padding: 14,
-    borderTop: "1px solid #e8d9bf",
+    padding: "20px 40px",
+    background: "#fff",
+    borderTop: "1px solid #e2e8f0",
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     gap: 12,
-    flexWrap: "wrap",
-    alignItems: "center",
-    background: "#fffefb",
   } satisfies CSSProperties,
 };
 
 const cardStyles = {
   section: {
-    border: "1px solid #ebeff5",
-    borderRadius: 14,
-    background: "#ffffff",
-    boxShadow: "0 1px 6px rgba(15, 23, 42, 0.04)",
-    overflow: "hidden",
+    background: "#fff",
+    borderRadius: 24,
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.01)",
+    transition: "all 0.3s ease",
   } satisfies CSSProperties,
   sectionHeader: {
-    padding: 12,
-    borderBottom: "1px solid #ebeff5",
+    padding: "20px 24px",
+    background: "#fff",
+    borderBottom: "1px solid #f1f5f9",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
-    background: "#f8fafc",
   } satisfies CSSProperties,
   sectionBody: {
-    padding: 12,
+    padding: "32px 40px",
     display: "grid",
-    gap: 10,
+    gap: 32,
   } satisfies CSSProperties,
 };
 
-const actionButtonBase = {
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  borderRadius: 8,
-  padding: "8px 12px",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  fontWeight: 700,
-  fontSize: 13,
-  cursor: "pointer",
-} satisfies CSSProperties;
-
-const actionButtonPrimary = {
-  ...actionButtonBase,
-  borderColor: "#f37021",
-  background: "#f37021",
-  color: "#ffffff",
-} satisfies CSSProperties;
-
-const actionButtonGhost = {
-  ...actionButtonBase,
-} satisfies CSSProperties;
-
-const actionButtonDanger = {
-  ...actionButtonBase,
-  borderColor: "#fecaca",
-  background: "#fff5f5",
-  color: "#b91c1c",
-} satisfies CSSProperties;
-
 const inputStyle: CSSProperties = {
   width: "100%",
-  border: "1px solid #cbd5e1",
-  borderRadius: 8,
-  padding: "9px 12px",
-  background: "#ffffff",
+  background: "#f8fafc",
+  border: "2px solid #e2e8f0",
+  borderRadius: 16,
+  padding: "14px 18px",
+  fontSize: "15px",
+  fontWeight: 600,
+  color: "#1e293b",
+  transition: "all 0.2s ease",
   outline: "none",
 };
 
 const textareaStyle: CSSProperties = {
   ...inputStyle,
-  minHeight: 110,
-  resize: "vertical",
+  minHeight: 140,
+  resize: "none",
 };
+
+const actionButtonBase = {
+  padding: "12px 24px",
+  borderRadius: 16,
+  fontSize: "14px",
+  fontWeight: 800,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 10,
+  cursor: "pointer",
+  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+  border: "none",
+} satisfies CSSProperties;
+
+const actionButtonPrimary = {
+  ...actionButtonBase,
+  background: "#f37021",
+  color: "#fff",
+  boxShadow: "0 10px 20px -5px rgba(243, 112, 33, 0.3)",
+} satisfies CSSProperties;
+
+const actionButtonGhost = {
+  ...actionButtonBase,
+  background: "#f1f5f9",
+  color: "#475569",
+} satisfies CSSProperties;
+
+const actionButtonDanger = {
+  ...actionButtonBase,
+  background: "#fef2f2",
+  color: "#dc2626",
+} satisfies CSSProperties;
+
+const badgeStyle = (tone: string) => {
+  const palette = statusPalette(tone as any);
+  return {
+    padding: "6px 14px",
+    borderRadius: "12px",
+    fontSize: "11px",
+    fontWeight: 900,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    background: palette.bg,
+    color: palette.text,
+    border: `1px solid ${palette.border}20`,
+  };
+};
+
+const documentStyles = {
+  paper: {
+    width: "100%",
+    maxWidth: "850px",
+    margin: "0 auto",
+    background: "#fff",
+    padding: "40px 60px",
+    borderRadius: "2px",
+    color: "#000",
+    fontFamily: "'Times New Roman', Times, serif",
+    fontSize: "15px",
+    lineHeight: "1.3",
+    border: "1px solid #e2e8f0",
+  } satisfies CSSProperties,
+  header: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 1fr",
+    marginBottom: "30px",
+  } satisfies CSSProperties,
+  title: {
+    textAlign: "center" as const,
+    fontSize: "20px",
+    fontWeight: "bold",
+    textTransform: "uppercase" as const,
+    margin: "30px 0",
+  } satisfies CSSProperties,
+  section: {
+    marginBottom: "8px",
+    display: "flex",
+    alignItems: "baseline",
+  } satisfies CSSProperties,
+  label: {
+    fontWeight: "normal",
+    whiteSpace: "nowrap" as const,
+    marginRight: "8px",
+  } satisfies CSSProperties,
+  field: {
+    borderBottom: "1px dotted #000",
+    flex: 1,
+    paddingLeft: "4px",
+    minHeight: "20px",
+  } satisfies CSSProperties,
+  signature: {
+    marginTop: "50px",
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    textAlign: "center" as const,
+  } satisfies CSSProperties,
+};
+
+function formatDocDate(val: string | null | undefined): string {
+  if (!val) return "....................";
+  const str = String(val);
+  if (str.includes("T")) return str.split("T")[0].split("-").reverse().join("/");
+  return str;
+}
 
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
@@ -317,12 +410,12 @@ function readFieldFromLookup(
 }
 
 function normalizeStatusTone(
-  status: string,
-): "pending" | "approved" | "rejected" | "unknown" {
+  status: string | null | undefined,
+): "pending" | "approved" | "rejected" | "default" {
   const normalized = String(status ?? "")
     .trim()
     .toLowerCase();
-  if (normalized.includes("pending") || normalized.includes("chờ"))
+  if (normalized.includes("pending") || normalized.includes("chờ") || normalized.includes("yêu cầu"))
     return "pending";
   if (
     normalized.includes("approved") ||
@@ -337,24 +430,37 @@ function normalizeStatusTone(
     normalized.includes("reject")
   )
     return "rejected";
-  return "unknown";
+  return "default";
 }
 
-function statusPalette(tone: ReturnType<typeof normalizeStatusTone>): {
+function statusPalette(tone: "pending" | "approved" | "rejected" | "default"): {
   bg: string;
   text: string;
   border: string;
 } {
   switch (tone) {
     case "pending":
-      return { bg: "#fef3c7", text: "#92400e", border: "#f59e0b" };
+      return { bg: "#fff7ed", text: "#9a3412", border: "#f37021" };
     case "approved":
-      return { bg: "#dcfce7", text: "#166534", border: "#22c55e" };
+      return { bg: "#f0fdf4", text: "#166534", border: "#16a34a" };
     case "rejected":
-      return { bg: "#fee2e2", text: "#991b1b", border: "#ef4444" };
+      return { bg: "#fef2f2", text: "#991b1b", border: "#dc2626" };
     default:
-      return { bg: "#e2e8f0", text: "#475569", border: "#94a3b8" };
+      return { bg: "#f8fafc", text: "#475569", border: "#94a3b8" };
   }
+}
+
+function isEditableStatus(status: string): boolean {
+  const tone = normalizeStatusTone(status);
+  return tone === "pending" || tone === "rejected";
+}
+
+function isPendingStatus(status: string): boolean {
+  return normalizeStatusTone(status) === "pending";
+}
+
+function isAppliedStatus(status: string): boolean {
+  return normalizeStatusTone(status) === "approved";
 }
 
 function extractValidationMessages(error: unknown): Record<string, string> {
@@ -384,21 +490,7 @@ function extractValidationMessages(error: unknown): Record<string, string> {
   }, {});
 }
 
-function isEditableStatus(status: string): boolean {
-  const tone = normalizeStatusTone(status);
-  return tone === "pending" || tone === "rejected" || tone === "approved";
-}
 
-function isPendingStatus(status: string): boolean {
-  return normalizeStatusTone(status) === "pending";
-}
-
-function isAppliedStatus(status: string): boolean {
-  return String(status ?? "")
-    .trim()
-    .toLowerCase()
-    .includes("applied");
-}
 
 function formatDisplay(value: unknown, placeholder = "-"): string {
   const text = String(value ?? "").trim();
@@ -495,6 +587,10 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState<string | null>(null);
+  const [showDocumentView, setShowDocumentView] = useState(false);
+  const [reviewConfirmAction, setReviewConfirmAction] = useState<TopicRenameRequestReviewAction | null>(null);
+  const [isReviewConfirmOpen, setIsReviewConfirmOpen] = useState(false);
+  const [isDeleteFileConfirmOpen, setIsDeleteFileConfirmOpen] = useState(false);
   const studentProfileCacheRef = useRef(
     new Map<string, StudentProfile | null>(),
   );
@@ -592,7 +688,7 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
       "",
     );
 
-  const canCreateNew = !hasPendingRequest;
+  const canCreateNew = isStudentRole && !hasPendingRequest;
 
   const loadTemplateContext = useCallback(
     async (
@@ -1205,10 +1301,6 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
     async (action: TopicRenameRequestReviewAction) => {
       if (selectedRequestId === null || selectedRequestId === undefined) return;
 
-      const label = action === "Approve" ? "duyệt" : "từ chối";
-      const confirmed = window.confirm(`Bạn có chắc muốn ${label} đơn này?`);
-      if (!confirmed) return;
-
       setSaving(true);
       setFieldErrors({});
       try {
@@ -1224,6 +1316,8 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
           "success",
         );
         setReviewComment("");
+        setIsReviewConfirmOpen(false);
+        setReviewConfirmAction(null);
         setPanelMode("detail");
         await loadRequests();
         await loadDetail(selectedRequestId);
@@ -1247,6 +1341,11 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
     },
     [addToast, loadDetail, loadRequests, reviewComment, selectedRequestId],
   );
+
+  const triggerReviewConfirm = (action: TopicRenameRequestReviewAction) => {
+    setReviewConfirmAction(action);
+    setIsReviewConfirmOpen(true);
+  };
 
   const submitGenerateTemplate = useCallback(async () => {
     if (selectedRequestId === null || selectedRequestId === undefined) return;
@@ -1296,16 +1395,11 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
       return;
     }
 
-    const confirmed = window.confirm("Bạn có chắc muốn xóa file này không?");
-    if (!confirmed) {
-      return;
-    }
-
     setDeletingTemplateFile(true);
     try {
       await deleteTopicRenameRequestTemplate(selectedRequestId);
       addToast("Đã xóa file template.", "success");
-
+      setIsDeleteFileConfirmOpen(false);
       setGeneratedFile(null);
       await loadDetail(selectedRequestId);
     } catch (error) {
@@ -1683,6 +1777,24 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
     selectedRequest?.topicCode,
     selectedRequest?.topicID,
   ]);
+
+  const selectedTopicLabel = useMemo(() => {
+    return (
+      readField(templatePreview, ["oldTitle", "OldTitle"]) ||
+      defaultTopicTitle ||
+      "--"
+    );
+  }, [templatePreview, defaultTopicTitle]);
+
+  const selectedTopicCode = useMemo(() => {
+    return (
+      readField(templatePreview, ["topicCode", "TopicCode"]) ||
+      defaultTopicCode ||
+      "--"
+    );
+  }, [templatePreview, defaultTopicCode]);
+
+  const historyRows = useMemo(() => detail?.history ?? [], [detail?.history]);
   const templatePreviewLookup = useMemo(
     () => buildFieldLookup(templatePreview),
     [templatePreview],
@@ -1696,798 +1808,487 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
       ),
     [templatePreviewLookup],
   );
-  const historyRows = detail?.history ?? [];
-
   useEffect(() => {
     if (!placeOfBirth.trim() && templatePlaceOfBirth) {
       setPlaceOfBirth(templatePlaceOfBirth);
     }
   }, [placeOfBirth, templatePlaceOfBirth]);
 
-  const selectedTopicLabel =
-    currentTopic?.title ||
-    selectedRequest?.oldTitle ||
-    defaultTopicTitle ||
-    "Chưa chọn đề tài";
-  const selectedTopicCode =
-    currentTopic?.topicCode ||
-    selectedRequest?.topicCode ||
-    defaultTopicCode ||
-    "--";
+  // --- MEMOIZED RENDERING SECTIONS ---
+  const sidebarSection = useMemo(() => {
+    return (
+      <div style={modalStyles.sidebar}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <div style={{ padding: 10, background: "rgba(243, 112, 33, 0.2)", borderRadius: 12 }}>
+            <History size={20} className="text-[#f37021]" />
+          </div>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 900, margin: 0 }}>Lịch sử đơn</h3>
+            <p style={{ fontSize: 11, opacity: 0.5, margin: 0, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Request History</p>
+          </div>
+        </div>
 
-  const renderRequestOverview = () => {
+        <button
+          onClick={() => void openCreate()}
+          disabled={loadingForm || saving || !canCreateNew}
+          style={{
+            width: "100%",
+            padding: "14px",
+            background: "rgba(255, 255, 255, 0.05)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: 16,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 800,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            marginBottom: 24,
+            opacity: canCreateNew ? 1 : 0.5,
+          }}
+          onMouseEnter={(e) => { if (canCreateNew) e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)"; }}
+          onMouseLeave={(e) => { if (canCreateNew) e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)"; }}
+        >
+          <FilePlus size={16} /> Tạo đơn mới
+        </button>
+
+        <div style={{ flex: 1, overflowY: "auto", display: "grid", gap: 10, paddingRight: 4 }} className="custom-scrollbar">
+          {requests.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 20px", opacity: 0.3 }}>
+              <History size={40} style={{ marginBottom: 12 }} />
+              <p style={{ fontSize: 12, fontWeight: 700 }}>Chưa có yêu cầu nào</p>
+            </div>
+          ) : (
+            requests.map((item) => {
+              const isSelected = item.topicRenameRequestID === selectedRequestId;
+              const tone = normalizeStatusTone(item.status);
+              const palette = statusPalette(tone);
+              return (
+                <div
+                  key={item.topicRenameRequestID}
+                  onClick={() => setSelectedRequestId(item.topicRenameRequestID)}
+                  style={{
+                    padding: "16px",
+                    borderRadius: 20,
+                    background: isSelected ? "rgba(243, 112, 33, 0.15)" : "rgba(255, 255, 255, 0.03)",
+                    border: `1px solid ${isSelected ? "#f37021" : "rgba(255, 255, 255, 0.05)"}`,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.6 }}>{item.requestCode || `#${item.topicRenameRequestID}`}</span>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: palette.border }} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {item.newTitle}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, opacity: 0.4 }}>{item.createdAt?.split(" ")[0]}</span>
+                    <span style={{ fontSize: 9, fontWeight: 900, color: palette.text, background: `${palette.bg}20`, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase" }}>
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }, [requests, selectedRequestId, canCreateNew, loadingForm, saving]);
+
+  const overviewSection = useMemo(() => {
     const request = templatePreview;
     const isEditMode = panelMode === "edit";
+    const isApplied = isAppliedStatus(currentStatus);
+    const oldTitleLabel = isApplied ? "Tên đề tài cũ" : "Tên đề tài hiện tại";
+    const newTitleLabel = isApplied ? "Tên đề tài mới" : "Tên đề tài đề xuất";
+
     return (
-      <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 32 }}>
         <div style={cardStyles.section}>
           <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>
-                Đề tài hiện tại
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ padding: 10, background: "#f0f7ff", color: "#003d82", borderRadius: 12 }}>
+                <Edit size={20} />
               </div>
-              <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
-                {selectedTopicLabel}
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>Thông tin chi tiết</h3>
+                <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>So sánh tên đề tài cũ và mới</p>
               </div>
             </div>
+            <div style={badgeStyle(currentStatus)}>{currentStatus || "---"}</div>
           </div>
           <div style={cardStyles.sectionBody}>
-            <div>
-              <strong>Mã đề tài:</strong> {selectedTopicCode}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 32, padding: "10px 0" }}>
+              <div style={{ padding: 24, background: "#f8fafc", borderRadius: 20, border: "1px dashed #e2e8f0" }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>{oldTitleLabel}</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: "#64748b", margin: 0, lineHeight: 1.6 }}>{selectedTopicLabel}</p>
+              </div>
+              <div style={{ color: "#f37021", animation: "bounceRight 2s infinite" }}>
+                <ArrowRight size={32} />
+              </div>
+              <div style={{ padding: 24, background: "#fffaf5", borderRadius: 20, border: "2px solid #f3702120", boxShadow: "0 10px 30px -10px rgba(243, 112, 33, 0.1)" }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: "#f37021", textTransform: "uppercase", marginBottom: 12 }}>{newTitleLabel}</p>
+                {isEditMode ? (
+                  <input
+                    value={editForm.newTitle}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, newTitle: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Nhập tên mới..."
+                  />
+                ) : (
+                  <p style={{ fontSize: 18, fontWeight: 900, color: "#1e293b", margin: 0, lineHeight: 1.6 }}>
+                    {readField(request, ["newTitle", "NewTitle"], "-")}
+                  </p>
+                )}
+                {isEditMode && fieldErrors.newTitle && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{fieldErrors.newTitle}</p>}
+              </div>
             </div>
-            <div>
-              <strong>Tên đề tài:</strong> {selectedTopicLabel}
+
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>Lý do thay đổi</p>
+              <div style={{ padding: 24, background: "#f8fafc", borderRadius: 20 }}>
+                {isEditMode ? (
+                  <textarea
+                    value={editForm.reason}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, reason: e.target.value }))}
+                    style={textareaStyle}
+                    placeholder="Giải trình lý do..."
+                  />
+                ) : (
+                  <p style={{ fontSize: 15, fontWeight: 600, color: "#475569", margin: 0, lineHeight: 1.7, fontStyle: "italic" }}>
+                    "{readField(request, ["reason", "Reason"], "Chưa có lý do chi tiết.")}"
+                  </p>
+                )}
+                {isEditMode && fieldErrors.reason && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{fieldErrors.reason}</p>}
+              </div>
             </div>
           </div>
         </div>
 
+        {/* Files Section */}
         <div style={cardStyles.section}>
           <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>
-                {selectedRequest?.requestCode || "Đơn xin đổi đề tài"}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ padding: 10, background: "#f0fdf4", color: "#16a34a", borderRadius: 12 }}>
+                <Download size={20} />
               </div>
-              <div style={{ marginTop: 4, color: "#475569", fontSize: 12 }}>
-                {selectedRequest?.createdAt ||
-                  readField(request, ["createdAt", "CreatedAt"], "") ||
-                  "Chưa có thời gian tạo"}
-              </div>
+              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>Tài liệu đính kèm</h3>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-                marginLeft: "auto",
-              }}
+            <button
+              onClick={() => void submitGenerateTemplate()}
+              disabled={saving || !selectedRequestId}
+              style={{ ...actionButtonGhost, padding: "8px 16px", fontSize: 12 }}
             >
-              <span
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${statusColors.border}`,
-                  background: statusColors.bg,
-                  color: statusColors.text,
-                  fontSize: 12,
-                  fontWeight: 800,
-                  textTransform: "capitalize",
-                }}
-              >
-                {selectedRequest?.status || "Unknown"}
-              </span>
-              {canReviewSelected ? (
-                <>
-                  <button
-                    type="button"
-                    style={actionButtonPrimary}
-                    onClick={() => void submitReview("Approve")}
-                    disabled={
-                      saving || !selectedRequestId || !canReviewSelected
-                    }
-                  >
-                    <CheckCircle size={14} /> Duyệt
-                  </button>
-                  <button
-                    type="button"
-                    style={actionButtonDanger}
-                    onClick={() => void submitReview("Reject")}
-                    disabled={
-                      saving || !selectedRequestId || !canReviewSelected
-                    }
-                  >
-                    <AlertCircle size={14} /> Từ chối
-                  </button>
-                </>
-              ) : null}
-              {panelMode === "detail" && !selectedRequest ? (
-                <button
-                  type="button"
-                  style={actionButtonPrimary}
-                  onClick={() => void openCreate()}
-                  disabled={loadingForm || saving || !canCreateNew}
-                >
-                  <Plus size={14} /> Tạo mới
-                </button>
-              ) : null}
-              {panelMode === "detail" &&
-              selectedRequest &&
-              canModifySelected ? (
-                <>
-                  <button
-                    type="button"
-                    style={actionButtonGhost}
-                    onClick={() => void openEdit(activeRequestId)}
-                    disabled={
-                      saving ||
-                      loadingForm ||
-                      !hasActiveRequest ||
-                      !canEditSelected
-                    }
-                  >
-                    <Edit size={14} /> Sửa
-                  </button>
-                  {canDeleteSelected ? (
-                    <button
-                      type="button"
-                      style={actionButtonDanger}
-                      onClick={() => {
-                        if (!hasActiveRequest) return;
-                        setIsDeleteConfirmOpen(true);
-                      }}
-                      disabled={saving || loadingForm || !hasActiveRequest}
-                    >
-                      <Trash2 size={14} /> Xóa
-                    </button>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
+              <RefreshCw size={14} className={saving ? "animate-spin" : ""} /> Sinh file Word
+            </button>
           </div>
           <div style={cardStyles.sectionBody}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              {[
-                {
-                  label: "Mã request",
-                  value:
-                    selectedRequest?.requestCode ||
-                    readField(request, ["requestCode", "RequestCode"], "-"),
-                },
-                { label: "Mã đề tài", value: selectedTopicCode },
-                {
-                  label: "Tên đề tài hiện tại",
-                  value: readField(
-                    request,
-                    ["oldTitle", "OldTitle"],
-                    selectedTopicLabel,
-                  ),
-                },
-                {
-                  label: "Tên đề tài mới",
-                  value: readField(request, ["newTitle", "NewTitle"], "-"),
-                  editable: true,
-                },
-                {
-                  label: "Người tạo",
-                  value: readField(
-                    request,
-                    ["requestedByUserCode", "RequestedByUserCode"],
-                    "-",
-                  ),
-                },
-                {
-                  label: "Vai trò người tạo",
-                  value: readField(
-                    request,
-                    ["requestedByRole", "RequestedByRole"],
-                    "-",
-                  ),
-                },
-                {
-                  label: "Người duyệt",
-                  value: readField(
-                    request,
-                    ["reviewedByUserCode", "ReviewedByUserCode"],
-                    "-",
-                  ),
-                },
-                {
-                  label: "Vai trò người duyệt",
-                  value: readField(
-                    request,
-                    ["reviewedByRole", "ReviewedByRole"],
-                    "-",
-                  ),
-                },
-                {
-                  label: "Thời gian tạo",
-                  value: readField(request, ["createdAt", "CreatedAt"], "-"),
-                },
-                {
-                  label: "Thời gian duyệt",
-                  value: readField(request, ["reviewedAt", "ReviewedAt"], "-"),
-                },
-                {
-                  label: "Thời gian áp dụng",
-                  value: readField(request, ["appliedAt", "AppliedAt"], "-"),
-                },
-                {
-                  label: "Lý do đổi",
-                  value: readField(request, ["reason", "Reason"], "-"),
-                  editable: true,
-                  wide: true,
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  style={{
-                    display: "grid",
-                    gap: 4,
-                    gridColumn: item.wide ? "1 / -1" : undefined,
-                  }}
-                >
-                  <div
-                    style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}
-                  >
-                    {item.label}
-                  </div>
-                  {isEditMode && item.editable ? (
-                    item.label === "Lý do đổi" ? (
-                      <textarea
-                        value={editForm.reason}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            reason: e.target.value,
-                          }))
-                        }
-                        style={textareaStyle}
-                        placeholder="Nhập lý do đổi đề tài"
-                      />
-                    ) : (
-                      <input
-                        value={editForm.newTitle}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            newTitle: e.target.value,
-                          }))
-                        }
-                        style={inputStyle}
-                        placeholder="Nhập tên đề tài mới"
-                      />
-                    )
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: "#0f172a",
-                        fontWeight: 600,
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      {item.value || "-"}
+            <div style={{ display: "grid", gap: 12 }}>
+              {generatedFile && (
+                <div style={{ padding: 16, background: "#f0fdf4", borderRadius: 16, border: "1px solid #dcfce7", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, background: "#fff", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a" }}>
+                      <FileCheck size={20} />
                     </div>
-                  )}
-                  {isEditMode &&
-                  item.label === "Tên đề tài mới" &&
-                  fieldErrors.newTitle ? (
-                    <small style={{ color: "#b91c1c" }}>
-                      {fieldErrors.newTitle}
-                    </small>
-                  ) : null}
-                  {isEditMode &&
-                  item.label === "Lý do đổi" &&
-                  fieldErrors.reason ? (
-                    <small style={{ color: "#b91c1c" }}>
-                      {fieldErrors.reason}
-                    </small>
-                  ) : null}
+                    <div>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#166534" }}>{generatedFile.fileName}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: "#16a34a", opacity: 0.7 }}>File Word mẫu vừa khởi tạo</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => downloadFile(generatedFile)} style={{ ...actionButtonPrimary, padding: "8px 16px", background: "#16a34a" }}><Download size={14} /></button>
+                    <button onClick={() => setIsDeleteFileConfirmOpen(true)} style={{ ...actionButtonDanger, padding: "8px 16px" }}><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              )}
+              {currentFile && !generatedFile && (
+                <div style={{ padding: 16, background: "#f0fdf4", borderRadius: 16, border: "1px solid #dcfce7", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, background: "#fff", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a" }}>
+                      <FileCheck size={20} />
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#166534" }}>{currentFile.fileName || "Tài liệu chính"}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: "#16a34a", opacity: 0.7 }}>Tài liệu đính kèm chính thức</p>
+                    </div>
+                  </div>
+                  <button onClick={() => downloadFile(currentFile)} style={{ ...actionButtonPrimary, padding: "8px 16px", background: "#16a34a" }}><Download size={14} /></button>
+                </div>
+              )}
+              {detailFilesToRender.map((file, i) => (
+                <div key={i} style={{ padding: 16, background: "#f8fafc", borderRadius: 16, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, background: "#fff", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#1e293b" }}>{file.fileName || "Tài liệu phụ"}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>{file.fileType || "Document"}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => downloadFile(file)} style={{ ...actionButtonGhost, padding: "8px 16px" }}><Download size={14} /></button>
                 </div>
               ))}
+              {!generatedFile && !currentFile && detailFilesToRender.length === 0 && (
+                <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8", fontSize: 13, border: "1px dashed #e2e8f0", borderRadius: 16 }}>
+                  Chưa có tài liệu nào được đính kèm.
+                </div>
+              )}
             </div>
           </div>
         </div>
 
+        {/* History Section */}
         <div style={cardStyles.section}>
           <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>
-                Danh sách file
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ padding: 10, background: "#f5f3ff", color: "#7c3aed", borderRadius: 12 }}>
+                <Clock size={20} />
               </div>
-              <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
-                File đã sinh, file đính kèm và file hiện tại.
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                style={actionButtonPrimary}
-                onClick={() => void submitGenerateTemplate()}
-                disabled={saving || !selectedRequestId}
-              >
-                <RefreshCw size={14} /> Sinh file Word mẫu
-              </button>
+              <h3 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>Lịch sử xét duyệt</h3>
             </div>
           </div>
-          <div style={{ padding: 14, display: "grid", gap: 10 }}>
-            {generatedFile ? (
-              <div
-                style={{
-                  border: "1px solid #bbf7d0",
-                  background: "#f0fdf4",
-                  borderRadius: 12,
-                  padding: 12,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 800, color: "#166534" }}>
-                    File vừa sinh
+          <div style={{ padding: "0 24px 24px" }}>
+            <div style={{ display: "grid", gap: 16, position: "relative" }}>
+              <div style={{ position: "absolute", left: 19, top: 0, bottom: 0, width: 2, background: "#f1f5f9" }} />
+              {historyRows.length > 0 ? historyRows.map((item, i) => (
+                <div key={i} style={{ display: "flex", gap: 20, position: "relative", zIndex: 1 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#fff", border: "4px solid #f8fafc", display: "flex", alignItems: "center", justifyContent: "center", color: "#f37021", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}>
+                    <CheckCircle size={16} />
                   </div>
-                  <div style={{ fontSize: 12, color: "#14532d", marginTop: 4 }}>
-                    {generatedFile.fileName || "File Word mẫu"}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  style={actionButtonPrimary}
-                  onClick={() => downloadFile(generatedFile)}
-                >
-                  <Download size={14} /> Tải xuống
-                </button>
-                <button
-                  type="button"
-                  style={actionButtonDanger}
-                  onClick={() => void deleteTemplateFile()}
-                  disabled={saving || deletingTemplateFile}
-                >
-                  {deletingTemplateFile ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}{" "}
-                  Xóa
-                </button>
-              </div>
-            ) : null}
-
-            {currentFile ? (
-              <div
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 12,
-                  padding: 12,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                    {currentFile.fileName || "File đính kèm"}
-                    {currentFile.isCurrent ? " • Current" : ""}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                    {currentFile.fileType || currentFile.storageProvider || "-"}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  style={actionButtonGhost}
-                  onClick={() => downloadFile(currentFile)}
-                >
-                  <Download size={14} /> Tải xuống
-                </button>
-                <button
-                  type="button"
-                  style={actionButtonDanger}
-                  onClick={() => void deleteTemplateFile()}
-                  disabled={saving || deletingTemplateFile}
-                >
-                  {deletingTemplateFile ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}{" "}
-                  Xóa
-                </button>
-              </div>
-            ) : null}
-
-            {detailFilesToRender.length > 0 ? (
-              detailFilesToRender.map((file, index) => (
-                <div
-                  key={`${file.fileName || file.fileUrl || index}`}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    padding: 12,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                      {file.fileName || "Không có tên file"}
-                      {file.isCurrent ? " • Current" : ""}
+                  <div style={{ flex: 1, padding: 20, background: "#f8fafc", borderRadius: 20, border: "1px solid #e2e8f0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontWeight: 900, fontSize: 14, color: "#1e293b" }}>{item.approvedByRole || "Người duyệt"}</span>
+                      <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>{item.effectiveAt || item.createdAt}</span>
                     </div>
-                    <div
-                      style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}
-                    >
-                      {file.fileType || file.storageProvider || "-"}
+                    <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>{item.approvalComment || "Không có nhận xét."}</p>
+                    <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                      <User size={12} className="text-[#f37021]" />
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "#f37021" }}>{item.approvedByUserCode}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    style={actionButtonGhost}
-                    onClick={() => downloadFile(file)}
-                  >
-                    <Download size={14} /> Tải xuống
-                  </button>
-                  <button
-                    type="button"
-                    style={actionButtonDanger}
-                    onClick={() => void deleteTemplateFile()}
-                    disabled={saving || deletingTemplateFile}
-                  >
-                    {deletingTemplateFile ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={14} />
-                    )}{" "}
-                    Xóa
-                  </button>
                 </div>
-              ))
-            ) : !currentFile ? (
-              <div style={{ color: "#64748b", fontSize: 13 }}>
-                Chưa có file nào.
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div style={cardStyles.section}>
-          <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 900, color: "#0f172a" }}>
-                Lịch sử đổi tên
-              </div>
-              <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
-                Timeline theo mã history, lý do đổi và người duyệt thực tế.
-              </div>
+              )) : (
+                <div style={{ padding: "20px 40px", color: "#94a3b8", fontSize: 13 }}>Chưa có bản ghi xét duyệt.</div>
+              )}
             </div>
-          </div>
-          <div style={{ padding: 14, overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                minWidth: 1100,
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Mã request
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Mã đề tài
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Tên trước
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Tên mới
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Lý do đổi
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Ghi chú duyệt
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Người thay đổi
-                  </th>
-                  <th
-                    style={{ padding: 10, borderBottom: "1px solid #e2e8f0" }}
-                  >
-                    Người duyệt
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {historyRows.length > 0 ? (
-                  historyRows.map((item, index) => (
-                    <tr
-                      key={
-                        item.historyCode ||
-                        `${item.historyId || item.effectiveAt}-${index}`
-                      }
-                    >
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.requestCode)}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.topicCode)}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.previousTitle, "Chưa có")}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.newTitle, "Chưa có")}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.changeReason, "-")}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        {formatDisplay(item.approvalComment, "-")}
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        <div style={{ display: "grid", gap: 2 }}>
-                          <span style={{ fontWeight: 700 }}>
-                            {formatDisplay(item.changedByUserCode, "-")}
-                          </span>
-                          <span style={{ color: "#64748b", fontSize: 12 }}>
-                            {formatDisplay(item.changedByRole, "-")}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: 10,
-                          borderBottom: "1px solid #edf2f7",
-                        }}
-                      >
-                        <div style={{ display: "grid", gap: 2 }}>
-                          <span style={{ fontWeight: 700 }}>
-                            {formatDisplay(item.approvedByUserCode, "-")}
-                          </span>
-                          <span style={{ color: "#64748b", fontSize: 12 }}>
-                            {formatDisplay(item.approvedByRole, "-")}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8} style={{ padding: 14, color: "#64748b" }}>
-                      Chưa có lịch sử đổi tên.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
     );
-  };
+  }, [
+    templatePreview, panelMode, currentStatus, selectedTopicLabel, fieldErrors,
+    editForm.newTitle, editForm.reason, saving, selectedRequestId, generatedFile,
+    currentFile, detailFilesToRender, historyRows
+  ]);
 
-  const renderForm = () => {
-    if (panelMode === "create") {
-      return (
-        <div style={cardStyles.section}>
-          <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 15 }}>
-                Tạo mới
-              </div>
-              <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
-                Chỉ cần topicID hoặc topicCode và tên đề tài mới.
-              </div>
+  const previewSection = useMemo(() => {
+    const data = templatePreview;
+    const today = new Date();
+    return (
+      <div style={documentStyles.paper}>
+        <div style={documentStyles.header}>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontWeight: "bold", margin: 0 }}>BỘ GIÁO DỤC VÀ ĐÀO TẠ</p>
+            <p style={{ fontWeight: "bold", borderBottom: "1px solid #000", display: "inline-block" }}>TRƯỜNG ĐẠI HỌC ĐẠI NAM</p>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontWeight: "bold", margin: 0 }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+            <p style={{ fontWeight: "bold", borderBottom: "1px solid #000", display: "inline-block" }}>Độc lập - Tự do - Hạnh phúc</p>
+            <p style={{ fontStyle: "italic", marginTop: 4, fontSize: "14px" }}>Hà Nội, ngày {today.getDate()} tháng {today.getMonth() + 1} năm {today.getFullYear()}</p>
+          </div>
+        </div>
+
+        <h1 style={documentStyles.title}>ĐƠN XIN THAY ĐỔI TÊN ĐỀ TÀI ĐỒ ÁN</h1>
+
+        <div style={{ marginBottom: 24, textAlign: "left", paddingLeft: "15%" }}>
+          <p style={{ fontWeight: "bold", margin: 0 }}>
+            Kính gửi: &nbsp;&nbsp;&nbsp; - Ban Giám hiệu Trường Đại học Đại Nam;<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Phòng Quản lý Đào tạo;<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Lãnh đạo Khoa: Công nghệ thông tin
+          </p>
+        </div>
+
+        <div style={{ textAlign: "left" }}>
+          <div style={documentStyles.section}>
+            <span style={documentStyles.label}>Họ và tên sinh viên:</span>
+            <span style={{ ...documentStyles.field, fontWeight: "bold" }}>{readField(data, ["studentFullName", "fullName"], "........................................................")}</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginBottom: 8 }}>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Ngày sinh:</span>
+              <span style={documentStyles.field}>{formatDocDate(readField(data, ["studentDateOfBirth", "dateOfBirth"]))}</span>
+            </div>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Nơi sinh:</span>
+              <span style={documentStyles.field}>{placeOfBirth || "...................................."}</span>
             </div>
           </div>
-          <div style={cardStyles.sectionBody}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 700, fontSize: 12 }}>topicID</span>
-                <input
-                  value={createForm.topicID}
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      topicID: e.target.value,
-                    }))
-                  }
-                  placeholder="Nhập topicID"
-                  style={inputStyle}
-                />
-                {fieldErrors.topicID ? (
-                  <small style={{ color: "#b91c1c" }}>
-                    {fieldErrors.topicID}
-                  </small>
-                ) : null}
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 700, fontSize: 12 }}>topicCode</span>
-                <input
-                  value={createForm.topicCode}
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      topicCode: e.target.value,
-                    }))
-                  }
-                  placeholder="Nhập topicCode"
-                  style={inputStyle}
-                />
-                {fieldErrors.topicCode ? (
-                  <small style={{ color: "#b91c1c" }}>
-                    {fieldErrors.topicCode}
-                  </small>
-                ) : null}
-              </label>
-            </div>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 12 }}>
-                Tên đề tài mới
-              </span>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 20, marginBottom: 8 }}>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>MSV:</span>
+              <span style={documentStyles.field}>{readField(data, ["studentCode"], "....................")}</span>
+            </div>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Khóa:</span>
+              <span style={documentStyles.field}>{readField(data, ["enrollmentYear"], "....................")}</span>
+            </div>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Lớp:</span>
+              <span style={documentStyles.field}>{readField(data, ["studentClassCode", "classCode"], "....................")}</span>
+            </div>
+          </div>
+
+          <div style={documentStyles.section}>
+            <span style={documentStyles.label}>Ngành đào tạo:</span>
+            <span style={documentStyles.field}>{readField(data, ["major", "departmentName"], "Khoa Công nghệ Thông tin")}</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 20, marginBottom: 8 }}>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Số điện thoại:</span>
+              <span style={documentStyles.field}>{readField(data, ["studentPhoneNumber", "phoneNumber"], "....................")}</span>
+            </div>
+            <div style={documentStyles.section}>
+              <span style={documentStyles.label}>Email:</span>
+              <span style={documentStyles.field}>{readField(data, ["studentEmail", "email"], "....................................")}</span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <p style={{ margin: "4px 0" }}>Tên đề tài dự kiến thực hiện: <span style={{ fontStyle: "italic" }}>{readField(data, ["oldTitle", "OldTitle"], "..................................................................")}</span></p>
+          </div>
+
+          <div style={documentStyles.section}>
+            <span style={documentStyles.label}>Đề xuất người hướng dẫn khoa học:</span>
+            <span style={documentStyles.field}>{readField(data, ["supervisorName", "supervisor"], "..................................................................")}</span>
+          </div>
+
+          <p style={{ margin: "16px 0 8px" }}>Em xin được thay đổi tên đề tài đồ án như sau:</p>
+          <div style={documentStyles.section}>
+            <span style={{ fontWeight: "bold", marginRight: 8 }}>Tên đề tài đồ án(mới):</span>
+            <span style={{ ...documentStyles.field, fontWeight: "bold" }}>{readField(data, ["newTitle", "NewTitle"], "..................................................................")}</span>
+          </div>
+
+          <div style={documentStyles.section}>
+            <span style={{ fontWeight: "bold", marginRight: 8 }}>Lý do thay đổi:</span>
+            <span style={documentStyles.field}>{readField(data, ["reason", "Reason"], "..................................................................")}</span>
+          </div>
+
+          <p style={{ marginTop: 20, lineHeight: 1.4 }}>
+            Vì vậy, em làm đơn này kính đề nghị Ban Giám hiệu Nhà trường, Phòng Quản lý Đào tạo, Khoa Khoa Công nghệ Thông tin xem xét và tạo điều kiện cho em được thay đổi tên đề tài đồ án/khóa luận tốt nghiệp.<br/>
+            Em xin cam kết thực hiện nghiêm túc và đầy đủ các quy định làm đồ án của Trường.<br/>
+            <i>Xin trân trọng cảm ơn!</i>
+          </p>
+
+          <div style={documentStyles.signature}>
+            <div>
+              <p style={{ fontWeight: "bold", margin: 0 }}>Ý kiến của người hướng dẫn</p>
+              <p style={{ fontStyle: "italic", margin: 0, fontSize: "13px" }}>(Ký và ghi rõ họ tên)</p>
+            </div>
+            <div>
+              <p style={{ fontWeight: "bold", margin: 0 }}>Họ và tên sinh viên</p>
+              <p style={{ fontStyle: "italic", margin: 0, fontSize: "13px" }}>(Ký và ghi rõ họ tên)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }, [templatePreview, placeOfBirth]);
+
+  const createFormSection = useMemo(() => {
+    return (
+      <div style={cardStyles.section}>
+        <div style={cardStyles.sectionHeader}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ padding: 10, background: "#fff7ed", color: "#f37021", borderRadius: 12 }}>
+              <FilePlus size={20} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>Khởi tạo đơn mới</h3>
+              <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>Vui lòng điền đầy đủ thông tin bên dưới</p>
+            </div>
+          </div>
+        </div>
+        <div style={cardStyles.sectionBody}>
+          <div style={{ display: "grid", gap: 24 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 10, letterSpacing: "0.05em" }}>Tên đề tài mới</label>
               <input
                 value={createForm.newTitle}
-                onChange={(e) =>
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    newTitle: e.target.value,
-                  }))
-                }
-                placeholder="Nhập tên đề tài mới"
+                onChange={(e) => setCreateForm(prev => ({ ...prev, newTitle: e.target.value }))}
+                placeholder="Ví dụ: Hệ thống quản lý đào tạo trực tuyến nâng cao..."
                 style={inputStyle}
               />
-              {fieldErrors.newTitle ? (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.newTitle}
-                </small>
-              ) : null}
-            </label>
+              {fieldErrors.newTitle && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 8, fontWeight: 600 }}>{fieldErrors.newTitle}</p>}
+            </div>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 12 }}>Lý do đổi</span>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 10, letterSpacing: "0.05em" }}>Nơi sinh</label>
+              <input
+                value={placeOfBirth}
+                onChange={(e) => setPlaceOfBirth(e.target.value)}
+                placeholder="Ví dụ: Hà Nội, Việt Nam"
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 900, color: "#64748b", textTransform: "uppercase", marginBottom: 10, letterSpacing: "0.05em" }}>Lý do xin thay đổi</label>
               <textarea
                 value={createForm.reason}
-                onChange={(e) =>
-                  setCreateForm((prev) => ({ ...prev, reason: e.target.value }))
-                }
-                placeholder="Nhập lý do đổi đề tài"
+                onChange={(e) => setCreateForm(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Giải trình lý do vì sao bạn muốn đổi tên đề tài (ví dụ: Thay đổi phạm vi nghiên cứu, cập nhật công nghệ mới...)"
                 style={textareaStyle}
               />
-              {fieldErrors.reason ? (
-                <small style={{ color: "#b91c1c" }}>{fieldErrors.reason}</small>
-              ) : null}
-            </label>
-          </div>
-        </div>
-      );
-    }
+              {fieldErrors.reason && <p style={{ color: "#dc2626", fontSize: 12, marginTop: 8, fontWeight: 600 }}>{fieldErrors.reason}</p>}
+            </div>
 
-    if (panelMode === "review") {
-      return (
-        <div style={cardStyles.section}>
-          <div style={cardStyles.sectionHeader}>
-            <div>
-              <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 15 }}>
-                Duyệt / Từ chối
-              </div>
-              <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
-                Chỉ hiển thị cho role được phép.
-              </div>
+            <div style={{ padding: 20, background: "#f0f7ff", borderRadius: 20, border: "1px solid #e0f2fe", display: "flex", gap: 16 }}>
+              <div style={{ color: "#0369a1" }}><Info size={20} /></div>
+              <p style={{ margin: 0, fontSize: 13, color: "#0369a1", fontWeight: 600, lineHeight: 1.6 }}>
+                Sau khi gửi đơn, giảng viên hướng dẫn của bạn sẽ nhận được thông báo để xét duyệt. Bạn có thể theo dõi trạng thái đơn ở cột bên trái.
+              </p>
             </div>
           </div>
-          <div style={cardStyles.sectionBody}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 12 }}>
-                Nhận xét tùy chọn
-              </span>
-              <textarea
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                placeholder="Nhập comment nếu cần"
-                style={textareaStyle}
-              />
-            </label>
-          </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }, [createForm.newTitle, createForm.reason, placeOfBirth, fieldErrors]);
 
-    return renderRequestOverview();
-  };
+  const renderSidebar = () => sidebarSection;
+  const renderRequestOverview = () => overviewSection;
+  const renderDocumentPreview = () => previewSection;
+  const renderForm = () => createFormSection;
 
   const renderFooterActions = () => {
-    if (canReview) {
+    if (canReview && panelMode === "review") {
       return (
         <>
+          <button type="button" style={actionButtonGhost} onClick={() => setPanelMode("detail")}>Quay lại</button>
+          <button
+            type="button"
+            style={{ ...actionButtonDanger, background: "#fee2e2" }}
+            onClick={() => triggerReviewConfirm("Reject")}
+            disabled={saving || !selectedRequestId || !canReviewSelected}
+          >
+            <X size={16} /> Từ chối đơn
+          </button>
           <button
             type="button"
             style={actionButtonPrimary}
-            onClick={() => void submitReview("Approve")}
+            onClick={() => triggerReviewConfirm("Approve")}
             disabled={saving || !selectedRequestId || !canReviewSelected}
           >
-            <CheckCircle size={14} /> Duyệt
-          </button>
-          <button
-            type="button"
-            style={actionButtonDanger}
-            onClick={() => void submitReview("Reject")}
-            disabled={saving || !selectedRequestId || !canReviewSelected}
-          >
-            <AlertCircle size={14} /> Từ chối
-          </button>
-          <button type="button" style={actionButtonGhost} onClick={onClose}>
-            Đóng
+            <CheckCircle size={16} /> Duyệt đơn ngay
           </button>
         </>
       );
@@ -2496,29 +2297,14 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
     if (panelMode === "create") {
       return (
         <>
-          <button
-            type="button"
-            style={actionButtonGhost}
-            onClick={() => setPanelMode("detail")}
-            disabled={saving || loadingForm}
-          >
-            Hủy
-          </button>
+          <button type="button" style={actionButtonGhost} onClick={() => setPanelMode("detail")}>Hủy bỏ</button>
           <button
             type="button"
             style={actionButtonPrimary}
             onClick={() => void submitCreate()}
             disabled={saving || loadingForm || !canCreateNew}
           >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Plus size={14} />
-            )}{" "}
-            Tạo mới
-          </button>
-          <button type="button" style={actionButtonGhost} onClick={onClose}>
-            Đóng
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Gửi yêu cầu
           </button>
         </>
       );
@@ -2527,278 +2313,279 @@ const TopicRenameRequestModal: FC<TopicRenameRequestModalProps> = ({
     if (panelMode === "edit") {
       return (
         <>
-          <button
-            type="button"
-            style={actionButtonGhost}
-            onClick={() => setPanelMode("detail")}
-            disabled={saving}
-          >
-            Hủy
-          </button>
+          <button type="button" style={actionButtonGhost} onClick={() => setPanelMode("detail")}>Hủy chỉnh sửa</button>
           <button
             type="button"
             style={actionButtonPrimary}
             onClick={() => void submitEdit()}
             disabled={saving || loadingForm || !hasActiveRequest}
           >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Edit size={14} />
-            )}{" "}
-            Cập nhật
-          </button>
-          <button type="button" style={actionButtonGhost} onClick={onClose}>
-            Đóng
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Lưu thay đổi
           </button>
         </>
       );
     }
 
     return (
-      <>
-        <button
-          type="button"
-          style={actionButtonGhost}
-          onClick={() => void openCreate()}
-          disabled={loadingForm || saving || !canCreateNew}
-        >
-          <Plus size={14} /> Tạo mới
-        </button>
-        {canModifySelected ? (
-          <>
-            <button
-              type="button"
-              style={actionButtonPrimary}
-              onClick={() => void openEdit(activeRequestId)}
-              disabled={
-                saving || loadingForm || !hasActiveRequest || !canEditSelected
-              }
-            >
-              <Edit size={14} /> Sửa
-            </button>
-            {canDeleteSelected ? (
-              <button
-                type="button"
-                style={actionButtonDanger}
-                onClick={() => {
-                  if (!hasActiveRequest) return;
-                  setIsDeleteConfirmOpen(true);
-                }}
-                disabled={saving || loadingForm || !hasActiveRequest}
-              >
-                <Trash2 size={14} /> Xóa
-              </button>
-            ) : null}
-          </>
-        ) : null}
-        <button type="button" style={actionButtonGhost} onClick={onClose}>
-          Đóng
-        </button>
-      </>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {canReviewSelected && (
+          <button
+            onClick={() => setPanelMode("review")}
+            style={{ ...actionButtonPrimary, background: "#0f172a" }}
+          >
+            <Edit size={16} /> Chế độ xét duyệt
+          </button>
+        )}
+        {canEditSelected && (
+          <button
+            onClick={() => void openEdit(activeRequestId)}
+            style={actionButtonPrimary}
+          >
+            <Edit size={16} /> Chỉnh sửa đơn
+          </button>
+        )}
+        {canDeleteSelected && (
+          <button
+            onClick={() => setIsDeleteConfirmOpen(true)}
+            style={actionButtonDanger}
+          >
+            <Trash2 size={16} /> Xóa đơn
+          </button>
+        )}
+        <button type="button" style={actionButtonGhost} onClick={onClose}>Đóng cửa sổ</button>
+      </div>
     );
   };
 
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
 
   return (
     <div style={modalStyles.overlay} role="dialog" aria-modal="true">
-      <div style={modalStyles.card}>
-        <div style={modalStyles.header}>
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
-                Đơn xin đổi đề tài
+      <style>
+        {`
+          @keyframes bounceRight {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(10px); }
+          }
+          .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+        `}
+      </style>
+      
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 40 }}
+        style={modalStyles.card}
+      >
+        {/* Sidebar */}
+        {renderSidebar()}
+
+        {/* Main Content */}
+        <div style={modalStyles.content}>
+          <header style={modalStyles.header}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ width: 2, height: 32, background: "#f37021", borderRadius: 2 }} />
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 900, color: "#0f172a", margin: 0 }}>Chi tiết yêu cầu</h1>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <CalendarIcon size={12} className="text-[#94a3b8]" />
+                  <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>{new Date().toLocaleDateString("vi-VN")}</span>
+                </div>
               </div>
-              <span
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              {(panelMode === "detail" || panelMode === "review") && (
+                <button
+                  onClick={() => setShowDocumentView(!showDocumentView)}
+                  style={{
+                    ...actionButtonGhost,
+                    padding: "10px 20px",
+                    background: showDocumentView ? "#0f172a" : "#f1f5f9",
+                    color: showDocumentView ? "#fff" : "#475569",
+                    borderRadius: 12,
+                    fontSize: 13,
+                    boxShadow: showDocumentView ? "0 10px 20px -5px rgba(15, 23, 42, 0.3)" : "none",
+                  }}
+                >
+                  <FileText size={18} /> {showDocumentView ? "Xem giao diện Dashboard" : "Xem văn bản mẫu"}
+                </button>
+              )}
+              <button
+                onClick={onClose}
                 style={{
-                  borderRadius: 999,
-                  padding: "6px 10px",
-                  background: statusColors.bg,
-                  color: statusColors.text,
-                  border: `1px solid ${statusColors.border}`,
-                  fontSize: 12,
-                  fontWeight: 800,
+                  width: 40, height: 40, borderRadius: 12, border: "none", background: "#f1f5f9",
+                  color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", transition: "all 0.2s ease"
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "#e2e8f0"; e.currentTarget.style.color = "#0f172a"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.color = "#64748b"; }}
+              >
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+          </header>
+
+          <div style={modalStyles.body}>
+            {(bannerError || accessDenied) && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                style={{
+                  padding: 20, borderRadius: 20, background: "#fef2f2", border: "1px solid #fee2e2",
+                  color: "#dc2626", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 12
                 }}
               >
-                {selectedRequest?.status || "Unknown"}
-              </span>
-            </div>
-            <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
-              {selectedRequest?.requestCode
-                ? `Mã request: ${selectedRequest.requestCode}`
-                : "Danh sách và chi tiết workflow đổi tên đề tài"}
-              {selectedRequest?.createdAt
-                ? ` • Tạo lúc: ${selectedRequest.createdAt}`
-                : ""}
-            </div>
+                <AlertCircle size={20} />
+                {accessDenied || bannerError}
+              </motion.div>
+            )}
+
+            {loadingDetail ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 0", gap: 20 }}>
+                <Loader2 size={48} className="animate-spin text-[#f37021]" />
+                <p style={{ fontSize: 16, fontWeight: 800, color: "#94a3b8" }}>Đang đồng bộ dữ liệu...</p>
+              </div>
+            ) : (
+              <>
+                {panelMode === "create" 
+                  ? renderForm() 
+                  : (showDocumentView ? renderDocumentPreview() : renderRequestOverview())
+                }
+              </>
+            )}
           </div>
 
-          <button type="button" style={actionButtonGhost} onClick={onClose}>
-            <X size={16} /> Đóng
-          </button>
+          <footer style={modalStyles.footer}>
+            {renderFooterActions()}
+          </footer>
         </div>
+      </motion.div>
 
-        {(bannerError || accessDenied) && (
-          <div
-            style={{
-              margin: "12px 16px 0",
-              borderRadius: 12,
-              padding: 12,
-              background: accessDenied ? "#fff7ed" : "#fef2f2",
-              border: `1px solid ${accessDenied ? "#fdba74" : "#fecaca"}`,
-              color: accessDenied ? "#9a3412" : "#b91c1c",
-              fontSize: 13,
-            }}
-          >
-            {accessDenied || bannerError}
+      {/* Delete Confirmation Overlay */}
+      <AnimatePresence>
+        {isDeleteConfirmOpen && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              style={{ position: "absolute", inset: 0, background: "rgba(15, 23, 42, 0.6)", backdropFilter: "blur(4px)" }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              style={{
+                position: "relative", width: "min(450px, 100%)", background: "#fff", borderRadius: 32,
+                padding: 40, textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)"
+              }}
+            >
+              <div style={{ width: 80, height: 80, background: "#fef2f2", color: "#dc2626", borderRadius: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
+                <Trash2 size={40} />
+              </div>
+              <h3 style={{ fontSize: 24, fontWeight: 900, color: "#0f172a", marginBottom: 12 }}>Xác nhận xóa?</h3>
+              <p style={{ color: "#64748b", fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
+                Đơn xin đổi đề tài này sẽ bị xóa vĩnh viễn khỏi hệ thống. Bạn chắc chắn chứ?
+              </p>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button onClick={() => setIsDeleteConfirmOpen(false)} style={{ ...actionButtonGhost, flex: 1 }}>Hủy bỏ</button>
+                <button onClick={() => void submitDelete()} style={{ ...actionButtonDanger, flex: 1 }}>Xác nhận xóa</button>
+              </div>
+            </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
-        <div style={modalStyles.body}>
-          <main style={modalStyles.main}>
-            {loadingDetail && panelMode === "detail" ? (
-              <div style={cardStyles.section}>
-                <div
-                  style={{
-                    padding: 18,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    color: "#64748b",
-                  }}
-                >
-                  <Loader2 size={16} className="animate-spin" /> Đang tải chi
-                  tiết...
-                </div>
-              </div>
-            ) : null}
-
-            {panelMode === "detail" ||
-            panelMode === "edit" ||
-            panelMode === "review"
-              ? renderRequestOverview()
-              : null}
-            {panelMode === "create" || panelMode === "review"
-              ? renderForm()
-              : null}
-
-            {!selectedRequest && panelMode === "detail" ? (
-              <div style={cardStyles.section}>
-                <div style={{ padding: 18, color: "#64748b" }}>
-                  Chưa có request nào cho đề tài này. Dùng nút Tạo mới ở thanh
-                  tiêu đề của card request.
-                </div>
-              </div>
-            ) : null}
-          </main>
-        </div>
-
-        {!canReview && panelMode !== "detail" ? (
-          <div style={modalStyles.footer}>
-            <div style={{ color: "#475569", fontSize: 13 }}>
-              {loadingList ? "Đang tải dữ liệu request..." : null}
-              {selectedRequest
-                ? `Đang xem ${selectedRequest.requestCode || `#${selectedRequest.topicRenameRequestID}`}`
-                : defaultTopicTitle
-                  ? `Mở theo đề tài: ${defaultTopicTitle}`
-                  : "Chưa có request"}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {renderFooterActions()}
-            </div>
-          </div>
-        ) : null}
-
-        {isDeleteConfirmOpen ? (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 140,
-              background: "rgba(15, 23, 42, 0.58)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 16,
-            }}
-            role="dialog"
-            aria-modal="true"
-            onClick={() => {
-              setIsDeleteConfirmOpen(false);
-            }}
-          >
-            <div
+      {/* Review Confirmation Overlay */}
+      <AnimatePresence>
+        {isReviewConfirmOpen && reviewConfirmAction && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsReviewConfirmOpen(false)}
+              style={{ position: "absolute", inset: 0, background: "rgba(15, 23, 42, 0.6)", backdropFilter: "blur(4px)" }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
               style={{
-                width: "min(520px, 100%)",
-                borderRadius: 18,
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                boxShadow: "0 24px 80px rgba(15, 23, 42, 0.32)",
-                padding: 20,
-                display: "grid",
-                gap: 14,
+                position: "relative", width: "min(450px, 100%)", background: "#fff", borderRadius: 32,
+                padding: 40, textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)"
               }}
-              onClick={(event) => event.stopPropagation()}
             >
-              <div style={{ display: "grid", gap: 6 }}>
-                <div
-                  style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}
-                >
-                  Xác nhận xóa
-                </div>
-                <div
-                  style={{ fontSize: 14, color: "#475569", lineHeight: 1.6 }}
-                >
-                  Bạn có chắc muốn xóa đơn xin đổi đề tài này không? Hành động
-                  này không thể hoàn tác.
-                </div>
+              <div style={{ 
+                width: 80, height: 80, 
+                background: reviewConfirmAction === "Approve" ? "#f0fdf4" : "#fef2f2", 
+                color: reviewConfirmAction === "Approve" ? "#16a34a" : "#dc2626", 
+                borderRadius: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" 
+              }}>
+                {reviewConfirmAction === "Approve" ? <CheckCircle size={40} /> : <X size={40} />}
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  type="button"
-                  style={actionButtonGhost}
-                  onClick={() => {
-                    setIsDeleteConfirmOpen(false);
+              <h3 style={{ fontSize: 24, fontWeight: 900, color: "#0f172a", marginBottom: 12 }}>
+                {reviewConfirmAction === "Approve" ? "Xác nhận duyệt?" : "Xác nhận từ chối?"}
+              </h3>
+              <p style={{ color: "#64748b", fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
+                Bạn chắc chắn muốn {reviewConfirmAction === "Approve" ? "phê duyệt" : "từ chối"} yêu cầu đổi tên đề tài này?
+              </p>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button onClick={() => setIsReviewConfirmOpen(false)} style={{ ...actionButtonGhost, flex: 1 }}>Hủy bỏ</button>
+                <button 
+                  onClick={() => void submitReview(reviewConfirmAction)} 
+                  style={{ 
+                    ...(reviewConfirmAction === "Approve" ? actionButtonPrimary : actionButtonDanger), 
+                    flex: 1 
                   }}
-                  disabled={saving}
                 >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  style={actionButtonDanger}
-                  onClick={() => void submitDelete()}
-                  disabled={saving || !hasActiveRequest}
-                >
-                  {saving ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}{" "}
-                  Xóa
+                  Xác nhận
                 </button>
               </div>
-            </div>
+            </motion.div>
           </div>
-        ) : null}
-      </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete File Confirmation Overlay */}
+      <AnimatePresence>
+        {isDeleteFileConfirmOpen && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDeleteFileConfirmOpen(false)}
+              style={{ position: "absolute", inset: 0, background: "rgba(15, 23, 42, 0.6)", backdropFilter: "blur(4px)" }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              style={{
+                position: "relative", width: "min(450px, 100%)", background: "#fff", borderRadius: 32,
+                padding: 40, textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)"
+              }}
+            >
+              <div style={{ width: 80, height: 80, background: "#fef2f2", color: "#dc2626", borderRadius: 30, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
+                <Trash2 size={40} />
+              </div>
+              <h3 style={{ fontSize: 24, fontWeight: 900, color: "#0f172a", marginBottom: 12 }}>Xóa tài liệu?</h3>
+              <p style={{ color: "#64748b", fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
+                Tài liệu này sẽ bị xóa vĩnh viễn. Bạn có chắc chắn không?
+              </p>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button onClick={() => setIsDeleteFileConfirmOpen(false)} style={{ ...actionButtonGhost, flex: 1 }}>Quay lại</button>
+                <button onClick={() => void deleteTemplateFile()} style={{ ...actionButtonDanger, flex: 1 }}>Xác nhận xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

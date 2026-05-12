@@ -21,6 +21,9 @@ import {
   Phone,
   Users,
   TrendingUp,
+  Zap,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import { useToast } from "../../context/useToast";
@@ -68,6 +71,7 @@ interface ThesisAiAnalysisResult {
   cons: string[];
   suggestions: string[];
   summary: string;
+  feedbackForStudent: string;
 }
 
 interface LecturerTopicReviewProps {
@@ -134,6 +138,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
 
   const [aiAnalysis, setAiAnalysis] = useState<ThesisAiAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showDetailedAi, setShowDetailedAi] = useState(false);
 
   const [topicTags, setTopicTags] = useState<Tag[]>([]);
 
@@ -2854,16 +2859,15 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
 
                     {aiAnalysis && (
                       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                        {/* Score and Summary Card */}
+                        {/* 1. Score and Summary Card (Overview) */}
                         <div style={{ 
                           padding: "24px", 
                           background: "linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)", 
                           borderRadius: "24px",
                           border: "1px solid #DDD6FE",
-                          position: "relative",
-                          overflow: "hidden"
+                          boxShadow: "0 4px 12px rgba(139, 92, 246, 0.05)"
                         }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "24px", alignItems: "start" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "24px", alignItems: "center" }}>
                             <div style={{ textAlign: "center" }}>
                               <div style={{ 
                                 width: "80px", 
@@ -2883,7 +2887,7 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                               <div style={{ 
                                 marginTop: "12px",
                                 padding: "4px 12px",
-                                background: aiAnalysis.status === "Đạt" ? "#22C55E" : "#EF4444",
+                                background: aiAnalysis.status === "Đạt" ? "#22C55E" : aiAnalysis.status === "Không đạt" ? "#EF4444" : "#F59E0B",
                                 color: "white",
                                 borderRadius: "8px",
                                 fontSize: "12px",
@@ -2893,14 +2897,17 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                               </div>
                             </div>
                             <div>
-                              <p style={{ margin: 0, fontSize: "14px", color: "#4C1D95", lineHeight: "1.6", fontWeight: "500", fontStyle: "italic" }}>
-                                "{aiAnalysis.summary}"
+                              <h4 style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: "800", color: "#5B21B6", display: "flex", alignItems: "center", gap: "8px" }}>
+                                <Zap size={16} /> Nhận xét cốt lõi
+                              </h4>
+                              <p style={{ margin: 0, fontSize: "14px", color: "#4C1D95", lineHeight: "1.6", fontWeight: "500" }}>
+                                {aiAnalysis.summary}
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        {/* Pros and Cons Grid */}
+                        {/* 2. Pros and Cons (Quick Review) */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                           <div style={{ padding: "20px", background: "#F0FDF4", borderRadius: "20px", border: "1px solid #DCFCE7" }}>
                             <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#166534", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -2924,44 +2931,124 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                           </div>
                         </div>
 
-                        {/* Suggestions Card */}
-                        <div style={{ padding: "20px", background: "#FFFBEB", borderRadius: "20px", border: "1px solid #FEF3C7" }}>
-                          <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#92400E", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                            <Edit size={14} /> Gợi ý phát triển
-                          </h4>
-                          <div style={{ display: "grid", gap: "8px" }}>
-                            {aiAnalysis.suggestions.map((s, i) => (
-                              <div key={i} style={{ display: "flex", gap: "8px", fontSize: "13px", color: "#92400E", lineHeight: "1.5" }}>
-                                <span>•</span> <span>{s}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        {/* 3. Detail Toggle Button */}
+                        <button
+                          onClick={() => setShowDetailedAi(!showDetailedAi)}
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            background: "#F8FAFC",
+                            border: "1px dashed #CBD5E1",
+                            borderRadius: "16px",
+                            color: "#64748B",
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          {showDetailedAi ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          {showDetailedAi ? "Thu gọn phân tích kỹ thuật" : "Xem phân tích kỹ thuật chi tiết & Lộ trình phát triển"}
+                        </button>
 
-                        {/* Detailed Criteria */}
-                        <div>
-                          <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#1E293B", marginBottom: "12px" }}>Bảng điểm chi tiết</h4>
-                          <div style={{ display: "grid", gap: "10px" }}>
-                            {aiAnalysis.criteria.map((c, i) => (
-                              <div key={i} style={{ padding: "12px 16px", background: "white", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                                  <span style={{ fontSize: "13px", fontWeight: "700", color: "#334155" }}>{c.name}</span>
-                                  <span style={{ fontSize: "13px", fontWeight: "800", color: "#8B5CF6" }}>{c.score}/10</span>
-                                </div>
-                                <div style={{ height: "4px", background: "#F1F5F9", borderRadius: "2px", marginBottom: "8px" }}>
-                                  <div style={{ height: "100%", width: `${c.score * 10}%`, background: "#8B5CF6", borderRadius: "2px" }}></div>
-                                </div>
-                                <p style={{ margin: 0, fontSize: "12px", color: "#64748B", fontStyle: "italic" }}>{c.comment}</p>
+                        {/* 4. Detailed Section (Collapsible) */}
+                        {showDetailedAi && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "fadeIn 0.3s ease" }}>
+                            {/* Detailed Criteria */}
+                            <div>
+                              <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#1E293B", marginBottom: "12px" }}>Thẩm định chi tiết theo tiêu chí</h4>
+                              <div style={{ display: "grid", gap: "10px" }}>
+                                {aiAnalysis.criteria.map((c, i) => (
+                                  <div key={i} style={{ padding: "16px", background: "white", border: "1px solid #E2E8F0", borderRadius: "16px" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                                      <span style={{ fontSize: "13px", fontWeight: "700", color: "#334155" }}>{c.name}</span>
+                                      <span style={{ fontSize: "13px", fontWeight: "800", color: "#8B5CF6" }}>{c.score}/10</span>
+                                    </div>
+                                    <div style={{ height: "6px", background: "#F1F5F9", borderRadius: "3px", marginBottom: "12px" }}>
+                                      <div style={{ height: "100%", width: `${c.score * 10}%`, background: "linear-gradient(90deg, #8B5CF6, #A78BFA)", borderRadius: "3px" }}></div>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: "13px", color: "#475569", lineHeight: "1.6" }}>{c.comment}</p>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            </div>
+
+                            {/* Technical Suggestions / Roadmap */}
+                            <div style={{ padding: "24px", background: "#FFFBEB", borderRadius: "24px", border: "1px solid #FEF3C7" }}>
+                              <h4 style={{ fontSize: "14px", fontWeight: "800", color: "#92400E", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                                <Edit size={16} /> Lộ trình hoàn thiện & Công nghệ đề xuất
+                              </h4>
+                              <div style={{ display: "grid", gap: "12px" }}>
+                                {aiAnalysis.suggestions.map((s, i) => (
+                                  <div key={i} style={{ display: "flex", gap: "12px", fontSize: "13px", color: "#92400E", lineHeight: "1.6", background: "rgba(255,255,255,0.5)", padding: "12px", borderRadius: "12px" }}>
+                                    <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#FDE68A", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", flexShrink: 0 }}>{i + 1}</div>
+                                    <span>{s}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
+                        )}
+
+                        {/* 5. Feedback for Student Card (Always Visible) */}
+                        <div style={{ 
+                          padding: "24px", 
+                          background: "white", 
+                          borderRadius: "24px", 
+                          border: "2px solid #8B5CF6",
+                          boxShadow: "0 10px 15px -3px rgba(139, 92, 246, 0.1)"
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <h4 style={{ fontSize: "15px", fontWeight: "800", color: "#5B21B6", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                              <MessageCircle size={18} /> Phản hồi gửi Sinh viên
+                            </h4>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(aiAnalysis.feedbackForStudent);
+                                addToast("Đã sao chép phản hồi!", "success");
+                              }}
+                              style={{
+                                padding: "8px 16px",
+                                background: "#F5F3FF",
+                                color: "#8B5CF6",
+                                border: "1px solid #DDD6FE",
+                                borderRadius: "10px",
+                                fontSize: "12px",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                transition: "all 0.2s ease"
+                              }}
+                            >
+                              Sao chép nội dung
+                            </button>
+                          </div>
+                          <div style={{ 
+                            fontSize: "14px", 
+                            color: "#1e293b", 
+                            lineHeight: "1.7", 
+                            background: "#F8FAFC", 
+                            padding: "20px", 
+                            borderRadius: "16px",
+                            border: "1px solid #f1f5f9",
+                            whiteSpace: "pre-wrap",
+                            fontStyle: "italic"
+                          }}>
+                            "{aiAnalysis.feedbackForStudent}"
+                          </div>
+                          <p style={{ marginTop: "12px", fontSize: "11px", color: "#94a3b8", fontStyle: "italic", textAlign: "right" }}>
+                            * Giảng viên có thể sao chép đoạn văn này để gửi cho sinh viên.
+                          </p>
                         </div>
                       </div>
                     )}
                   </div>
-
-
-
                 </div>
               </div>
               {/* Right Column: Sidebar */}
@@ -3182,14 +3269,13 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                       Từ chối
                     </button>
                   </div>
-                                )}
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
-    )}
-
+      )}
     </div>
   );
 };

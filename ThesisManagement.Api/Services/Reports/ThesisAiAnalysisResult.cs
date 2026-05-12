@@ -11,6 +11,7 @@ namespace ThesisManagement.Api.Services.Reports
         public List<string> Cons { get; set; } = new();
         public List<string> Suggestions { get; set; } = new();
         public string Summary { get; set; } = string.Empty;
+        public string FeedbackForStudent { get; set; } = string.Empty;
     }
 
     public class CriterionRating
