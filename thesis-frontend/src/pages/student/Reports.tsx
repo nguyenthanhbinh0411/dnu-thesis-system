@@ -193,8 +193,11 @@ const Reports: React.FC = () => {
     const currentState = currentMilestone?.state;
 
     return sorted.map((m) => {
-      const isCompleted = m.ordinal < currentOrdinal || (m.ordinal === currentOrdinal && currentState === "COMPLETED");
-      const isCurrent = m.ordinal === currentOrdinal && currentState !== "COMPLETED";
+      const isCompleted =
+        m.ordinal < currentOrdinal ||
+        (m.ordinal === currentOrdinal && (currentState === "COMPLETED" || currentState === "WaitingForCommittee"));
+      const isCurrent =
+        m.ordinal === currentOrdinal && currentState !== "COMPLETED" && currentState !== "WaitingForCommittee";
       return { ...m, isCompleted, isCurrent };
     });
   }, [milestoneTemplates, currentMilestone]);
@@ -279,8 +282,8 @@ const Reports: React.FC = () => {
     }
   };
 
-  const getMilestoneTone = (isCompleted: boolean, isCurrent: boolean) => {
-    if (isCompleted) return { bg: "#ecfdf5", color: "#10b981", border: "#10b981", dot: "#10B981" };
+  const getMilestoneTone = (isCompleted: boolean, isCurrent: boolean, state?: string) => {
+    if (isCompleted || state === "WaitingForCommittee") return { bg: "#ecfdf5", color: "#10b981", border: "#10b981", dot: "#10B981" };
     if (isCurrent) return { bg: "#fff7ed", color: "#F37021", border: "#fdba74", dot: "#F37021" };
     return { bg: "#f8fafc", color: "#64748b", border: "#cbd5e1", dot: "#e2e8f0" };
   };
@@ -304,9 +307,9 @@ const Reports: React.FC = () => {
           }
           @media (max-width: 1400px) { .unified-workspace { grid-template-columns: 1fr; } }
           .custom-table th {
-            text-align: left; padding: 12px 16px; background: #F8FAFC; color: #64748B;
+            text-align: left; padding: 12px 16px; background: #FFFFFF; color: #64748B;
             font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
-            position: sticky; top: 0; z-index: 20;
+            border-bottom: 2px solid #F1F5F9;
           }
           .custom-table td { padding: 14px 16px; border-bottom: 1px solid #F1F5F9; font-size: 12px; }
           .custom-table tr:hover { background: #F8FAFC; }
@@ -342,7 +345,7 @@ const Reports: React.FC = () => {
       <div className="bg-white p-10 lg:p-12 rounded-[24px] shadow-sm border border-slate-100 relative overflow-hidden">
          <div className="flex justify-between items-start relative px-8">
             {milestoneViews.map((m, idx) => {
-               const tone = getMilestoneTone(m.isCompleted, m.isCurrent);
+               const tone = getMilestoneTone(m.isCompleted, m.isCurrent, m.ordinal === currentMilestone?.ordinal ? currentMilestone?.state : undefined);
                const nextMilestone = milestoneViews[idx + 1] || null;
                
                let lineColor = "#E2E8F0";
@@ -372,7 +375,9 @@ const Reports: React.FC = () => {
                         </span>
                         <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider"
                            style={{ background: tone.bg, color: tone.color, border: `1px solid ${tone.border}` }}>
-                           {m.isCompleted ? "Hoàn thành" : m.isCurrent ? "Đang thực hiện" : "Sắp tới"}
+                           {m.ordinal === 4 && currentMilestone?.state === "WaitingForCommittee" 
+                              ? "Chờ hội đồng & bảo vệ" 
+                              : m.isCompleted ? "Hoàn thành" : m.isCurrent ? "Đang thực hiện" : "Sắp tới"}
                         </span>
                      </div>
                   </div>
@@ -390,10 +395,16 @@ const Reports: React.FC = () => {
             </div>
             {!canSubmit && <div className="px-4 py-2 bg-orange-50 border border-orange-100 rounded-xl text-orange-600 text-[10px] font-black uppercase">Cổng đang đóng</div>}
           </div>
-          {!canSubmit ? (
+          {(!canSubmit || currentMilestone?.state === "WaitingForCommittee") ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 py-10">
-               <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300"><Clock size={32} /></div>
-               <p className="text-slate-400 font-bold italic text-sm max-w-xs text-center">{submitMessage || "Hiện tại không trong thời gian nộp bài."}</p>
+               <div className={`w-16 h-16 rounded-full flex items-center justify-center ${currentMilestone?.state === "WaitingForCommittee" ? "bg-emerald-50 text-emerald-500" : "bg-slate-50 text-slate-300"}`}>
+                  {currentMilestone?.state === "WaitingForCommittee" ? <CheckCircle size={32} /> : <Clock size={32} />}
+               </div>
+               <p className={`${currentMilestone?.state === "WaitingForCommittee" ? "text-emerald-600" : "text-slate-400"} font-bold text-sm max-w-xs text-center`}>
+                  {currentMilestone?.state === "WaitingForCommittee" 
+                    ? "Bạn đã hoàn thành tất cả các mốc báo cáo. Vui lòng chờ nhà trường sắp xếp hội đồng bảo vệ." 
+                    : (submitMessage || "Hiện tại không trong thời gian nộp bài.")}
+               </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-8">
@@ -458,7 +469,7 @@ const Reports: React.FC = () => {
         </div>
 
         {/* --- RIGHT: HISTORY TABLE --- */}
-        <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 flex flex-col overflow-hidden h-full">
+        <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 flex flex-col overflow-hidden h-full max-h-[800px]">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
              <h2 className="text-sm font-black text-slate-900 flex items-center gap-2"><Clock size={16} className="text-[#003D82]" />Lịch sử nộp báo cáo ({reports.length})</h2>
           </div>

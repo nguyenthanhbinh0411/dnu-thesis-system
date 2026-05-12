@@ -219,6 +219,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ICodeGenerator, CodeGeneratorService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IChatProvisionService, ChatProvisionService>();
+builder.Services.AddHttpClient();
 builder.Services.AddHttpClient<IGroqService, GroqService>();
 builder.Services.AddScoped<IDefensePeriodCommandProcessor, DefensePeriodCommandProcessor>();
 builder.Services.AddScoped<IDefensePeriodQueryProcessor, DefensePeriodQueryProcessor>();
@@ -286,6 +287,7 @@ builder.Services.AddScoped<IDeleteTopicRenameRequestTemplateCommand, DeleteTopic
 builder.Services.AddScoped<IReviewTopicRenameRequestCommand, ReviewTopicRenameRequestCommand>();
 builder.Services.AddScoped<IGenerateTopicRenameRequestTemplateCommand, GenerateTopicRenameRequestTemplateCommand>();
 builder.Services.AddScoped<IReportQueryProcessor, ReportQueryProcessor>();
+builder.Services.AddScoped<IReportContentExtractor, ReportContentExtractor>();
 builder.Services.AddScoped<IThesisAiAnalysisService, ThesisAiAnalysisService>();
 builder.Services.AddScoped<IProgressEvaluationDocumentService, ProgressEvaluationDocumentService>();
 builder.Services.AddScoped<IGetStudentDashboardQuery, GetStudentDashboardQuery>();

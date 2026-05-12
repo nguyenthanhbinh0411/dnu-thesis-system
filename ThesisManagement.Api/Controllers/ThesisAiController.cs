@@ -42,5 +42,24 @@ namespace ThesisManagement.Api.Controllers
             // Vì service đã xử lý lỗi và trả về FallbackResult, ta luôn trả về SuccessResponse ở tầng API
             return Ok(ApiResponse<ThesisAiAnalysisResult>.SuccessResponse(result));
         }
+
+        /// <summary>
+        /// Phân tích báo cáo tiến độ bằng AI
+        /// </summary>
+        [HttpPost("analyze-progress")]
+        public async Task<IActionResult> AnalyzeProgress([FromBody] ProgressReportAiAnalysisRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.MilestoneCode))
+                return BadRequest(ApiResponse<object>.Fail("Mã mốc tiến độ không được để trống", 400));
+
+            var result = await _aiService.AnalyzeProgressReportAsync(
+                request.MilestoneCode,
+                request.MilestoneName,
+                request.ReportTitle,
+                request.ReportDescription,
+                request.FileUrl);
+
+            return Ok(ApiResponse<ProgressReportAiAnalysisResult>.SuccessResponse(result));
+        }
     }
 }

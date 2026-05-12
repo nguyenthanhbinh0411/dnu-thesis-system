@@ -46,6 +46,7 @@ import AcademicDataManagementPage from "../pages/studentservices/AcademicDataMan
 import TopicWorkflowAudits from "../pages/admin/TopicWorkflowAudits";
 import DefensePeriodsManagement from "../pages/admin/DefensePeriodsManagement";
 import RoomsManagement from "../pages/admin/RoomsManagement";
+import MilestoneSettings from "../pages/admin/MilestoneSettings";
 import RouteErrorBoundary from "../components/RouteErrorBoundary";
 /**
  * AppRoutes chứa tất cả route của ứng dụng.
@@ -142,6 +143,7 @@ const AppRoutes: React.FC = () => {
             element={<DefensePeriodsManagement />}
           />
           <Route path="rooms" element={<RoomsManagement />} />
+          <Route path="milestones" element={<MilestoneSettings />} />
           <Route
             path="committees"
             element={<Navigate to="/admin/committees/management" replace />}
@@ -192,6 +194,7 @@ const AppRoutes: React.FC = () => {
           <Route path="departments" element={<DepartmentsManagement />} />
           <Route path="topics" element={<TopicsManagement />} />
           <Route path="tags" element={<TagsManagement />} />
+          <Route path="milestones" element={<MilestoneSettings />} />
           <Route
             path="catalogtopics"
             element={<CatalogTopicsWarehousePage />}

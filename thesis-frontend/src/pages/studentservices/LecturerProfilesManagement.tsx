@@ -85,7 +85,6 @@ type DashboardMilestone = {
   completedAt2?: string | null;
   completedAt3?: string | null;
   completedAt4?: string | null;
-  completedAt5?: string | null;
 };
 
 type DashboardSupervisor = {
@@ -342,18 +341,24 @@ function getMilestoneLabel(code: string): string {
     MS_PROG1: "Tiến độ 1",
     MS_PROG2: "Tiến độ 2",
     MS_FULL: "Nộp full",
-    MS_DEF: "Bảo vệ",
   };
   return map[code] || code;
 }
 
 function calcProgress(
   currentMilestone: DashboardMilestone | null,
-  totalMilestones = 5,
+  totalMilestones = 4,
 ): number {
   if (!currentMilestone || !totalMilestones) return 0;
   const ordinal = Number(currentMilestone.ordinal || 0);
-  if (!Number.isFinite(ordinal) || ordinal <= 1) return 0;
+  if (!Number.isFinite(ordinal) || ordinal < 1) return 0;
+
+  // Milestone 4 is the last one
+  if (ordinal === 4 && currentMilestone.state === "WaitingForCommittee") {
+    return 100;
+  }
+
+  if (ordinal <= 1) return 0;
   return Math.max(
     0,
     Math.min(100, Math.round(((ordinal - 1) / totalMilestones) * 100)),

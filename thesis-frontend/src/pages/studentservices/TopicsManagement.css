@@ -796,7 +796,7 @@
 
 .topics-timeline-horizontal {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: flex-start;
   margin-top: 12px;
   gap: 0;

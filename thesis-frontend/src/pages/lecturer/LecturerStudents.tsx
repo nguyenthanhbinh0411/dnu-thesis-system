@@ -137,9 +137,10 @@ const LecturerStudents: React.FC = () => {
       case "chờ duyệt":
         return "pending";
       case "đủ điều kiện bảo vệ":
+      case "waitingforcommittee":
       case "cần sửa đổi":
       case "revision":
-        return "defense-ready";
+        return "approved";
       case "đã phân hội đồng":
       case "phân hội đồng":
       case "từ chối":
@@ -160,9 +161,11 @@ const LecturerStudents: React.FC = () => {
     if (m.completedAt2) completedCount++;
     if (m.completedAt3) completedCount++;
     if (m.completedAt4) completedCount++;
-    if (m.completedAt5) completedCount++;
 
-    return Math.round((completedCount / 5) * 100);
+    // If milestone 4 is done or we are waiting for committee, it's essentially 100%
+    if (m.state === "WaitingForCommittee") return 100;
+
+    return Math.round((completedCount / 4) * 100);
   };
 
   // Calculate detailed stats for student
@@ -310,7 +313,7 @@ const LecturerStudents: React.FC = () => {
       case "approved":
         return "Đã duyệt";
       case "pending":
-        return "Đủ điều kiện bảo vệ";
+        return "Đang chờ duyệt";
       case "defense-ready":
         return "Đủ điều kiện bảo vệ";
       case "committee-assigned":
@@ -325,7 +328,7 @@ const LecturerStudents: React.FC = () => {
       case "approved":
         return "#22C55E";
       case "pending":
-        return "#8B5CF6";
+        return "#F59E0B";
       case "defense-ready":
         return "#8B5CF6";
       case "committee-assigned":
@@ -575,8 +578,8 @@ const LecturerStudents: React.FC = () => {
                     }}
                   >
                     <option value="all">Tất cả trạng thái</option>
+                    <option value="pending">Đang chờ duyệt</option>
                     <option value="approved">Đã duyệt</option>
-                    <option value="pending">Đủ điều kiện bảo vệ</option>
                     <option value="defense-ready">Đủ điều kiện bảo vệ</option>
                     <option value="committee-assigned">Đã phân hội đồng</option>
                   </select>
@@ -693,7 +696,7 @@ const LecturerStudents: React.FC = () => {
                   Đủ điều kiện bảo vệ
                 </div>
                 <div style={{ fontSize: "32px", fontWeight: "800", color: "#1e293b" }}>
-                  {students.filter((s) => s.status === "pending" || s.status === "defense-ready").length}
+                  {students.filter((s) => s.status === "defense-ready").length}
                 </div>
               </div>
               <div style={{ height: "4px", background: "#8B5CF6", borderRadius: "2px", width: "40%", marginTop: "12px" }} />
@@ -1790,64 +1793,70 @@ const LecturerStudents: React.FC = () => {
                         Lộ trình thực hiện
                       </h3>
                       <div style={{ display: "flex", alignItems: "flex-start", padding: "0 10px" }}>
-                        {[
-                          { code: "MS_REG", name: "Đăng ký" },
-                          { code: "MS_PROG1", name: "Báo cáo 1" },
-                          { code: "MS_PROG2", name: "Báo cáo 2" },
-                          { code: "MS_FULL", name: "Hoàn thiện" },
-                          { code: "MS_DEF", name: "Bảo vệ" }
-                        ].map((m, idx) => {
+                        {(() => {
                           const mainMilestone = detailModal.student?.milestones?.[0];
-                          const completedAtKey = `completedAt${idx + 1}` as keyof typeof mainMilestone;
-                          const completedAtValue = mainMilestone ? (mainMilestone as any)[completedAtKey] : null;
-                          const isCompleted = !!completedAtValue;
-                          
-                          // Determine current milestone: find the first one that is NOT completed
-                          let isCurrent = false;
+                          const currentState = mainMilestone?.state;
+                          const milestoneList = [
+                            { code: "MS_REG", name: "Đăng ký" },
+                            { code: "MS_PROG1", name: "Báo cáo 1" },
+                            { code: "MS_PROG2", name: "Báo cáo 2" },
+                            { 
+                              code: "MS_FULL", 
+                              name: currentState === "WaitingForCommittee" ? "Khóa luận hoàn chỉnh" : "Hoàn thiện" 
+                            }
+                          ];
+
                           const firstNotCompletedIdx = [
                             mainMilestone?.completedAt1,
                             mainMilestone?.completedAt2,
                             mainMilestone?.completedAt3,
-                            mainMilestone?.completedAt4,
-                            mainMilestone?.completedAt5
+                            mainMilestone?.completedAt4
                           ].findIndex(val => !val);
-                          
-                          if (firstNotCompletedIdx === idx) {
-                            isCurrent = true;
-                          } else if (firstNotCompletedIdx === -1 && idx === 4) {
-                            // All completed, so the last one is "current" or all are green
-                          }
 
-                          return (
-                            <React.Fragment key={m.code}>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, position: "relative" }}>
-                                <div
-                                  style={{
-                                    width: "40px",
-                                    height: "40px",
-                                    borderRadius: "14px",
-                                    backgroundColor: isCompleted ? "#10b981" : isCurrent ? "#f37021" : "#f1f5f9",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    color: isCompleted || isCurrent ? "white" : "#94a3b8",
-                                    boxShadow: isCurrent ? "0 0 0 4px rgba(243, 112, 33, 0.2)" : "none",
-                                    zIndex: 2,
-                                    transition: "all 0.3s ease",
-                                  }}
-                                >
-                                  {isCompleted ? <CheckCircle size={20} /> : <span style={{ fontWeight: "900", fontSize: "14px" }}>{idx + 1}</span>}
-                                </div>
-                                <div style={{ marginTop: "12px", textAlign: "center" }}>
-                                  <div style={{ fontSize: "13px", fontWeight: "800", color: isCurrent ? "#f37021" : "#1e293b" }}>{m.name}</div>
-                                  <div style={{ fontSize: "10px", fontWeight: "600", color: "#94a3b8", marginTop: "2px" }}>
-                                    {isCompleted ? (
-                                      <span style={{ color: "#10b981" }}>{new Date(completedAtValue).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit' })}</span>
-                                    ) : isCurrent ? "Đang làm" : "Chờ tới"}
+                          return milestoneList.map((m, idx) => {
+                            const completedAtKey = `completedAt${idx + 1}`;
+                            const completedAtValue = mainMilestone ? (mainMilestone as any)[completedAtKey] : null;
+                            let isCompleted = !!completedAtValue;
+                            
+                            if (idx === 3 && currentState === "WaitingForCommittee") {
+                              isCompleted = true;
+                            }
+
+                            let isCurrent = false;
+                            if (firstNotCompletedIdx === idx && currentState !== "WaitingForCommittee") {
+                              isCurrent = true;
+                            }
+
+                            return (
+                              <React.Fragment key={m.code}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, position: "relative" }}>
+                                  <div
+                                    style={{
+                                      width: "40px",
+                                      height: "40px",
+                                      borderRadius: "14px",
+                                      backgroundColor: isCompleted ? "#10b981" : isCurrent ? "#f37021" : "#f1f5f9",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: isCompleted || isCurrent ? "white" : "#94a3b8",
+                                      boxShadow: isCurrent ? "0 0 0 4px rgba(243, 112, 33, 0.2)" : "none",
+                                      zIndex: 2,
+                                      transition: "all 0.3s ease",
+                                    }}
+                                  >
+                                    {isCompleted ? <CheckCircle size={20} /> : <span style={{ fontWeight: "900", fontSize: "14px" }}>{idx + 1}</span>}
+                                  </div>
+                                  <div style={{ marginTop: "12px", textAlign: "center" }}>
+                                    <div style={{ fontSize: "13px", fontWeight: "800", color: isCurrent ? "#f37021" : "#1e293b" }}>{m.name}</div>
+                                    <div style={{ fontSize: "10px", fontWeight: "600", color: "#94a3b8", marginTop: "2px" }}>
+                                      {isCompleted && completedAtValue ? (
+                                        <span style={{ color: "#10b981" }}>{new Date(completedAtValue).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit' })}</span>
+                                      ) : isCurrent ? "Đang làm" : "Chờ tới"}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                                {idx < 4 && (
+                                {idx < 3 && (
                                   <div
                                     style={{
                                       flex: 1,
@@ -1865,9 +1874,10 @@ const LecturerStudents: React.FC = () => {
                                     }}
                                   />
                                 )}
-                            </React.Fragment>
-                          );
-                        })}
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
 

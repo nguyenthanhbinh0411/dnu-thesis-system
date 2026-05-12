@@ -1216,9 +1216,18 @@ const LecturerTopicReview: React.FC<LecturerTopicReviewProps> = ({
                           >
                             <div
                               style={{
-                                fontWeight: "500",
+                                fontWeight: "600",
+                                color: "#1F3C88",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                lineHeight: "1.4",
+                                maxHeight: "2.8em", // line-height * 2
                                 marginBottom: "4px",
                               }}
+                              title={topic.title}
                             >
                               {topic.title}
                             </div>

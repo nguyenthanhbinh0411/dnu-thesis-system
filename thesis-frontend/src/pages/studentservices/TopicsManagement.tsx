@@ -112,7 +112,6 @@ type DashboardMilestone = {
   completedAt2?: string | null;
   completedAt3?: string | null;
   completedAt4?: string | null;
-  completedAt5?: string | null;
 };
 
 type DashboardItem = {
@@ -568,7 +567,6 @@ function getMilestoneLabel(code: string): string {
     MS_PROG1: "Tiến độ 1",
     MS_PROG2: "Tiến độ 2",
     MS_FULL: "Nộp khóa luận hoàn chỉnh",
-    MS_DEF: "Bảo vệ khóa luận",
   };
   return map[code] || code;
 }
@@ -917,40 +915,51 @@ const TopicsManagement: React.FC = () => {
   const detailSupervisorTags = detailItem?.supervisorTags ?? [];
 
   const detailMilestones = useMemo<DetailMilestoneView[]>(() => {
-    const fallbackCodes = [
-      "MS_REG",
-      "MS_PROG1",
-      "MS_PROG2",
-      "MS_FULL",
-      "MS_DEF",
-    ];
+    const fallbackCodes = ["MS_REG", "MS_PROG1", "MS_PROG2", "MS_FULL"];
     const templateCodes = [...templates]
       .sort((a, b) => a.ordinal - b.ordinal)
-      .slice(0, 5)
+      .slice(0, 4)
       .map((item) => item.milestoneTemplateCode);
-    const codes = templateCodes.length === 5 ? templateCodes : fallbackCodes;
+    const codes = templateCodes.length === 4 ? templateCodes : fallbackCodes;
 
     const currentCode =
       detailItem?.currentMilestone?.milestoneTemplateCode || "";
     const currentOrdinal = Number(detailItem?.currentMilestone?.ordinal || 0);
+    const currentState = detailItem?.currentMilestone?.state;
+
     const completedAtValues = [
       detailItem?.currentMilestone?.completedAt1,
       detailItem?.currentMilestone?.completedAt2,
       detailItem?.currentMilestone?.completedAt3,
       detailItem?.currentMilestone?.completedAt4,
-      detailItem?.currentMilestone?.completedAt5,
     ];
 
     return codes.map((code, index) => {
       const ordinal = index + 1;
       const completedAt = completedAtValues[index] || null;
-      const isCompleted = Boolean(completedAt && String(completedAt).trim());
-      const isCurrent =
+      let isCompleted = Boolean(completedAt && String(completedAt).trim());
+
+      // If we are waiting for committee, then milestone 4 is effectively completed
+      if (ordinal === 4 && currentState === "WaitingForCommittee") {
+        isCompleted = true;
+      }
+
+      let isCurrent =
         code === currentCode || (!isCompleted && currentOrdinal === ordinal);
+
+      // If waiting for committee, it's effectively finished, so don't show as current (orange)
+      if (currentState === "WaitingForCommittee" && ordinal === 4) {
+        isCurrent = false;
+      }
+
+      let label = getMilestoneLabel(code);
+      if (ordinal === 4 && currentState === "WaitingForCommittee") {
+        label = "Chờ tạo hội đồng và bảo vệ";
+      }
 
       return {
         code,
-        label: getMilestoneLabel(code),
+        label,
         ordinal,
         isCompleted,
         isCurrent,
@@ -961,11 +970,11 @@ const TopicsManagement: React.FC = () => {
     templates,
     detailItem?.currentMilestone?.milestoneTemplateCode,
     detailItem?.currentMilestone?.ordinal,
+    detailItem?.currentMilestone?.state,
     detailItem?.currentMilestone?.completedAt1,
     detailItem?.currentMilestone?.completedAt2,
     detailItem?.currentMilestone?.completedAt3,
     detailItem?.currentMilestone?.completedAt4,
-    detailItem?.currentMilestone?.completedAt5,
   ]);
 
   const detailSummaryCards: DetailCard[] = [
@@ -1119,7 +1128,24 @@ const TopicsManagement: React.FC = () => {
                             }
                       }
                     >
-                      {toDisplay(getColumnValue(row, column))}
+                      {column.key === "title" ? (
+                        <div
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            lineHeight: "1.4",
+                            maxHeight: "2.8em",
+                          }}
+                          title={String(getColumnValue(row, column))}
+                        >
+                          {toDisplay(getColumnValue(row, column))}
+                        </div>
+                      ) : (
+                        toDisplay(getColumnValue(row, column))
+                      )}
                     </td>
                   ))}
                   <td>
@@ -1186,7 +1212,20 @@ const TopicsManagement: React.FC = () => {
                     <BookOpen size={22} />
                   </div>
                   <div className="topics-detail-header-text">
-                    <h3>{getTopicTitle(detailTopic)}</h3>
+                    <h3
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        lineHeight: "1.3",
+                        maxHeight: "2.6em",
+                      }}
+                      title={getTopicTitle(detailTopic)}
+                    >
+                      {getTopicTitle(detailTopic)}
+                    </h3>
                     <p>
                       {getTopicCode(detailTopic)} • {statusText}
                     </p>

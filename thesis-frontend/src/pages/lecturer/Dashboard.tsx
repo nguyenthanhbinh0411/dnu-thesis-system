@@ -92,9 +92,16 @@ function getChartStatusColor(status: string): string {
     DEVELOPMENT: "#8b5cf6",
     ACTIVE: "#10b981",
     CLOSED: "#64748b",
+    COMMITTEE_ASSIGNED: "#8b5cf6",
+    WAITING_FOR_COMMITTEE: "#10b981",
+    DEFENSE_READY: "#10b981",
+    "ĐÃ PHÂN HỘI ĐỒNG": "#8b5cf6",
+    "ĐỦ ĐIỀU KIỆN BẢO VỆ": "#10b981",
+    "ĐANG CHỜ": "#f59e0b",
     OTHER: "#64748b",
   };
-  return colorMap[status] || "#334155";
+  const normalized = String(status || "").toUpperCase();
+  return colorMap[normalized] || "#334155";
 }
 
 function translateStatus(status: string): string {
@@ -104,12 +111,15 @@ function translateStatus(status: string): string {
     PENDING_REVIEW: "Chờ đánh giá",
     APPROVED: "Đã duyệt",
     REJECTED: "Đã từ chối",
-    PENDING: "Chờ xử lý",
+    PENDING: "Đang chờ",
     NEEDS_REVISION: "Cần chỉnh sửa",
     RESEARCH: "Đang nghiên cứu",
     DEVELOPMENT: "Đang phát triển",
     ACTIVE: "Đang hoạt động",
     CLOSED: "Đã đóng",
+    COMMITTEE_ASSIGNED: "Đã phân hội đồng",
+    WAITING_FOR_COMMITTEE: "Đủ điều kiện bảo vệ",
+    DEFENSE_READY: "Đủ điều kiện bảo vệ",
     OTHER: "Khác",
   };
   const normalized = String(status || "").toUpperCase();

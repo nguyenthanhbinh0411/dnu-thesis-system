@@ -203,8 +203,18 @@ const getMilestoneStatusTone = (statusLabel: string) => {
   if (normalized === "hoàn thành") {
     return { bg: "#ecfdf5", color: "#059669", border: "#10b981" };
   }
-  if (normalized === "đang thực hiện" || normalized === "đang tiến hành") {
+  if (
+    normalized === "đang thực hiện" ||
+    normalized === "đang tiến hành" ||
+    normalized === "hoạt động"
+  ) {
     return { bg: "#fff7ed", color: "#F37021", border: "#fdba74" };
+  }
+  if (
+    normalized === "waitingforcommittee" ||
+    normalized === "chờ tạo hội đồng và bảo vệ"
+  ) {
+    return { bg: "#ecfdf5", color: "#059669", border: "#10b981" };
   }
   return { bg: "#f8fafc", color: "#64748b", border: "#cbd5e1" };
 };
@@ -500,30 +510,33 @@ const Dashboard: React.FC = () => {
     const currentState = dashboard?.currentMilestone?.state;
 
     return sortedMilestones.map((m) => {
+      const normalizedState = (currentState || "").toLowerCase();
       const isCompleted =
         m.ordinal < currentOrdinal ||
-        (m.ordinal === currentOrdinal && currentState === "COMPLETED");
+        (m.ordinal === currentOrdinal && (normalizedState === "completed" || normalizedState === "waitingforcommittee" || normalizedState === "waiting_for_committee"));
       const isCurrent =
-        m.ordinal === currentOrdinal && currentState !== "COMPLETED";
+        m.ordinal === currentOrdinal && !isCompleted;
 
-      let displayState = isCompleted
-        ? "Hoàn thành"
-        : isCurrent
-          ? currentState || "Đang thực hiện"
-          : "Sắp tới";
-      let isNext = false;
+      let displayState = "Sắp tới";
 
-      if (!isCompleted && !isCurrent && !hasFoundNext) {
-        displayState = "Đang tiến hành";
-        isNext = true;
-        hasFoundNext = true;
+      if (isCompleted) {
+        displayState = (m.ordinal === 4 && (normalizedState === "waitingforcommittee" || normalizedState === "waiting_for_committee"))
+          ? "Chờ tạo hội đồng và bảo vệ"
+          : "Hoàn thành";
+      } else if (isCurrent) {
+        if (normalizedState === "in_progress" || normalizedState === "in-progress" || normalizedState === "active") {
+          displayState = "Đang thực hiện";
+        } else if (normalizedState === "overdue") {
+          displayState = "Quá hạn";
+        } else {
+          displayState = currentState || "Đang thực hiện";
+        }
       }
 
       return {
         ...m,
         isCompleted,
         isCurrent,
-        isNext,
         displayState,
       };
     });
@@ -1451,15 +1464,24 @@ const dashboardStyles = `
     font-weight: 700;
   }
 
+  .stu-card--progress {
+    display: flex;
+    flex-direction: column;
+  }
+
   .stu-progress-list {
-    display: grid;
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex: 1;
+    padding-bottom: 10px;
+    gap: 25px;
   }
 
   .stu-progress-item {
     display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 14px;
     align-items: flex-start;
   }
 
@@ -1467,20 +1489,22 @@ const dashboardStyles = `
     position: relative;
     display: flex;
     justify-content: center;
+    height: 100%;
   }
 
   .stu-progress-dot {
-    width: 24px;
-    height: 24px;
+    width: 30px;
+    height: 30px;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: #ffffff;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 800;
     z-index: 1;
     background: #cbd5e1;
+    flex-shrink: 0;
   }
 
   .stu-progress-dot.is-completed { background: #10b981; }
@@ -1488,8 +1512,8 @@ const dashboardStyles = `
 
   .stu-progress-line {
     position: absolute;
-    top: 14px;
-    bottom: -38px;
+    top: 18px;
+    bottom: -50px;
     width: 2px;
     background: #e2e8f0;
     border-radius: 999px;
@@ -1517,14 +1541,14 @@ const dashboardStyles = `
 
   .stu-progress-title {
     margin: 0;
-    font-size: 13px;
+    font-size: 14.5px;
     font-weight: 800;
     color: #1e293b;
     flex: 1;
   }
 
   .stu-progress-date {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     color: #94a3b8;
     white-space: nowrap;
@@ -1532,10 +1556,10 @@ const dashboardStyles = `
 
   .stu-progress-state {
     display: inline-flex;
-    margin-top: 6px;
+    margin-top: 7px;
     border-radius: 999px;
-    padding: 3px 9px;
-    font-size: 11px;
+    padding: 4px 12px;
+    font-size: 11.5px;
     font-weight: 800;
   }
 

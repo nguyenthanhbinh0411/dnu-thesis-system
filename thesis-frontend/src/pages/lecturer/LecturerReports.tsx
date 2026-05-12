@@ -21,6 +21,7 @@ import {
   MessageCircle,
   ExternalLink,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { fetchData, normalizeUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
@@ -59,6 +60,15 @@ const normalizeLecturerState = (state: string | null | undefined): string => {
   }
   if (normalized === "PENDING") return "PENDING";
   return normalized;
+};
+
+const getMilestoneDisplayName = (code: string | null, ordinal: number | null): string => {
+  if (code === "MS_REG") return "Đăng ký đề tài";
+  if (code === "MS_PROG1" || ordinal === 2) return "Báo cáo tiến độ 1";
+  if (code === "MS_PROG2" || ordinal === 3) return "Báo cáo tiến độ 2";
+  if (code === "MS_FULL" || ordinal === 4) return "Hoàn thiện khóa luận";
+  if (code === "MS_DEFENSE" || ordinal === 5) return "Bảo vệ luận văn";
+  return code || `Mốc ${ordinal || "không xác định"}`;
 };
 
 const mapAggregateSubmission = (
@@ -226,6 +236,42 @@ const LecturerReports: React.FC = () => {
   const [activeLecturerCode, setActiveLecturerCode] = useState<string>(
     () => getLecturerCode() || "",
   );
+  const [aiLoadingId, setAiLoadingId] = useState<number | null>(null);
+  const [aiResults, setAiResults] = useState<Record<number, any>>({});
+
+  const handleAiAnalysis = async (sub: ProgressSubmission) => {
+    if (!sub.reportDescription && !sub.reportTitle) return;
+
+    setAiLoadingId(sub.submissionID);
+    try {
+      const mName = getMilestoneDisplayName(sub.milestoneCode, sub.ordinal);
+
+      const subFiles = submissionFiles[sub.submissionCode] || [];
+      const firstFileUrl = subFiles.length > 0 ? normalizeUrl(subFiles[0].fileURL) : null;
+
+      const response = await fetchData<{ data: any }>("/thesis-ai/analyze-progress", {
+        method: "POST",
+        body: JSON.stringify({
+          milestoneCode: sub.milestoneCode,
+          milestoneName: mName,
+          reportTitle: sub.reportTitle,
+          reportDescription: sub.reportDescription,
+          fileUrl: firstFileUrl
+        })
+      });
+
+      if (response?.data) {
+        setAiResults(prev => ({
+          ...prev,
+          [sub.submissionID]: response.data
+        }));
+      }
+    } catch (err) {
+      console.error("AI analysis failed:", err);
+    } finally {
+      setAiLoadingId(null);
+    }
+  };
 
   useEffect(() => {
     const resolveLecturerCode = async () => {
@@ -387,7 +433,7 @@ const LecturerReports: React.FC = () => {
       case "APPROVED":
         return "Đã duyệt";
       case "REVISION_REQUIRED":
-        return "Báo cáo có phiếu đánh giá";
+        return "Yêu cầu sửa đổi";
       case "PENDING":
         return "Đang chờ đánh giá";
       default:
@@ -408,20 +454,21 @@ const LecturerReports: React.FC = () => {
     }
   };
 
-  const getMilestoneDisplayName = (milestoneCode: string, ordinal: number | null) => {
+  const getMilestoneDisplayName = (
+    milestoneCode: string,
+    ordinal: number | null,
+  ) => {
     if (milestoneCode === "MS_REG") return "Đăng ký đề tài";
-    if (milestoneCode === "MS_PROG1" || ordinal === 1) return "Báo cáo tiến độ lần 1";
-    if (milestoneCode === "MS_PROG2" || ordinal === 2) return "Báo cáo tiến độ lần 2";
-    if (milestoneCode === "MS_PROG3" || ordinal === 3) return "Báo cáo tiến độ lần 3";
+    if (milestoneCode === "MS_PROG1") return "Báo cáo tiến độ lần 1";
+    if (milestoneCode === "MS_PROG2") return "Báo cáo tiến độ lần 2";
     if (milestoneCode === "MS_FULL" || ordinal === 4) return "Báo cáo hoàn thiện";
-    if (milestoneCode === "MS_DEF") return "Bảo vệ luận văn";
-    
-    // Fallback for generated codes
-    if (ordinal === 1) return "Báo cáo tiến độ lần 1";
-    if (ordinal === 2) return "Báo cáo tiến độ lần 2";
-    if (ordinal === 3) return "Báo cáo tiến độ lần 3";
+
+    // Fallback for generated codes or unexpected ordinals
+    if (ordinal === 1) return "Đăng ký đề tài";
+    if (ordinal === 2) return "Báo cáo tiến độ lần 1";
+    if (ordinal === 3) return "Báo cáo tiến độ lần 2";
     if (ordinal === 4) return "Báo cáo hoàn thiện";
-    
+
     return milestoneCode;
   };
 
@@ -759,9 +806,8 @@ const LecturerReports: React.FC = () => {
                   >
                     <option value="all">Tất cả trạng thái</option>
                     <option value="pending">Chờ duyệt</option>
-                    <option value="reviewed">Đang xem xét</option>
                     <option value="approved">Đã duyệt</option>
-                    <option value="evaluation">Báo cáo có phiếu đánh giá</option>
+                    <option value="rejected">Yêu cầu sửa đổi</option>
                   </select>
                 </div>
               </div>
@@ -1590,6 +1636,123 @@ const LecturerReports: React.FC = () => {
                           </p>
                         </div>
                       </div>
+
+                      {/* AI Analysis Section */}
+                      <div style={{ marginBottom: "32px" }}>
+                        <h3
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "900",
+                            color: "#f37021",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.2em",
+                            marginBottom: "16px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <Sparkles size={14} /> Phân tích thông minh (AI)
+                        </h3>
+                        
+                        {!aiResults[selectedReport.submissionID] ? (
+                          <div style={{ 
+                            padding: "24px", 
+                            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)", 
+                            borderRadius: "24px", 
+                            border: "1px dashed #fed7aa",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "12px",
+                            textAlign: "center"
+                          }}>
+                            <p style={{ fontSize: "13px", color: "#c2410c", fontWeight: "600", margin: 0 }}>
+                              Sử dụng AI để tóm tắt nhanh nội dung và nhận diện rủi ro từ báo cáo của sinh viên.
+                            </p>
+                            <button
+                              onClick={() => void handleAiAnalysis(selectedReport)}
+                              disabled={aiLoadingId === selectedReport.submissionID}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                padding: "10px 20px",
+                                borderRadius: "12px",
+                                border: "none",
+                                background: "linear-gradient(135deg, #f37021 0%, #ff8838 100%)",
+                                color: "white",
+                                fontSize: "13px",
+                                fontWeight: "800",
+                                cursor: "pointer",
+                                boxShadow: "0 4px 12px rgba(243, 112, 33, 0.2)",
+                                transition: "all 0.2s ease"
+                              }}
+                            >
+                              <Sparkles size={16} />
+                              {aiLoadingId === selectedReport.submissionID ? "Đang phân tích..." : "Phân tích ngay với AI"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ 
+                            background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)", 
+                            padding: "24px", 
+                            borderRadius: "24px", 
+                            border: "1px solid #fed7aa",
+                            boxShadow: "0 4px 6px -1px rgba(243, 112, 33, 0.05)"
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+                              <Sparkles size={18} color="#f37021" />
+                              <span style={{ fontWeight: "900", fontSize: "12px", textTransform: "uppercase", color: "#c2410c", letterSpacing: "0.1em" }}>AI Insight</span>
+                              <span style={{ 
+                                marginLeft: "auto", 
+                                padding: "4px 12px", 
+                                borderRadius: "8px", 
+                                fontSize: "11px", 
+                                fontWeight: "800",
+                                background: aiResults[selectedReport.submissionID].riskLevel === "Cao" ? "#fee2e2" : aiResults[selectedReport.submissionID].riskLevel === "Trung bình" ? "#fef3c7" : "#dcfce7",
+                                color: aiResults[selectedReport.submissionID].riskLevel === "Cao" ? "#dc2626" : aiResults[selectedReport.submissionID].riskLevel === "Trung bình" ? "#d97706" : "#16a34a"
+                              }}>
+                                Rủi ro: {aiResults[selectedReport.submissionID].riskLevel}
+                              </span>
+                            </div>
+                            
+                            <p style={{ fontSize: "15px", color: "#334155", lineHeight: "1.8", margin: "0 0 20px 0", fontWeight: "500" }}>
+                              {aiResults[selectedReport.submissionID].summary}
+                            </p>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+                              <div style={{ background: "rgba(22, 163, 74, 0.05)", padding: "16px", borderRadius: "16px", border: "1px solid rgba(22, 163, 74, 0.1)" }}>
+                                <div style={{ fontSize: "11px", fontWeight: "900", color: "#166534", textTransform: "uppercase", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <CheckCircle size={14} /> Kết quả chính
+                                </div>
+                                <div style={{ display: "grid", gap: "8px" }}>
+                                  {aiResults[selectedReport.submissionID].keyAchievements?.map((ach: string, i: number) => (
+                                    <div key={i} style={{ fontSize: "13px", color: "#166534", lineHeight: "1.4" }}>• {ach}</div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div style={{ background: "rgba(220, 38, 38, 0.05)", padding: "16px", borderRadius: "16px", border: "1px solid rgba(220, 38, 38, 0.1)" }}>
+                                <div style={{ fontSize: "11px", fontWeight: "900", color: "#991b1b", textTransform: "uppercase", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <AlertCircle size={14} /> Vấn đề cần lưu ý
+                                </div>
+                                <div style={{ display: "grid", gap: "8px" }}>
+                                  {aiResults[selectedReport.submissionID].identifiedRisks?.map((risk: string, i: number) => (
+                                    <div key={i} style={{ fontSize: "13px", color: "#991b1b", lineHeight: "1.4" }}>• {risk}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ borderTop: "1px dashed #fed7aa", paddingTop: "20px" }}>
+                              <div style={{ fontSize: "11px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", marginBottom: "8px" }}>Gợi ý phản hồi cho sinh viên:</div>
+                              <div style={{ fontSize: "14px", color: "#475569", fontStyle: "italic", background: "white", padding: "16px", borderRadius: "12px", border: "1px solid #fff7ed", lineHeight: "1.6" }}>
+                                "{aiResults[selectedReport.submissionID].suggestedFeedback}"
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                                             {/* Export Button if graded */}
                       {(selectedReport.ordinal === 4 ||
                         selectedReport.milestoneCode === "MS_FULL") &&
@@ -2227,6 +2390,80 @@ const LecturerReports: React.FC = () => {
 
                 {/* Comment Form */}
                 <div style={{ display: "grid", gap: "16px" }}>
+                  {/* AI Analysis Integration in Comment Modal */}
+                  <div style={{ 
+                    background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)", 
+                    padding: "16px", 
+                    borderRadius: "16px", 
+                    border: "1px solid #fed7aa",
+                    marginBottom: "8px"
+                  }}>
+                    {!aiResults[selectedReportForComment.submissionID] ? (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <Sparkles size={16} color="#f37021" />
+                          <span style={{ fontSize: "12px", fontWeight: "800", color: "#c2410c" }}>AI Hỗ trợ nhận xét</span>
+                        </div>
+                        <button
+                          onClick={() => void handleAiAnalysis(selectedReportForComment)}
+                          disabled={aiLoadingId === selectedReportForComment.submissionID}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: "#f37021",
+                            color: "white",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            cursor: "pointer"
+                          }}
+                        >
+                          {aiLoadingId === selectedReportForComment.submissionID ? "Đang phân tích..." : "Tóm tắt & Gợi ý"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                          <Sparkles size={16} color="#f37021" />
+                          <span style={{ fontSize: "11px", fontWeight: "900", color: "#c2410c", textTransform: "uppercase" }}>AI Insight</span>
+                          <span style={{ 
+                            marginLeft: "auto", 
+                            fontSize: "10px", 
+                            fontWeight: "800",
+                            color: aiResults[selectedReportForComment.submissionID].riskLevel === "Cao" ? "#dc2626" : "#d97706"
+                          }}>
+                            Rủi ro: {aiResults[selectedReportForComment.submissionID].riskLevel}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#475569", lineHeight: "1.5", marginBottom: "12px" }}>
+                          {aiResults[selectedReportForComment.submissionID].summary}
+                        </p>
+                        <div style={{ background: "white", padding: "10px", borderRadius: "8px", border: "1px solid #fff7ed" }}>
+                          <div style={{ fontSize: "10px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", marginBottom: "4px" }}>Gợi ý:</div>
+                          <div style={{ fontSize: "12px", color: "#334155", fontStyle: "italic" }}>
+                            "{aiResults[selectedReportForComment.submissionID].suggestedFeedback}"
+                          </div>
+                          <button
+                            onClick={() => setLecturerComment(aiResults[selectedReportForComment.submissionID].suggestedFeedback)}
+                            style={{
+                              marginTop: "8px",
+                              padding: "4px 8px",
+                              background: "#f8fafc",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "4px",
+                              fontSize: "10px",
+                              fontWeight: "700",
+                              color: "#64748b",
+                              cursor: "pointer"
+                            }}
+                          >
+                            Dùng gợi ý này
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <label
                       style={{
@@ -2513,9 +2750,8 @@ const LecturerReports: React.FC = () => {
                         }}
                       >
                         <option value="">Chọn trạng thái</option>
-                        <option value="Accepted">Duyệt</option>
-                        <option value="Revision">Báo cáo có phiếu đánh giá</option>
-                        <option value="Pending">Đang xem xét</option>
+                        <option value="APPROVED">Duyệt</option>
+                        <option value="REVISION_REQUIRED">Yêu cầu sửa đổi</option>
                       </select>
                     </div>
 

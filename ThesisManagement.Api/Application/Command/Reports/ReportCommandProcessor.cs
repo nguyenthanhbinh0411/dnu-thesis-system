@@ -53,14 +53,14 @@ namespace ThesisManagement.Api.Application.Command.Reports
             if (IsPendingTopic(topic.Status))
                 return OperationResult<StudentProgressSubmitResultDto>.Failed("Topic is pending approval", 409);
 
-            var latestSubmission = await _uow.ProgressSubmissions.Query()
-                .Where(x => x.StudentUserCode == payload.StudentUserCode)
+            var latestSubmissionForMilestone = await _uow.ProgressSubmissions.Query()
+                .Where(x => x.StudentUserCode == payload.StudentUserCode && x.MilestoneCode == payload.MilestoneCode)
                 .OrderByDescending(x => x.SubmittedAt)
                 .ThenByDescending(x => x.SubmissionID)
                 .FirstOrDefaultAsync();
 
-            if (latestSubmission != null && IsPendingLecturerState(latestSubmission.LecturerState))
-                return OperationResult<StudentProgressSubmitResultDto>.Failed("Latest submission is still pending review", 409);
+            if (latestSubmissionForMilestone != null && IsPendingLecturerState(latestSubmissionForMilestone.LecturerState))
+                return OperationResult<StudentProgressSubmitResultDto>.Failed("Latest submission for this milestone is still pending review", 409);
 
             var milestone = await _uow.ProgressMilestones.Query().FirstOrDefaultAsync(x => x.MilestoneCode == payload.MilestoneCode && x.TopicCode == payload.TopicCode);
             if (milestone == null)
@@ -112,7 +112,7 @@ namespace ThesisManagement.Api.Application.Command.Reports
                     LecturerCode = lecturerProfile.LecturerCode,
                     LecturerProfileID = lecturerProfile.LecturerProfileID,
                     Ordinal = milestone.Ordinal,
-                    AttemptNumber = payload.AttemptNumber ?? 1,
+                    AttemptNumber = (latestSubmissionForMilestone?.AttemptNumber ?? 0) + 1,
                     LecturerState = "PENDING",
                     ReportTitle = payload.ReportTitle,
                     ReportDescription = payload.ReportDescription,

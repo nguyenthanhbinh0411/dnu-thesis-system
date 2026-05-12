@@ -152,7 +152,8 @@ type RowStatus =
   | "rejected"
   | "revision"
   | "defense-ready"
-  | "committee-assigned";
+  | "committee-assigned"
+  | "none";
 
 type DashboardRowView = StudentDashboardItem & {
   __status: RowStatus;
@@ -328,7 +329,14 @@ function calcProgress(
 ): number {
   if (!currentMilestone || !totalTemplates) return 0;
   const ordinal = Number(currentMilestone.ordinal || 0);
-  if (!Number.isFinite(ordinal) || ordinal <= 1) return 0;
+  if (!Number.isFinite(ordinal) || ordinal < 1) return 0;
+
+  // If we are at the last milestone (4) and waiting for committee, it's 100%
+  if (ordinal === 4 && currentMilestone.state === "WaitingForCommittee") {
+    return 100;
+  }
+
+  if (ordinal <= 1) return 0;
   return Math.max(
     0,
     Math.min(100, Math.round(((ordinal - 1) / totalTemplates) * 100)),
@@ -341,7 +349,6 @@ function getMilestoneLabel(code: string): string {
     MS_PROG1: "Tiến độ 1",
     MS_PROG2: "Tiến độ 2",
     MS_FULL: "Nộp full",
-    MS_DEF: "Bảo vệ",
   };
   return map[code] || code;
 }
@@ -688,42 +695,53 @@ const StudentProfilesManagement: React.FC = () => {
   const detailTopicTags = detailStudent?.topicTags ?? [];
   const detailSupervisorTags = detailStudent?.supervisorTags ?? [];
   const detailMilestones = useMemo(() => {
-    const fallbackCodes = [
-      "MS_REG",
-      "MS_PROG1",
-      "MS_PROG2",
-      "MS_FULL",
-      "MS_DEF",
-    ];
+    const fallbackCodes = ["MS_REG", "MS_PROG1", "MS_PROG2", "MS_FULL"];
     const templateCodes = [...templates]
       .sort((a, b) => a.ordinal - b.ordinal)
-      .slice(0, 5)
+      .slice(0, 4)
       .map((item) => item.milestoneTemplateCode);
-    const codes = templateCodes.length === 5 ? templateCodes : fallbackCodes;
+    const codes = templateCodes.length === 4 ? templateCodes : fallbackCodes;
 
     const currentCode =
       detailStudent?.currentMilestone?.milestoneTemplateCode || "";
     const currentOrdinal = Number(
       detailStudent?.currentMilestone?.ordinal || 0,
     );
+    const currentState = detailStudent?.currentMilestone?.state;
+
     const completedAtValues = [
       detailStudent?.currentMilestone?.completedAt1,
       detailStudent?.currentMilestone?.completedAt2,
       detailStudent?.currentMilestone?.completedAt3,
       detailStudent?.currentMilestone?.completedAt4,
-      detailStudent?.currentMilestone?.completedAt5,
     ];
 
     return codes.map((code, index) => {
       const ordinal = index + 1;
       const completedAt = completedAtValues[index] || null;
-      const isCompleted = Boolean(completedAt && String(completedAt).trim());
-      const isCurrent =
+      let isCompleted = Boolean(completedAt && String(completedAt).trim());
+
+      // If we are waiting for committee, then milestone 4 is effectively completed
+      if (ordinal === 4 && currentState === "WaitingForCommittee") {
+        isCompleted = true;
+      }
+
+      let isCurrent =
         code === currentCode || (!isCompleted && currentOrdinal === ordinal);
+
+      // If waiting for committee, it's effectively finished, so don't show as current (orange)
+      if (currentState === "WaitingForCommittee" && ordinal === 4) {
+        isCurrent = false;
+      }
+
+      let label = getMilestoneLabel(code);
+      if (ordinal === 4 && currentState === "WaitingForCommittee") {
+        label = "Chờ tạo hội đồng và bảo vệ";
+      }
 
       return {
         code,
-        label: getMilestoneLabel(code),
+        label,
         ordinal,
         isCompleted,
         isCurrent,
@@ -734,11 +752,11 @@ const StudentProfilesManagement: React.FC = () => {
     templates,
     detailStudent?.currentMilestone?.milestoneTemplateCode,
     detailStudent?.currentMilestone?.ordinal,
+    detailStudent?.currentMilestone?.state,
     detailStudent?.currentMilestone?.completedAt1,
     detailStudent?.currentMilestone?.completedAt2,
     detailStudent?.currentMilestone?.completedAt3,
     detailStudent?.currentMilestone?.completedAt4,
-    detailStudent?.currentMilestone?.completedAt5,
   ]);
 
   const getLecturerStateLabel = (state?: string): string => {

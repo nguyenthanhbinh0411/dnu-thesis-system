@@ -18,7 +18,7 @@ interface Milestone {
   title: string;
   description: string;
   deadline: string;
-  status: "completed" | "in-progress" | "pending" | "overdue";
+  status: "completed" | "in-progress" | "pending" | "overdue" | "waiting-for-committee";
   completedDate?: string;
   ordinal: number; // Add ordinal
 }
@@ -84,8 +84,12 @@ const Progress: React.FC = () => {
               (pm) => pm.ordinal === template.ordinal,
             );
 
-            let status: "completed" | "in-progress" | "pending" | "overdue" =
-              "pending";
+            let status:
+              | "completed"
+              | "in-progress"
+              | "pending"
+              | "overdue"
+              | "waiting-for-committee" = "pending";
             let completedDate: string | undefined;
             const deadline: string = template.deadline;
 
@@ -105,26 +109,29 @@ const Progress: React.FC = () => {
                 case "MS_FULL":
                   specificCompletedAt = progressMilestone.completedAt4;
                   break;
-                case "MS_DEF":
-                  specificCompletedAt = progressMilestone.completedAt5;
-                  break;
                 default:
                   // Fallback: check if any completedAt is set
                   specificCompletedAt =
                     progressMilestone.completedAt1 ||
                     progressMilestone.completedAt2 ||
                     progressMilestone.completedAt3 ||
-                    progressMilestone.completedAt4 ||
-                    progressMilestone.completedAt5;
+                    progressMilestone.completedAt4;
                   break;
               }
 
-              if (specificCompletedAt) {
+              // Priority 1: Check if this is the final milestone waiting for committee
+              const state = progressMilestone.state.toLowerCase();
+              if (state === "waitingforcommittee" && template.ordinal === 4) {
+                status = "waiting-for-committee";
+                if (specificCompletedAt) completedDate = specificCompletedAt.split("T")[0];
+              }
+              // Priority 2: Check if actually completed
+              else if (specificCompletedAt) {
                 status = "completed";
                 completedDate = specificCompletedAt.split("T")[0];
-              } else {
-                // Check if this milestone should be in progress based on state
-                const state = progressMilestone.state.toLowerCase();
+              } 
+              // Priority 3: Other states
+              else {
                 if (
                   state === "đang thực hiện" ||
                   state === "đang tiến hành" ||
@@ -188,80 +195,13 @@ const Progress: React.FC = () => {
                   completedDate = progressMilestone.completedAt4?.split("T")[0];
                 }
                 break;
-              case 5: // MS_DEF
-                isCompleted = !!progressMilestone.completedAt5;
-                if (isCompleted) {
-                  completedDate = progressMilestone.completedAt5?.split("T")[0];
-                }
-                break;
-              default:
-                isCompleted = false;
-                break;
             }
 
-            // If this milestone is completed, all previous milestones should also be completed
             if (isCompleted) {
               return {
                 ...milestone,
                 status: "completed" as const,
-                completedDate: completedDate || milestone.completedDate,
-              };
-            }
-
-            // Check if any higher ordinal milestone is completed (meaning this one should be completed too)
-            const higherOrdinalsCompleted = [1, 2, 3, 4, 5]
-              .filter((ord) => ord > milestone.ordinal)
-              .some((ord) => {
-                switch (ord) {
-                  case 1:
-                    return !!progressMilestone.completedAt1;
-                  case 2:
-                    return !!progressMilestone.completedAt2;
-                  case 3:
-                    return !!progressMilestone.completedAt3;
-                  case 4:
-                    return !!progressMilestone.completedAt4;
-                  case 5:
-                    return !!progressMilestone.completedAt5;
-                  default:
-                    return false;
-                }
-              });
-
-            if (higherOrdinalsCompleted) {
-              // Find the earliest completion date from higher ordinals
-              let earliestCompletedDate: string | undefined;
-              for (let ord = milestone.ordinal + 1; ord <= 5; ord++) {
-                let date: string | null = null;
-                switch (ord) {
-                  case 1:
-                    date = progressMilestone.completedAt1;
-                    break;
-                  case 2:
-                    date = progressMilestone.completedAt2;
-                    break;
-                  case 3:
-                    date = progressMilestone.completedAt3;
-                    break;
-                  case 4:
-                    date = progressMilestone.completedAt4;
-                    break;
-                  case 5:
-                    date = progressMilestone.completedAt5;
-                    break;
-                }
-                if (
-                  date &&
-                  (!earliestCompletedDate || date < earliestCompletedDate)
-                ) {
-                  earliestCompletedDate = date.split("T")[0];
-                }
-              }
-
-              return {
-                ...milestone,
-                status: "completed" as const,
-                completedDate: earliestCompletedDate || milestone.completedDate,
+                completedDate,
               };
             }
 
@@ -366,7 +306,7 @@ const Progress: React.FC = () => {
   }
 
   const completedCount = milestones.filter(
-    (m) => m.status === "completed",
+    (m) => m.status === "completed" || m.status === "waiting-for-committee",
   ).length;
   const totalCount = milestones.length;
   const progressPercentage = Math.round((completedCount / totalCount) * 100);
@@ -379,6 +319,8 @@ const Progress: React.FC = () => {
         return "#f37021";
       case "overdue":
         return "#ef4444";
+      case "waiting-for-committee":
+        return "#22c55e";
       default:
         return "#94a3b8";
     }
@@ -392,6 +334,8 @@ const Progress: React.FC = () => {
         return <Clock size={24} color="#f37021" />;
       case "overdue":
         return <AlertCircle size={24} color="#ef4444" />;
+      case "waiting-for-committee":
+        return <CheckCircle size={24} color="#22c55e" />;
       default:
         return <Circle size={24} color="#94a3b8" />;
     }
@@ -405,6 +349,8 @@ const Progress: React.FC = () => {
         return "Đang thực hiện";
       case "overdue":
         return "Quá hạn";
+      case "waiting-for-committee":
+        return "Chờ tạo hội đồng và bảo vệ";
       default:
         return "Chưa bắt đầu";
     }
@@ -716,7 +662,7 @@ const Progress: React.FC = () => {
                     flex: 1,
                     padding: "20px",
                     background:
-                      milestone.status === "completed"
+                      milestone.status === "completed" || milestone.status === "waiting-for-committee"
                         ? "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)"
                         : milestone.status === "in-progress"
                           ? "linear-gradient(135deg, #fff5f0 0%, #ffe8dc 100%)"

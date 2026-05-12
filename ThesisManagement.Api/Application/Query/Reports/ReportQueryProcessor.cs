@@ -405,6 +405,13 @@ namespace ThesisManagement.Api.Application.Query.Reports
             if (milestone == null)
                 return null;
 
+            var displayState = milestone.State;
+            // If milestone 4 (MS_FULL) is done or deadline passed, transition to WaitingForCommittee
+            if (milestone.Ordinal == 4 && (displayState == "Hoàn thành" || (milestone.Deadline.HasValue && DateTime.Now > milestone.Deadline.Value)))
+            {
+                displayState = "WaitingForCommittee";
+            }
+
             return new ReportMilestoneDto(
                 milestone.MilestoneID,
                 milestone.MilestoneCode,
@@ -412,13 +419,13 @@ namespace ThesisManagement.Api.Application.Query.Reports
                 milestone.MilestoneTemplateCode,
                 milestone.Ordinal,
                 milestone.Deadline,
-                milestone.State,
+                displayState,
                 milestone.StartedAt,
                 milestone.CompletedAt1,
                 milestone.CompletedAt2,
                 milestone.CompletedAt3,
                 milestone.CompletedAt4,
-                milestone.CompletedAt5);
+                null); // CompletedAt5 removed as milestone 5 is deleted
         }
 
         private async Task<ReportSupervisorDto?> GetSupervisorAsync(string? supervisorLecturerCode, int? supervisorLecturerProfileId)
