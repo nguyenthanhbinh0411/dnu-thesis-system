@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
   Download,
   Eye,
   FileSpreadsheet,
@@ -23,6 +24,7 @@ import {
   Trash2,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { useToast } from "../../context/useToast";
 import { FetchDataError, fetchData } from "../../api/fetchData";
@@ -1725,7 +1727,7 @@ const CommitteeManagement: React.FC = () => {
         format: "xlsx" | "excel" | "csv" | "pdf",
       ) => {
         if (!defensePeriodId) {
-          throw new Error("Thiếu mã đợt bảo vệ để xuất danh sách hội đồng.");
+          throw new Error("Thiếu mã đợt đồ án tốt nghiệp để xuất danh sách hội đồng.");
         }
 
         const params = new URLSearchParams({
@@ -4259,6 +4261,9 @@ const CommitteeManagement: React.FC = () => {
       selectedTopicCodes: normalizedSelectedTopicCodes,
       selectedLecturerCodes: normalizedSelectedLecturerCodes,
       selectedRooms: normalizedSelectedRooms,
+      generationStartDate: autoStartDate ? `${autoStartDate}T00:00:00Z` : undefined,
+      generationEndDate: autoEndDate ? `${autoEndDate}T23:59:59Z` : undefined,
+      maxCouncilsPerDay: maxCapacity,
       tags: normalizedConfigCouncilTagCodes,
       strategy: {
         groupByTag: autoGroupByTag,
@@ -4272,6 +4277,8 @@ const CommitteeManagement: React.FC = () => {
         },
       },
       constraints: {
+        avoidSupervisorConflict: true,
+        avoidLecturerOverlap: true,
         requireRoles: ["CT", "UVTK", "UVPB"],
       },
     };
@@ -4568,10 +4575,10 @@ const CommitteeManagement: React.FC = () => {
         return;
       }
       setConfigSaved(true);
-      notifySuccess("Đã lưu cấu hình tham số đợt bảo vệ.");
+      notifySuccess("Đã lưu cấu hình tham số đợt đồ án tốt nghiệp.");
     } catch {
       setConfigSaved(false);
-      notifyError("Không lưu được cấu hình đợt bảo vệ.");
+      notifyError("Không lưu được cấu hình đợt đồ án tốt nghiệp.");
     } finally {
       setActionInFlight(null);
     }
@@ -4642,7 +4649,7 @@ const CommitteeManagement: React.FC = () => {
   const exportCouncilRoster = useCallback(
     async (format: "xlsx" | "excel" | "csv" | "pdf") => {
       if (!defensePeriodId) {
-        notifyWarning("Thiếu mã đợt bảo vệ để xuất danh sách hội đồng.");
+        notifyWarning("Thiếu mã đợt đồ án tốt nghiệp để xuất danh sách hội đồng.");
         return;
       }
 
@@ -9482,26 +9489,69 @@ const CommitteeManagement: React.FC = () => {
             >
               <div
                 className="committee-modal"
-                style={{ width: "min(1120px, calc(100vw - 32px))", maxHeight: "calc(100vh - 48px)", padding: 18 }}
+                style={{ 
+                  width: "min(1200px, calc(100vw - 32px))", 
+                  maxHeight: "calc(100vh - 48px)", 
+                  padding: 24,
+                  position: "relative" 
+                }}
                 onClick={(event) => event.stopPropagation()}
               >
+                {/* Loading Overlay */}
+                {assignmentLoading && (
+                  <div className="committee-modal-loading-overlay" style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "rgba(255, 255, 255, 0.8)",
+                    zIndex: 100,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    borderRadius: 16
+                  }}>
+                    <RefreshCw className="committee-spin" size={32} color="#2563eb" />
+                    <div style={{ fontWeight: 600, color: "#1e293b" }}>Đang xử lý tạo hội đồng tự động...</div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>Hệ thống đang tính toán phân bổ tối ưu, vui lòng chờ trong giây lát.</div>
+                  </div>
+                )}
+
                 <div className="committee-modal-head">
                   <div>
                     <div className="committee-modal-title">
-                      Cấu hình tạo hội đồng tự động
+                      Tạo hội đồng bảo vệ tự động
                     </div>
                     <div className="committee-modal-sub">
-                      Chọn dữ liệu đủ điều kiện trong đợt hiện tại, sau đó gửi yêu
-                      cầu để backend thực hiện phân công tự động.
+                      {autoGenerateStep === 1 
+                        ? "Bước 1: Chọn danh sách đề tài và giảng viên tham gia." 
+                        : "Bước 2: Thiết lập các tham số vận hành và thuật toán phân bổ."}
                     </div>
                   </div>
                   <button
                     type="button"
                     className="committee-ghost-btn committee-icon-btn"
                     onClick={closeAutoGenerateModal}
+                    disabled={assignmentLoading}
                   >
                     <X size={16} />
                   </button>
+                </div>
+
+                {/* Step Indicators */}
+                <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                  <div style={{ 
+                    flex: 1, 
+                    height: 4, 
+                    borderRadius: 2, 
+                    background: autoGenerateStep >= 1 ? "#2563eb" : "#e2e8f0" 
+                  }} />
+                  <div style={{ 
+                    flex: 1, 
+                    height: 4, 
+                    borderRadius: 2, 
+                    background: autoGenerateStep >= 2 ? "#2563eb" : "#e2e8f0" 
+                  }} />
                 </div>
 
                 {autoGenerateModalAlert && (
@@ -9511,645 +9561,313 @@ const CommitteeManagement: React.FC = () => {
                         ? "committee-modal-alert committee-modal-alert-error"
                         : "committee-modal-alert"
                     }
-                    style={{ marginBottom: 10 }}
+                    style={{ marginBottom: 16 }}
                   >
                     {autoGenerateModalAlert.message}
                   </div>
                 )}
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className={
-                      autoGenerateStep === 1
-                        ? "committee-primary-btn committee-modal-step-btn"
-                        : "committee-ghost-btn committee-modal-step-btn"
-                    }
-                    style={{ minHeight: 34, padding: "6px 12px" }}
-                    onClick={() => setAutoGenerateStep(1)}
-                    disabled={councilListLocked}
-                  >
-                    <span className="committee-inline-icon-label">
-                      <Search size={14} />
-                      <span>1. Chọn đề tài và giảng viên</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      autoGenerateStep === 2
-                        ? "committee-primary-btn committee-modal-step-btn"
-                        : "committee-ghost-btn committee-modal-step-btn"
-                    }
-                    style={{ minHeight: 34, padding: "6px 12px" }}
-                    onClick={proceedAutoGenerateStep2}
-                    disabled={councilListLocked}
-                  >
-                    <span className="committee-inline-icon-label">
-                      <Layers3 size={14} />
-                      <span>2. Nhập tham số tạo hội đồng</span>
-                    </span>
-                  </button>
-                </div>
-
                 <div
                   style={{
                     marginTop: 12,
-                    display: "grid",
-                    gap: 12,
+                    overflow: "auto",
+                    maxHeight: "calc(100vh - 280px)",
+                    paddingRight: 4,
                   }}
                 >
                   {autoGenerateStep === 1 ? (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-                        gap: 12,
-                      }}
-                    >
-                      <div className="committee-modal-card" style={{ gap: 10 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 14,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                      {/* Chọn Đề tài */}
+                      <div className="committee-modal-card" style={{ gap: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                             <Search size={14} />
-                            <span>Đề tài đủ điều kiện ({selectedAutoTopicIds.length}/{filteredAutoTopics.length})</span>
+                            <span>Đề tài hợp lệ ({selectedAutoTopicIds.length})</span>
                           </div>
-                          <div style={{ display: "flex", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 4 }}>
                             <button
                               type="button"
-                              className="committee-ghost-btn committee-modal-step-btn"
-                              style={{ minHeight: 30, padding: "4px 10px" }}
-                              onClick={() => void syncData()}
-                              disabled={councilListLocked || syncing || Boolean(actionInFlight)}
+                              className="committee-ghost-btn"
+                              style={{ padding: "4px 8px", fontSize: 11 }}
+                              onClick={() => setSelectedAutoTopicIds(filteredAutoTopics.map(t => t.topicId ?? t.topicCode ?? "").filter(Boolean))}
                             >
-                              <span className="committee-inline-icon-label">
-                                <RefreshCw size={13} />
-                                <span>{syncing ? "Đang đồng bộ..." : "Đồng bộ dữ liệu"}</span>
-                              </span>
+                              Tất cả
                             </button>
                             <button
                               type="button"
-                              className="committee-ghost-btn committee-modal-step-btn"
-                              style={{ minHeight: 30, padding: "4px 10px" }}
-                              onClick={() =>
-                                setSelectedAutoTopicIds(
-                                  filteredAutoTopics
-                                    .map((topic) => topic.topicId ?? topic.topicCode ?? "")
-                                    .filter(
-                                      (id): id is number | string =>
-                                        id !== "" && id !== null && id !== undefined,
-                                    ),
-                                )
-                              }
-                              disabled={councilListLocked}
-                            >
-                              <span className="committee-inline-icon-label">
-                                <CheckCircle2 size={13} />
-                                <span>Chọn tất cả</span>
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              className="committee-ghost-btn committee-modal-step-btn"
-                              style={{ minHeight: 30, padding: "4px 10px" }}
+                              className="committee-ghost-btn"
+                              style={{ padding: "4px 8px", fontSize: 11 }}
                               onClick={() => setSelectedAutoTopicIds([])}
-                              disabled={councilListLocked}
                             >
-                              <span className="committee-inline-icon-label">
-                                <X size={13} />
-                                <span>Bỏ chọn</span>
-                              </span>
+                              Bỏ chọn
                             </button>
                           </div>
                         </div>
-
-                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                          {syncedAt ? `Lần đồng bộ gần nhất: ${syncedAt}` : "Chưa có lần đồng bộ gần nhất."}
-                          {syncStatus === "timeout" ? " · Có lỗi timeout khi đồng bộ." : ""}
-                        </div>
-
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={{ fontWeight: 700, fontSize: 12 }}>Tìm đề tài</span>
-                          <input
-                            type="text"
-                            value={topicSearchKeyword}
-                            onChange={(event) => setTopicSearchKeyword(event.target.value)}
-                            placeholder="Mã đề tài / tên đề tài / tag"
-                          />
-                        </label>
-
-                        <div
-                          style={{
-                            maxHeight: 320,
-                            overflow: "auto",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 10,
-                            padding: 8,
-                            display: "grid",
-                            gap: 6,
-                          }}
-                        >
-                          {filteredAutoTopics.map((topic) => {
+                        <input
+                          type="text"
+                          value={topicSearchKeyword}
+                          onChange={(e) => setTopicSearchKeyword(e.target.value)}
+                          placeholder="Tìm mã/tên đề tài..."
+                          style={{ height: 36, fontSize: 13 }}
+                        />
+                        <div style={{ 
+                          maxHeight: 350, 
+                          overflow: "auto", 
+                          border: "1px solid #e2e8f0", 
+                          borderRadius: 12, 
+                          padding: 8,
+                          display: "grid",
+                          gap: 6
+                        }}>
+                          {filteredAutoTopics.map(topic => {
                             const id = topic.topicId ?? topic.topicCode ?? "";
                             const checked = selectedAutoTopicIds.includes(id);
                             return (
-                              <label
-                                key={`topic-${id}`}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "auto 1fr",
-                                  gap: 8,
-                                  alignItems: "start",
-                                  padding: 8,
-                                  border: "1px solid #e2e8f0",
-                                  borderRadius: 8,
-                                  background: checked ? "#fff7ed" : "#ffffff",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => toggleAutoTopic(id)}
-                                  disabled={councilListLocked}
-                                />
-                                <div>
-                                  <div style={{ fontSize: 12, fontWeight: 700 }}>
-                                    {topic.topicCode ?? topic.topicId ?? "-"}
-                                  </div>
-                                  <div style={{ fontSize: 12, marginTop: 2 }}>
-                                    {topic.title ?? "(Không tiêu đề)"}
-                                  </div>
-                                  <div style={{ fontSize: 11, marginTop: 2, color: "#64748b" }}>
-                                    Tags: {getTagDisplayList(topic.tagCodes ?? []).join(", ") || "-"}
-                                  </div>
+                              <label key={`topic-${id}`} style={{ 
+                                display: "grid", 
+                                gridTemplateColumns: "auto 1fr", 
+                                gap: 10, 
+                                padding: 10, 
+                                border: "1px solid #f1f5f9", 
+                                borderRadius: 10,
+                                background: checked ? "#eff6ff" : "#fff",
+                                cursor: "pointer"
+                              }}>
+                                <input type="checkbox" checked={checked} onChange={() => toggleAutoTopic(id)} />
+                                <div style={{ fontSize: 12 }}>
+                                  <div style={{ fontWeight: 700 }}>{topic.topicCode ?? topic.topicId}</div>
+                                  <div style={{ color: "#475569", marginTop: 2 }}>{topic.title}</div>
+                                  {topic.tagCodes && topic.tagCodes.length > 0 && (
+                                    <div style={{ fontSize: 10, color: "#3b82f6", marginTop: 4 }}>
+                                      #{topic.tagCodes.join(" #")}
+                                    </div>
+                                  )}
                                 </div>
                               </label>
                             );
                           })}
-                          {filteredAutoTopics.length === 0 && (
-                            <div style={{ fontSize: 12, color: "#64748b", padding: 8 }}>
-                              Chưa có đề tài đủ điều kiện để hiển thị.
-                            </div>
-                          )}
                         </div>
                       </div>
 
-                      <div className="committee-modal-card" style={{ gap: 8 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 14,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
+                      {/* Chọn Giảng viên */}
+                      <div className="committee-modal-card" style={{ gap: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                             <Users size={14} />
-                            <span>Giảng viên tham gia ({selectedAutoLecturerIds.length}/{availableAutoLecturers.length})</span>
+                            <span>Giảng viên tham gia ({selectedAutoLecturerIds.length})</span>
                           </div>
-                          <div style={{ display: "flex", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 4 }}>
                             <button
                               type="button"
-                              className="committee-ghost-btn committee-modal-step-btn"
-                              style={{ minHeight: 30, padding: "4px 10px" }}
-                              onClick={() =>
-                                setSelectedAutoLecturerIds(
-                                  availableAutoLecturers
-                                    .map(
-                                      (lecturer) =>
-                                        lecturer.lecturerProfileId ??
-                                        lecturer.lecturerId ??
-                                        lecturer.lecturerCode ??
-                                        "",
-                                    )
-                                    .filter(
-                                      (id): id is number | string =>
-                                        id !== "" && id !== null && id !== undefined,
-                                    ),
-                                )
-                              }
-                              disabled={councilListLocked}
+                              className="committee-ghost-btn"
+                              style={{ padding: "4px 8px", fontSize: 11 }}
+                              onClick={() => setSelectedAutoLecturerIds(availableAutoLecturers.map(l => l.lecturerProfileId ?? l.lecturerId ?? l.lecturerCode ?? "").filter(Boolean))}
                             >
-                              <span className="committee-inline-icon-label">
-                                <CheckCircle2 size={13} />
-                                <span>Chọn tất cả</span>
-                              </span>
+                              Tất cả
                             </button>
                             <button
                               type="button"
-                              className="committee-ghost-btn committee-modal-step-btn"
-                              style={{ minHeight: 30, padding: "4px 10px" }}
+                              className="committee-ghost-btn"
+                              style={{ padding: "4px 8px", fontSize: 11 }}
                               onClick={() => setSelectedAutoLecturerIds([])}
-                              disabled={councilListLocked}
                             >
-                              <span className="committee-inline-icon-label">
-                                <X size={13} />
-                                <span>Bỏ chọn</span>
-                              </span>
+                              Bỏ chọn
                             </button>
                           </div>
                         </div>
-
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "minmax(130px, 170px) minmax(0, 1fr) auto",
-                            gap: 8,
-                            alignItems: "end",
-                          }}
-                        >
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 12 }}>
-                              Nguồn giảng viên
-                            </span>
-                            <InlinePicker
-                              value={lecturerSourceFilter}
-                              onChange={(event) =>
-                                setLecturerSourceFilter(
-                                  event as "all" | "committee" | "supervisor",
-                                )
-                              }
-                              ariaLabel="Nguồn giảng viên"
-                              className="prepare-picker-wide committee-filter-picker"
-                              options={[
-                                { value: "all", label: "Tất cả" },
-                                {
-                                  value: "committee",
-                                  label: "Đã vào hội đồng",
-                                },
-                                {
-                                  value: "supervisor",
-                                  label: "GV hướng dẫn",
-                                },
-                              ]}
-                            />
-                          </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 12 }}>
-                              Từ khóa
-                            </span>
-                            <input
-                              type="text"
-                              value={lecturerSearchKeyword}
-                              onChange={(event) =>
-                                setLecturerSearchKeyword(event.target.value)
-                              }
-                              placeholder="Mã GV / tên giảng viên"
-                            />
-                          </label>
-
-                          <button
-                            type="button"
-                            className="committee-ghost-btn committee-modal-step-btn"
-                            style={{ minHeight: 36, padding: "0 12px" }}
-                            onClick={() => void loadAutoGenerateConfig()}
-                            disabled={councilListLocked || loadingAutoGenerateConfig || Boolean(actionInFlight)}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <select 
+                            value={lecturerSourceFilter} 
+                            onChange={(e) => setLecturerSourceFilter(e.target.value as any)}
+                            style={{ height: 36, fontSize: 13, flex: 1 }}
                           >
-                            <span className="committee-inline-icon-label">
-                              <RefreshCw size={13} />
-                              <span>Tải lại</span>
-                            </span>
-                          </button>
+                            <option value="all">Tất cả giảng viên</option>
+                            <option value="committee">Trong danh sách hội đồng</option>
+                            <option value="supervisor">Giảng viên hướng dẫn</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={lecturerSearchKeyword}
+                            onChange={(e) => setLecturerSearchKeyword(e.target.value)}
+                            placeholder="Tên/Mã GV..."
+                            style={{ height: 36, fontSize: 13, flex: 1 }}
+                          />
                         </div>
-
-                        <div
-                          style={{
-                            maxHeight: 320,
-                            overflow: "auto",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 10,
-                            padding: 8,
-                            display: "grid",
-                            gap: 6,
-                          }}
-                        >
-                          {availableAutoLecturers.map((lecturer) => {
-                            const id =
-                              lecturer.lecturerProfileId ??
-                              lecturer.lecturerId ??
-                              lecturer.lecturerCode ??
-                              "";
+                        <div style={{ 
+                          maxHeight: 350, 
+                          overflow: "auto", 
+                          border: "1px solid #e2e8f0", 
+                          borderRadius: 12, 
+                          padding: 8,
+                          display: "grid",
+                          gap: 6
+                        }}>
+                          {availableAutoLecturers.map(lecturer => {
+                            const id = lecturer.lecturerProfileId ?? lecturer.lecturerId ?? lecturer.lecturerCode ?? "";
                             const checked = selectedAutoLecturerIds.includes(id);
                             return (
-                              <label
-                                key={`lecturer-${id}`}
-                                style={{
-                                  display: "grid",
-                                  gridTemplateColumns: "auto 1fr",
-                                  gap: 8,
-                                  alignItems: "start",
-                                  padding: 8,
-                                  border: "1px solid #e2e8f0",
-                                  borderRadius: 8,
-                                  background: checked ? "#fff7ed" : "#ffffff",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => toggleAutoLecturer(id)}
-                                  disabled={councilListLocked}
-                                />
-                                <div>
-                                  <div style={{ fontSize: 12, fontWeight: 700 }}>
-                                    {formatLecturerOptionLabel({
-                                      lecturerCode: String(
-                                        lecturer.lecturerCode ??
-                                        lecturer.lecturerId ??
-                                        "",
-                                      ).trim(),
-                                      lecturerName: lecturer.lecturerName,
-                                      degree: lecturer.degree,
-                                    })}
-                                  </div>
-                                  <div style={{ fontSize: 11, marginTop: 2, color: "#64748b" }}>
-                                    Hướng dẫn: {Number.isFinite(Number(lecturer.currentGuidingCount)) ? Number(lecturer.currentGuidingCount) : 0}/{Number.isFinite(Number(lecturer.guideQuota)) ? Number(lecturer.guideQuota) : 0}
-                                  </div>
-                                  <div style={{ fontSize: 11, marginTop: 2, color: "#64748b" }}>
-                                    Tags: {getTagDisplayList(lecturer.tagCodes ?? []).join(", ") || "-"}
-                                  </div>
+                              <label key={`lecturer-${id}`} style={{ 
+                                display: "grid", 
+                                gridTemplateColumns: "auto 1fr", 
+                                gap: 10, 
+                                padding: 10, 
+                                border: "1px solid #f1f5f9", 
+                                borderRadius: 10,
+                                background: checked ? "#fdfaf1" : "#fff",
+                                cursor: "pointer"
+                              }}>
+                                <input type="checkbox" checked={checked} onChange={() => toggleAutoLecturer(id)} />
+                                <div style={{ fontSize: 12 }}>
+                                  <div style={{ fontWeight: 700 }}>{lecturer.lecturerName}</div>
+                                  <div style={{ color: "#64748b", marginTop: 2 }}>Mã: {lecturer.lecturerCode} | {lecturer.degree}</div>
+                                  {lecturer.tagCodes && lecturer.tagCodes.length > 0 && (
+                                    <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>
+                                      Tags: {lecturer.tagCodes.join(", ")}
+                                    </div>
+                                  )}
                                 </div>
                               </label>
                             );
                           })}
-                          {availableAutoLecturers.length === 0 && (
-                            <div style={{ fontSize: 12, color: "#64748b", padding: 8 }}>
-                              Chưa có giảng viên đủ điều kiện để hiển thị.
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 420px))",
-                        gap: 12,
-                        justifyContent: "center",
-                      }}
-                    >
-                      <div className="committee-modal-card" style={{ gap: 10, maxWidth: 420 }}>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 13,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            whiteSpace: "normal",
-                            flexWrap: "wrap",
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          <CalendarDays size={14} />
-                          <span>Cấu hình đợt</span>
-                        </div>
-                        <div style={{ marginTop: 2, fontSize: 12, color: "#64748b", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.35 }}>
-                          <Building2 size={13} />
-                          Thiết lập phòng, ca bảo vệ và năng lực vận hành mỗi ngày.
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+                      {/* Cấu hình chung */}
+                      <div className="committee-modal-card" style={{ gap: 16 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8, color: "#1e293b" }}>
+                          <CalendarDays size={16} />
+                          <span>Thời gian & Địa điểm</span>
                         </div>
 
-                        <div style={{ marginTop: 6, fontSize: 12, color: "#0f172a", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.35 }}>
-                          <Building2 size={13} />
-                          <span>Danh mục phòng: {roomCatalog.length} phòng từ API</span>
-                        </div>
-
-                        <div className="prepare-room-title" style={{ marginTop: 2, marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.3 }}>
-                          <Building2 size={13} />
-                          <span>Phòng dùng khi tạo tự động</span>
-                        </div>
-                        <div className="prepare-room-list" style={{ marginBottom: 6 }}>
-                          {autoRoomOptions.map((room: string) => (
-                            <button
-                              key={room}
-                              type="button"
-                              onClick={() => toggleAutoRoom(room)}
-                              className={`prepare-room-chip ${selectedAutoRooms.includes(room) ? "active" : ""}`}
-                            >
-                              {room}
-                            </button>
-                          ))}
-                          {autoRoomOptions.length === 0 && (
-                            <div style={{ fontSize: 12, color: "#0f172a" }}>
-                              Chưa đồng bộ được danh mục phòng từ API. Vui lòng kiểm tra endpoint phòng rồi tải lại.
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#475569" }}>
-                          Đã chọn {selectedAutoRooms.length} phòng để backend phân bổ lịch tự động.
-                        </div>
-
-                        <div className="prepare-time-grid">
-                          {renderTimeSelector("Ca sáng", morningStart, setMorningStart, "AM")}
-                          {renderTimeSelector("Kết thúc ca sáng", morningEnd, setMorningEnd, "AM")}
-                          {renderTimeSelector("Ca chiều", afternoonStart, setAfternoonStart, "PM")}
-                          {renderTimeSelector("Kết thúc ca chiều", afternoonEnd, setAfternoonEnd, "PM")}
-                          {renderDateSelector("Tạo tự động từ ngày", autoStartDate, setAutoStartDate)}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                          {renderDateSelector("Bắt đầu tạo từ", autoStartDate, setAutoStartDate)}
                           {renderDateSelector("Đến ngày", autoEndDate, setAutoEndDate)}
                         </div>
 
-                        <label className="prepare-field" style={{ marginTop: 4 }}>
-                          <span>Số hội đồng tối đa/ngày</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={maxCapacity}
-                            onChange={(event) => {
-                              setConfigSaved(false);
-                              setMaxCapacity(Number(event.target.value));
-                            }}
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => void saveConfig()}
-                          disabled={!stateHydrated || Boolean(actionInFlight)}
-                          className="committee-primary-btn committee-config-save-btn"
-                        >
-                          <Save size={14} /> Lưu cấu hình đợt
-                        </button>
-                        {configSaved && (
-                          <div style={{ fontSize: 12, color: "#0f172a" }}>
-                            Đã lưu cấu hình đợt.
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>Phòng bảo vệ khả dụng</div>
+                          <div style={{ 
+                            display: "flex", 
+                            gap: 8, 
+                            flexWrap: "wrap", 
+                            padding: 12, 
+                            border: "1px solid #e2e8f0", 
+                            borderRadius: 12,
+                            background: "#f8fafc",
+                            minHeight: 80
+                          }}>
+                            {autoRoomOptions.map(room => (
+                              <button
+                                key={room}
+                                type="button"
+                                onClick={() => toggleAutoRoom(room)}
+                                className={`prepare-room-chip ${selectedAutoRooms.includes(room) ? "active" : ""}`}
+                                style={{ padding: "6px 12px", fontSize: 12 }}
+                              >
+                                {room}
+                              </button>
+                            ))}
                           </div>
-                        )}
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                          <label className="prepare-field">
+                            <span style={{ fontWeight: 600 }}>Số hội đồng tối đa/ngày</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={maxCapacity}
+                              onChange={(e) => setMaxCapacity(Number(e.target.value))}
+                              style={{ height: 38 }}
+                            />
+                          </label>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>Ca làm việc mặc định</span>
+                            <div style={{ fontSize: 12, padding: "8px 12px", background: "#f1f5f9", borderRadius: 8 }}>
+                              Sáng: {morningStart} - {morningEnd}<br/>
+                              Chiều: {afternoonStart} - {afternoonEnd}
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="committee-modal-card" style={{ gap: 10, maxWidth: 420 }}>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 14,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            whiteSpace: "normal",
-                            flexWrap: "wrap",
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          <Sparkles size={14} />
-                          <span>Cấu hình hội đồng</span>
-                        </div>
-                        <div style={{ marginTop: 2, fontSize: 12, color: "#64748b", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.35 }}>
-                          <Layers3 size={13} />
-                          Thiết lập tham số phân hội đồng và tags áp dụng.
+                      {/* Thuật toán & Tags */}
+                      <div className="committee-modal-card" style={{ gap: 16 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8, color: "#1e293b" }}>
+                          <Sparkles size={16} />
+                          <span>Thuật toán & Tags hội đồng</span>
                         </div>
 
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                            gap: 10,
-                          }}
-                        >
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={{ fontWeight: 600, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.3 }}>
-                              <Layers3 size={13} />
-                              <span>Số đề tài/buổi</span>
-                            </span>
-                            <InlinePicker
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>Số đề tài / buổi</span>
+                            <select
                               value={topicsPerSessionConfig}
-                              onChange={(event) => {
-                                setTopicsPerSessionConfig(Number(event));
-                                setCouncilConfigConfirmed(false);
-                              }}
-                              ariaLabel="Số đề tài mỗi buổi"
-                              className="prepare-picker-compact"
-                              options={COUNCIL_CONFIG_OPTIONS.map((value) => ({
-                                value,
-                                label: String(value),
-                              }))}
-                            />
-                          </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={{ fontWeight: 600, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.3 }}>
-                              <Users size={13} />
-                              <span>Số thành viên/hội đồng</span>
-                            </span>
-                            <InlinePicker
-                              value={membersPerCouncilConfig}
-                              onChange={(event) => {
-                                setMembersPerCouncilConfig(Number(event));
-                                setCouncilConfigConfirmed(false);
-                              }}
-                              ariaLabel="Số thành viên mỗi hội đồng"
-                              className="prepare-picker-compact"
-                              options={COUNCIL_CONFIG_OPTIONS.map((value) => ({
-                                value,
-                                label: String(value),
-                              }))}
-                            />
-                            <span style={{ fontSize: 11, color: "#475569" }}>
-                              Mặc định số thành viên hội đồng là 3.
-                            </span>
-                          </label>
-                        </div>
-
-                        <div style={{ fontWeight: 600, fontSize: 12, color: "#0f172a", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.3 }}>
-                          <Sparkles size={13} />
-                          <span>Tags hội đồng</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {allTags.map((tag: string) => (
-                            <button
-                              key={`cfg-tag-modal-${tag}`}
-                              type="button"
-                              onClick={() => toggleConfigCouncilTag(tag)}
-                              className={`committee-tag-toggle ${configCouncilTags.includes(resolveTagCode(tag)) ? "active" : ""}`}
-                              style={{
-                                minHeight: 32,
-                                padding: "0 10px",
-                                fontSize: 12,
-                                lineHeight: 1.1,
-                              }}
+                              onChange={(e) => setTopicsPerSessionConfig(Number(e.target.value))}
+                              style={{ height: 38, fontSize: 13 }}
                             >
-                              {getTagDisplayName(tag)}
-                            </button>
-                          ))}
+                              {[1, 2, 3, 4, 5, 6].map(v => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                          </label>
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>Thành viên / hội đồng</span>
+                            <select
+                              value={membersPerCouncilConfig}
+                              onChange={(e) => setMembersPerCouncilConfig(Number(e.target.value))}
+                              style={{ height: 38, fontSize: 13 }}
+                            >
+                              {[3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                          </label>
                         </div>
 
-                        <div
-                          style={{
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 10,
-                            background: "#ffffff",
-                            padding: 10,
-                            fontSize: 13,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {topicsPerSessionConfig} đề tài/buổi · {membersPerCouncilConfig} thành viên/hội đồng · {normalizedConfigCouncilTagCodes.length} tag
-                        </div>
-
-                        <div className="committee-config-actions">
-                          <button
-                            type="button"
-                            onClick={() => void saveCouncilConfig()}
-                            disabled={!stateHydrated || Boolean(actionInFlight)}
-                            className="committee-primary-btn"
-                          >
-                            <Save size={14} /> Lưu cấu hình hội đồng
-                          </button>
-                        </div>
-
-                        <div style={{ fontSize: 12, color: canCreateCouncils ? "#0f172a" : "#b91c1c", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.35 }}>
-                          <CheckCircle2 size={13} />
-                          Điều kiện tạo tự động: {canCreateCouncils ? "Đạt" : "Chưa đạt"}
-                        </div>
-
-                        <div className="committee-auto-options">
-                          <div style={{ fontWeight: 700, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "normal", flexWrap: "wrap", lineHeight: 1.3 }}>
-                            <SlidersHorizontal size={13} />
-                            <span>Tùy chọn xử lý tự động</span>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>Tags áp dụng cho Hội đồng</span>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {allTags.map((tag: string) => (
+                              <button
+                                key={`cfg-tag-modal-${tag}`}
+                                type="button"
+                                onClick={() => toggleConfigCouncilTag(tag)}
+                                className={`committee-tag-toggle ${configCouncilTags.includes(resolveTagCode(tag)) ? "active" : ""}`}
+                                style={{ padding: "6px 12px", fontSize: 12 }}
+                              >
+                                {getTagDisplayName(tag)}
+                              </button>
+                            ))}
                           </div>
-                          <label className="committee-auto-option-row">
-                            <input
-                              type="checkbox"
-                              checked={autoGroupByTag}
-                              onChange={(event) => setAutoGroupByTag(event.target.checked)}
-                            />
-                            <span className="committee-auto-option-label">Group theo tag</span>
-                          </label>
-                          <label className="committee-auto-option-row">
-                            <input
-                              type="checkbox"
-                              checked={autoPrioritizeMatchTag}
-                              onChange={(event) => setAutoPrioritizeMatchTag(event.target.checked)}
-                            />
-                            <span className="committee-auto-option-label">Ưu tiên trùng tag</span>
-                          </label>
+                        </div>
+
+                        <div className="committee-auto-options" style={{ background: "#f0f9ff", padding: 16, borderRadius: 12, border: "1px solid #bae6fd" }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 6, color: "#0369a1" }}>
+                            <SlidersHorizontal size={14} /> Tùy chọn nâng cao
+                          </div>
+                          <div style={{ display: "grid", gap: 12 }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={autoGroupByTag}
+                                onChange={(e) => setAutoGroupByTag(e.target.checked)}
+                                style={{ width: 16, height: 16 }}
+                              />
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>Ưu tiên gom nhóm sinh viên theo Tag</span>
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={autoPrioritizeMatchTag}
+                                onChange={(e) => setAutoPrioritizeMatchTag(e.target.checked)}
+                                style={{ width: 16, height: 16 }}
+                              />
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>Ưu tiên GV có Tag khớp với đề tài</span>
+                            </label>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.7 }}>
+                              <CheckCircle2 size={16} color="#059669" />
+                              <span style={{ fontSize: 13 }}>Tự động kiểm tra trùng lịch & GV hướng dẫn</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -10160,68 +9878,80 @@ const CommitteeManagement: React.FC = () => {
                   style={{
                     display: "flex",
                     justifyContent: "flex-end",
-                    gap: 8,
-                    marginTop: 14,
+                    alignItems: "center",
+                    gap: 12,
+                    marginTop: 24,
+                    paddingTop: 20,
+                    borderTop: "1px solid #e2e8f0",
                   }}
                 >
+                  <div style={{ marginRight: "auto", fontSize: 13 }}>
+                    {autoGenerateStep === 1 ? (
+                      <span style={{ color: "#64748b" }}>
+                        Đã chọn {selectedAutoTopicIds.length} đề tài và {selectedAutoLecturerIds.length} giảng viên.
+                      </span>
+                    ) : (
+                      <span style={{ 
+                        color: canCreateCouncils ? "#059669" : "#dc2626", 
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6
+                      }}>
+                        {canCreateCouncils 
+                          ? <><CheckCircle2 size={16}/> Sẵn sàng tạo hội đồng</> 
+                          : <><X size={16}/> Thiếu thông tin cấu hình</>}
+                      </span>
+                    )}
+                  </div>
+
                   {autoGenerateStep === 2 && (
                     <button
                       type="button"
-                      className="committee-ghost-btn committee-modal-step-btn"
+                      className="committee-ghost-btn"
                       onClick={() => setAutoGenerateStep(1)}
+                      style={{ minWidth: 100, height: 40 }}
+                      disabled={assignmentLoading}
                     >
-                      <span className="committee-inline-icon-label">
-                        <Layers3 size={14} />
-                        <span>Quay lại bước 1</span>
-                      </span>
+                      Quay lại
                     </button>
                   )}
+                  
                   <button
                     type="button"
-                    className="committee-ghost-btn committee-modal-step-btn"
+                    className="committee-ghost-btn"
                     onClick={closeAutoGenerateModal}
+                    style={{ minWidth: 100, height: 40 }}
+                    disabled={assignmentLoading}
                   >
-                    <span className="committee-inline-icon-label">
-                      <X size={14} />
-                      <span>Hủy</span>
-                    </span>
+                    Hủy bỏ
                   </button>
+
                   {autoGenerateStep === 1 ? (
                     <button
                       type="button"
-                      className="committee-primary-btn committee-modal-step-btn"
+                      className="committee-primary-btn"
                       onClick={proceedAutoGenerateStep2}
-                      disabled={councilListLocked || loadingAutoGenerateConfig || Boolean(actionInFlight)}
+                      style={{ minWidth: 160, height: 40 }}
                     >
-                      <span className="committee-inline-icon-label">
-                        <Layers3 size={14} />
-                        <span>Tiếp tục bước 2</span>
-                      </span>
+                      <span>Tiếp theo</span>
+                      <ChevronRight size={16} />
                     </button>
                   ) : (
                     <button
                       type="button"
-                      className="committee-primary-btn committee-modal-step-btn"
+                      className="committee-primary-btn"
                       onClick={submitAutoGenerate}
+                      style={{ minWidth: 220, height: 40 }}
                       disabled={
                         councilListLocked ||
                         assignmentLoading ||
-                        loadingAutoGenerateConfig ||
-                        !stateHydrated ||
-                        !hasAllowedAction("GENERATE_COUNCILS") ||
-                        Boolean(actionInFlight)
+                        !canCreateCouncils ||
+                        !hasAllowedAction("GENERATE_COUNCILS")
                       }
                     >
-                      <span className="committee-inline-icon-label">
-                        <CheckCircle2 size={14} />
-                        <span>
-                          {assignmentLoading
-                            ? "Đang mô phỏng & tạo..."
-                            : loadingAutoGenerateConfig
-                              ? "Đang tải cấu hình..."
-                              : "Xác nhận tạo hội đồng tự động"}
-                        </span>
-                      </span>
+                      <Zap size={16} />
+                      <span>Xác nhận tạo tự động</span>
                     </button>
                   )}
                 </div>

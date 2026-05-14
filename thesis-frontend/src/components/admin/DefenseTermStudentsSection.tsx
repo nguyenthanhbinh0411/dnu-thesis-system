@@ -86,7 +86,7 @@ function normalizeStudentRow(row: RecordData): DefenseTermStudentRow {
     studentCode: asString(row.studentCode ?? row.StudentCode),
     userCode: asString(row.userCode ?? row.UserCode),
     fullName: asString(
-      row.fullName ?? row.FullName ?? row.studentName ?? row.name,
+      row.fullName || row.FullName || row.studentName || row.StudentName || row.name || row.Name || row.studentCode || row.StudentCode
     ),
     classCode: asString(row.classCode ?? row.ClassCode),
     facultyCode: asString(row.facultyCode ?? row.FacultyCode),

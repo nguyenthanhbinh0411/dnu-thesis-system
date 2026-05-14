@@ -27,6 +27,7 @@ using ThesisManagement.Api.DTOs.TopicLecturers.Query;
 using ThesisManagement.Api.DTOs.TopicTags.Query;
 using ThesisManagement.Api.DTOs.Topics.Query;
 using ThesisManagement.Api.DTOs.Users.Query;
+using ThesisManagement.Api.DTOs.Revisions;
 using ThesisManagement.Api.Models;
 
 namespace ThesisManagement.Api.Mappings
@@ -79,6 +80,7 @@ namespace ThesisManagement.Api.Mappings
                 .ForMember(dest => dest.GPA, opt => opt.MapFrom(src => src.StudentProfile != null ? src.StudentProfile.GPA : null));
             CreateMap<DefenseTermLecturer, DefenseTermLecturerReadDto>()
                 .ForMember(dest => dest.LecturerName, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.FullName : null))
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.FullName : null))
                 .ForMember(dest => dest.DepartmentCode, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.DepartmentCode : null))
                 .ForMember(dest => dest.Degree, opt => opt.MapFrom(src => src.LecturerProfile != null ? src.LecturerProfile.Degree : null));
             CreateMap<TopicRenameRequest, TopicRenameRequestReadDto>();
@@ -89,6 +91,10 @@ namespace ThesisManagement.Api.Mappings
             CreateMap<CatalogTopicTag, CatalogTopicTagReadDto>();
             CreateMap<TopicTag, TopicTagReadDto>();
             CreateMap<SystemActivityLog, SystemActivityLogReadDto>();
+            
+            // Post-Defense (Hậu Bảo Vệ) Mappings
+            CreateMap<DefenseRevision, RevisionReadDto>()
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()));
         }
     }
 }

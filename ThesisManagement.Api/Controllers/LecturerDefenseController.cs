@@ -88,6 +88,8 @@ namespace ThesisManagement.Api.Controllers
             public bool CouncilListLocked { get; set; }
             public HashSet<int> CommitteeIds { get; } = new();
             public int CommitteeCount => CommitteeIds.Count;
+            public bool IsSecretary { get; set; }
+            public bool HasPendingRevisions { get; set; }
             public bool HasCommitteeAccess => CouncilListLocked && CommitteeCount > 0;
         }
 
@@ -252,6 +254,16 @@ namespace ThesisManagement.Api.Controllers
                         {
                             scope.CommitteeIds.Add(maybeCommitteeId.Value);
                         }
+
+                        if (committeeElement.TryGetProperty("NormalizedRole", out var roleElement) || 
+                            committeeElement.TryGetProperty("normalizedRole", out roleElement))
+                        {
+                            var role = roleElement.GetString();
+                            if (role == "UVTK" || role == "SECRETARY")
+                            {
+                                scope.IsSecretary = true;
+                            }
+                        }
                     }
                 }
 
@@ -382,7 +394,7 @@ namespace ThesisManagement.Api.Controllers
             if (!resolved.Success || resolved.Period == null)
             {
                 return StatusCode(resolved.StatusCode, ApiResponse<object>.Fail(
-                    resolved.Message ?? "Không thể xác định đợt bảo vệ hiện tại.",
+                    resolved.Message ?? "Không thể xác định đợt đồ án tốt nghiệp hiện tại.",
                     resolved.StatusCode,
                     code: resolved.Code));
             }
@@ -436,7 +448,7 @@ namespace ThesisManagement.Api.Controllers
             if (!resolved.Success || resolved.Period == null)
             {
                 return StatusCode(resolved.StatusCode, ApiResponse<object>.Fail(
-                    resolved.Message ?? "Không thể xác định đợt bảo vệ hiện tại.",
+                    resolved.Message ?? "Không thể xác định đợt đồ án tốt nghiệp hiện tại.",
                     resolved.StatusCode,
                     code: resolved.Code));
             }
@@ -445,16 +457,37 @@ namespace ThesisManagement.Api.Controllers
             var committeesResult = await _getCommitteesQuery.ExecuteAsync(lecturerCode, resolved.Period.DefenseTermId, HttpContext.RequestAborted);
             if (!committeesResult.Success)
             {
-                return FromResult(ApiResponse<object>.Fail(
-                    committeesResult.Message ?? "Không thể lấy danh sách hội đồng.",
-                    committeesResult.HttpStatusCode == 0 ? 400 : committeesResult.HttpStatusCode,
-                    committeesResult.Errors,
-                    committeesResult.Code,
-                    committeesResult.Warnings,
-                    committeesResult.AllowedActions));
+                    return FromResult(ApiResponse<object>.Fail(
+                        committeesResult.Message ?? "Không thể lấy danh sách hội đồng.",
+                        committeesResult.HttpStatusCode == 0 ? 400 : committeesResult.HttpStatusCode,
+                        committeesResult.Errors,
+                        committeesResult.Code,
+                        committeesResult.Warnings,
+                        committeesResult.AllowedActions));
             }
 
             var accessScope = ResolveLecturerCommitteeAccessScope(committeesResult.Data);
+            
+            // Check for pending revisions if secretary
+            if (accessScope.IsSecretary)
+            {
+                var revisionResult = await _revisionQueueQuery.ExecuteAsync(lecturerCode, resolved.Period.DefenseTermId, HttpContext.RequestAborted);
+                if (revisionResult.Success && revisionResult.Data != null)
+                {
+                    // Check if there are any revisions in any committee
+                    // The data is a list of group objects, each has a 'Revisions' list
+                    using var revisionDoc = JsonDocument.Parse(JsonSerializer.Serialize(revisionResult.Data));
+                    foreach (var group in revisionDoc.RootElement.EnumerateArray())
+                    {
+                        if (group.TryGetProperty("Revisions", out var revisions) && revisions.ValueKind == JsonValueKind.Array && revisions.GetArrayLength() > 0)
+                        {
+                            accessScope.HasPendingRevisions = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
             var payload = new
             {
                 Period = new
@@ -467,7 +500,9 @@ namespace ThesisManagement.Api.Controllers
                 },
                 CouncilListLocked = accessScope.CouncilListLocked,
                 HasCommitteeAccess = accessScope.HasCommitteeAccess,
-                CommitteeCount = accessScope.CommitteeCount
+                CommitteeCount = accessScope.CommitteeCount,
+                IsSecretary = accessScope.IsSecretary,
+                HasPendingRevisions = accessScope.HasPendingRevisions
             };
 
             return StatusCode(200, ApiResponse<object>.SuccessResponse(payload));
@@ -641,7 +676,7 @@ namespace ThesisManagement.Api.Controllers
             return action switch
             {
                 "APPROVE" => WrapAsObject(
-                    await ApproveRevision(periodId, request.RevisionId, request.IdempotencyKey),
+                    await ApproveRevision(periodId, request.RevisionId, request.Approve?.Reason, request.IdempotencyKey),
                     action),
                 "REJECT" => WrapAsObject(
                     await RejectRevision(
@@ -670,7 +705,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (!await DefensePeriodExistsAsync(defenseTermId, HttpContext.RequestAborted))
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var safePage = Math.Max(page, 1);
@@ -760,7 +795,6 @@ namespace ThesisManagement.Api.Controllers
                     lecturer.LecturerProfileID,
                     lecturer.LecturerCode,
                     lecturer.UserCode,
-                    request.Role,
                     request.IsPrimary,
                     null,
                     null);
@@ -772,8 +806,8 @@ namespace ThesisManagement.Api.Controllers
                     Success = createResult.Success,
                     Id = createResult.Data?.DefenseTermLecturerID,
                     Message = createResult.Success
-                        ? "Thêm vào đợt bảo vệ thành công."
-                        : (createResult.ErrorMessage ?? "Thêm vào đợt bảo vệ thất bại.")
+                        ? "Thêm vào đợt đồ án tốt nghiệp thành công."
+                        : (createResult.ErrorMessage ?? "Thêm vào đợt đồ án tốt nghiệp thất bại.")
                 });
             }
 
@@ -804,7 +838,7 @@ namespace ThesisManagement.Api.Controllers
             if (!result.Success)
             {
                 return StatusCode(result.StatusCode, ApiResponse<object>.Fail(
-                    result.ErrorMessage ?? "Xóa giảng viên đợt bảo vệ thất bại.",
+                    result.ErrorMessage ?? "Xóa giảng viên đợt đồ án tốt nghiệp thất bại.",
                     result.StatusCode));
             }
 
@@ -1098,7 +1132,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (periodIds.Count == 0)
             {
-                return (false, 404, "Giảng viên chưa được gán vào đợt bảo vệ nào.", "DEFENSE_PERIOD_MAPPING_NOT_FOUND", null);
+                return (false, 404, "Giảng viên chưa được gán vào đợt đồ án tốt nghiệp nào.", "DEFENSE_PERIOD_MAPPING_NOT_FOUND", null);
             }
 
             var periods = await _uow.DefenseTerms.Query().AsNoTracking()
@@ -1121,13 +1155,13 @@ namespace ThesisManagement.Api.Controllers
 
             if (activePeriods.Count == 0)
             {
-                return (false, 404, "Giảng viên chưa được gán vào đợt bảo vệ đang hoạt động.", "DEFENSE_PERIOD_ACTIVE_MAPPING_NOT_FOUND", null);
+                return (false, 404, "Giảng viên chưa được gán vào đợt đồ án tốt nghiệp đang hoạt động.", "DEFENSE_PERIOD_ACTIVE_MAPPING_NOT_FOUND", null);
             }
 
             if (activePeriods.Count > 1)
             {
                 var activePeriodIds = string.Join(", ", activePeriods.Select(x => x.DefenseTermId));
-                return (false, 409, $"Phát hiện nhiều đợt bảo vệ đang hoạt động cho giảng viên hiện tại ({activePeriodIds}).", "DEFENSE_PERIOD_AMBIGUOUS", null);
+                return (false, 409, $"Phát hiện nhiều đợt đồ án tốt nghiệp đang hoạt động cho giảng viên hiện tại ({activePeriodIds}).", "DEFENSE_PERIOD_AMBIGUOUS", null);
             }
 
             return (true, 200, null, null, activePeriods[0]);
@@ -1268,7 +1302,9 @@ namespace ThesisManagement.Api.Controllers
             return FromResult(result);
         }
 
-        private async Task<ActionResult<ApiResponse<List<object>>>> GetRevisionQueue(int periodId)
+        [HttpGet("revisions")]
+        [Authorize(Roles = "Lecturer,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<List<object>>>> GetRevisionQueue(int periodId)
         {
             var lecturerCode = GetRequestUserCode() ?? string.Empty;
             var result = await _revisionQueueQuery.ExecuteAsync(lecturerCode, periodId);
@@ -1293,10 +1329,10 @@ namespace ThesisManagement.Api.Controllers
             return FromResult(result);
         }
 
-        private async Task<ActionResult<ApiResponse<bool>>> ApproveRevision(int periodId, int revisionId, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey = null)
+        private async Task<ActionResult<ApiResponse<bool>>> ApproveRevision(int periodId, int revisionId, string? reason, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey = null)
         {
             var lecturerCode = GetRequestUserCode() ?? string.Empty;
-            var result = await _approveRevisionCommand.ExecuteAsync(revisionId, lecturerCode, CurrentUserId, idempotencyKey);
+            var result = await _approveRevisionCommand.ExecuteAsync(revisionId, reason, lecturerCode, CurrentUserId, idempotencyKey);
             return FromResult(result);
         }
 

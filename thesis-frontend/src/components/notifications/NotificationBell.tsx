@@ -96,6 +96,8 @@ const fallbackActionUrlByType: Record<string, string> = {
   OPEN_DEFENSE_STUDENT: "/student/defense-info",
   OPEN_DEFENSE_SUPERVISOR: "/lecturer/students",
   OPEN_DEFENSE_COMMITTEE: "/lecturer/committees",
+  VIEW_REVISION: "/lecturer/post-defense",
+  VIEW_REVISION_RESULT: "/student/defense-info",
 };
 
 const extractPeriodIdFromPath = (pathname: string): number | null => {
@@ -197,13 +199,19 @@ const normalizeActionTarget = (
     /^\/defense-periods\/\d+\/lecturer(?:\/.*)?$/i.test(normalizedPath)
   ) {
     inAppPath = "/lecturer/committees";
+  } else if (
+    /^\/lecturer\/revisions(?:\/.*)?$/i.test(normalizedPath) ||
+    /^\/lecturer\/post-defense(?:\/.*)?$/i.test(normalizedPath)
+  ) {
+    inAppPath = "/lecturer/post-defense";
   }
 
   let targetUrl = `${inAppPath}${parsedUrl.search}${parsedUrl.hash}`;
   if (
     inAppPath === "/student/defense-info" ||
     inAppPath === "/student/schedule" ||
-    inAppPath === "/lecturer/committees"
+    inAppPath === "/lecturer/committees" ||
+    inAppPath === "/lecturer/post-defense"
   ) {
     targetUrl = attachPeriodIdQuery(targetUrl, periodId);
   }
@@ -226,11 +234,13 @@ const resolveCategoryTarget = (
   if (theme === "student") {
     if (category === "TOPIC_WORKFLOW") return "/student/topics";
     if (category === "PROGRESS_SUBMISSION") return "/student/reports";
+    if (category === "DEFENSE_REVISION") return "/student/defense-info";
   }
 
   if (theme === "lecturer") {
     if (category === "TOPIC_WORKFLOW") return "/lecturer/topic-review";
     if (category === "PROGRESS_SUBMISSION") return "/lecturer/reports";
+    if (category === "DEFENSE_REVISION") return "/lecturer/post-defense";
   }
 
   return null;

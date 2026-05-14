@@ -11,6 +11,16 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public decimal Score { get; set; }
 
         public string? Comment { get; set; }
+
+        /// <summary>
+        /// Whether chair requires student to resubmit report (hậu bảo vệ)
+        /// </summary>
+        public bool RevisionRequired { get; set; }
+
+        public string? RevisionReason { get; set; }
+
+        [Range(1, 60)]
+        public int? RevisionDeadlineDays { get; set; }
     }
 
     public class ReopenScoreRequestDto
@@ -98,6 +108,11 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string? IdempotencyKey { get; set; }
     }
 
+    public class ApproveRevisionRequestDto
+    {
+        public string? Reason { get; set; }
+    }
+
     public class LecturerRevisionActionRequestDto
     {
         [Required]
@@ -105,6 +120,8 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
 
         [Range(1, int.MaxValue)]
         public int RevisionId { get; set; }
+
+        public ApproveRevisionRequestDto? Approve { get; set; }
 
         public RejectRevisionRequestDto? Reject { get; set; }
 

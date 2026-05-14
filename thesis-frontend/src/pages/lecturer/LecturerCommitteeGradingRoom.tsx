@@ -57,6 +57,9 @@ import {
     XCircle,
     AlertTriangle,
     ChevronDown,
+    Activity,
+    Flag,
+    Circle,
 } from "lucide-react";
 import { getAccessToken } from "../../services/auth-session.service";
 
@@ -116,8 +119,6 @@ type CommitteeDetailTabKey = "overview" | "members" | "topics";
 type WorkspaceTabKey = "scoring" | "minutes" | "review";
 
 type PreviewModalType = "meeting" | "reviewer" | "scoreSheet";
-
-
 
 type CurrentDefensePeriodView = {
     periodId: number;
@@ -674,7 +675,7 @@ const getCommitteeMemberParticipation = (
 
     return {
         online,
-        emoji: online ? "🟢" : unknown ? "⚪" : "⚪",
+        icon: online ? <Circle size={10} fill="#22c55e" stroke="none" /> : <Circle size={10} fill="#cbd5e1" stroke="none" />,
         label: online ? "Online" : unknown ? "Chưa rõ" : "Offline",
         bg: online ? "#ecfdf5" : "#f8fafc",
         border: online ? "#22c55e" : "#cbd5e1",
@@ -683,7 +684,7 @@ const getCommitteeMemberParticipation = (
 };
 
 type CommitteeStatusVisual = {
-    emoji: string;
+    icon: React.ReactNode;
     label: string;
     cardBorder: string;
     cardGlow: string;
@@ -696,7 +697,7 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
     switch (status) {
         case "Đang họp":
             return {
-                emoji: "🔴",
+                icon: <Activity size={14} />,
                 label: "Đang họp",
                 cardBorder: "#f97316",
                 cardGlow: "rgba(249, 115, 22, 0.20)",
@@ -706,7 +707,7 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
             };
         case "Đã chốt":
             return {
-                emoji: "🔒",
+                icon: <Lock size={14} />,
                 label: "Đã chốt",
                 cardBorder: "#6366f1",
                 cardGlow: "rgba(99, 102, 241, 0.18)",
@@ -716,7 +717,7 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
             };
         case "Đã đóng":
             return {
-                emoji: "⚫",
+                icon: <Flag size={14} />,
                 label: "Đã đóng",
                 cardBorder: "#cbd5e1",
                 cardGlow: "rgba(148, 163, 184, 0.18)",
@@ -726,7 +727,7 @@ const getCommitteeStatusVisual = (status: Committee["status"]): CommitteeStatusV
             };
         default:
             return {
-                emoji: "🟢",
+                icon: <CalendarDays size={14} />,
                 label: "Sắp diễn ra",
                 cardBorder: "#86efac",
                 cardGlow: "rgba(34, 197, 94, 0.18)",
@@ -1005,6 +1006,16 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 method: "POST",
                 body: {
                     action: "LOCK_SESSION",
+                    committeeId: Number(id),
+                    ...(idempotencyKey ? { idempotencyKey } : {}),
+                },
+                headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+            }),
+        closeSessionPermanentlyByCommittee: (id: string | number, idempotencyKey?: string) =>
+            fetchData<ApiResponse<boolean>>(`${lecturerBase}/scoring/actions`, {
+                method: "POST",
+                body: {
+                    action: "CLOSE",
                     committeeId: Number(id),
                     ...(idempotencyKey ? { idempotencyKey } : {}),
                 },
@@ -1344,8 +1355,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
 
     const [myScore, setMyScore] = useState("");
     const [myComment, setMyComment] = useState("");
-    const [submitted, setSubmitted] = useState(false);
+    const [submittedByAssignment, setSubmittedByAssignment] = useState<Record<number, boolean>>({});
+    const [lastSubmitIntentByAssignment, setLastSubmitIntentByAssignment] = useState<Record<number, "score" | "conclusion">>({});
     const [sessionLocked, setSessionLocked] = useState(false);
+    const [revisionRequired, setRevisionRequired] = useState(false);
+    const [revisionReason, setRevisionReason] = useState("");
+    const [revisionDeadlineDays, setRevisionDeadlineDays] = useState("");
 
     const [revision, setRevision] = useState<RevisionRequest>(EMPTY_REVISION);
     const [allScoringRows, setAllScoringRows] = useState<ScoringMatrixRow[]>([]);
@@ -1356,6 +1371,9 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const [fallbackAllowedActions, setFallbackAllowedActions] = useState<string[]>([]);
     const [roomNow, setRoomNow] = useState<Date>(() => new Date());
     const [gradingLoadingProgress, setGradingLoadingProgress] = useState(0);
+
+    const submitted = submittedByAssignment[selectedAssignmentId] ?? false;
+    const lastSubmitIntent = lastSubmitIntentByAssignment[selectedAssignmentId] ?? "score";
     const [gradingLoadingReady, setGradingLoadingReady] = useState(false);
     const [previewModalType, setPreviewModalType] = useState<PreviewModalType | null>(null);
     const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
@@ -2364,7 +2382,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                     if (error.status === 404) {
                         const message =
                             apiMessage ??
-                            "Bạn chưa được gán vào đợt bảo vệ đang hoạt động. Vui lòng liên hệ quản trị viên.";
+                            "Bạn chưa được gán vào đợt đồ án tốt nghiệp đang hoạt động. Vui lòng liên hệ quản trị viên.";
                         setCurrentSnapshotError(message);
                         setCurrentPeriod(null);
                         notifyInfo(message);
@@ -2374,7 +2392,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                     if (error.status === 409) {
                         const message =
                             apiMessage ??
-                            "Tài khoản hiện tại đang gắn với nhiều đợt bảo vệ hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.";
+                            "Tài khoản hiện tại đang gắn với nhiều đợt đồ án tốt nghiệp hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.";
                         setCurrentSnapshotError(message);
                         setCurrentPeriod(null);
                         notifyError(message);
@@ -2383,7 +2401,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                 }
 
                 if (error instanceof Error && error.message === "CURRENT_PERIOD_CONTRACT_INVALID") {
-                    const message = "Dữ liệu snapshot hiện tại không chứa thông tin đợt bảo vệ hợp lệ.";
+                    const message = "Dữ liệu snapshot hiện tại không chứa thông tin đợt đồ án tốt nghiệp hợp lệ.";
                     setCurrentSnapshotError(message);
                     setCurrentPeriod(null);
                     notifyError(message);
@@ -2419,7 +2437,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
         councilListLocked === false
             ? "Danh sách hội đồng chưa được chốt. Giảng viên chỉ có thể xem khi hội đồng đã khóa."
             : councilListLocked === true
-                ? "Giảng viên hiện không thuộc hội đồng nào trong đợt bảo vệ này."
+                ? "Giảng viên hiện không thuộc hội đồng nào trong đợt đồ án tốt nghiệp này."
                 : "Không xác định được quyền xem hội đồng hiện tại.";
 
     const selectedCommittee = useMemo(
@@ -2603,7 +2621,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const canOpenSession = canOpenSessionByActions || isChairRole;
     const canSubmitScore = canSubmitScoreByActions || isChairRole || isSecretaryRole || isReviewerRole;
     const canRequestReopen = canRequestReopenByActions || isChairRole;
-    
+
     const allTopicsGraded = useMemo(() => {
         if (scoringMatrix.length === 0) return false;
         return scoringMatrix.every(row => {
@@ -2656,11 +2674,12 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     const isSessionOpened = selectedCommittee?.status === "Đang họp";
     const isSessionLocked = selectedCommittee?.status === "Đã chốt";
     const isSessionClosed = selectedCommittee?.status === "Đã đóng";
-    
+
     // Committee status is the source of truth
     const isCurrentSessionLocked = isSessionLocked || isSessionClosed;
     const canDownloadPreviewDocuments = isCurrentSessionLocked;
     const canScoreNow = canSubmitScore && isSessionOpened;
+    const canEditChairConclusion = canScoreNow && !isCurrentSessionLocked;
 
     const myRoleLabel = isChairRole
         ? "Chủ tịch"
@@ -2724,7 +2743,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             if (!isSessionOpened) {
                 setSessionLocked(Boolean(row.isLocked));
             }
-            
+
             // Sync myScore and myComment when row changes
             const roleCode = selectedCommittee?.roleCode;
             let currentScore = "";
@@ -2741,14 +2760,24 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             }
             setMyScore(currentScore);
             setMyComment(currentComment);
-            // If score already exists for this role, mark as submitted (but still allow editing)
-            setSubmitted(currentScore !== "");
+            // If score already exists for this role, mark as submitted for this assignment (but still allow editing)
+            setSubmittedByAssignment((prev) => ({ ...(prev ?? {}), [selectedAssignmentId]: currentScore !== "" }));
         } else {
             setMyScore("");
             setMyComment("");
-            setSubmitted(false);
+            setSubmittedByAssignment((prev) => ({ ...(prev ?? {}), [selectedAssignmentId]: false }));
         }
     }, [selectedMatrixRow, scoringAlerts, selectedCommittee?.roleCode]);
+
+    useEffect(() => {
+        if (!isChairRole) {
+            return;
+        }
+
+        setRevisionRequired(false);
+        setRevisionReason("");
+        setRevisionDeadlineDays("");
+    }, [isChairRole, selectedCommitteeId, selectedAssignmentId]);
 
     useEffect(() => {
         const timer = window.setInterval(() => {
@@ -2877,6 +2906,10 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
     };
 
     const openRoleWorkspace = (committee: Committee) => {
+        if (committee.status === "Đã đóng") {
+            notifyInfo("Phòng chấm đã bị đóng vĩnh viễn. Liên hệ quản trị viên để mở lại.");
+            return;
+        }
         if (committee.status !== "Đang họp") {
             notifyInfo("Phòng chấm chỉ mở khi hội đồng đang họp.");
             return;
@@ -2909,7 +2942,11 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             notifyInfo("Phiên của hội đồng này đang mở sẵn.");
             return;
         }
-        if (committee.status === "Đã chốt" || committee.status === "Đã đóng") {
+        if (committee.status === "Đã đóng") {
+            notifyInfo("Phiên đã đóng vĩnh viễn. Liên hệ quản trị viên để mở lại.");
+            return;
+        }
+        if (committee.status === "Đã chốt") {
             notifyInfo("Phiên đã khóa, không thể mở lại từ danh sách này.");
             return;
         }
@@ -2945,14 +2982,14 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
         }
 
         try {
-            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", `chair-close-${committee.id}`);
-            const response = await lecturerApi.lockSessionByCommittee(committee.numericId, idempotencyKey);
+            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", `chair-close-permanent-${committee.id}`);
+            const response = await lecturerApi.closeSessionPermanentlyByCommittee(committee.numericId, idempotencyKey);
             if (notifyApiFailure(response as ApiResponse<unknown>, "Đóng phiên hội đồng thất bại.")) {
                 return;
             }
 
-            syncCommitteeSessionStatus(committee.id, "Đã chốt");
-            pushTrace("lock-session", `[Chair] Đóng phiên hội đồng ${committee.id}.`);
+            syncCommitteeSessionStatus(committee.id, "Đã đóng");
+            pushTrace("close-session-permanent", `[Chair] Đóng phiên vĩnh viễn hội đồng ${committee.id}.`);
 
             if (selectedCommitteeId === committee.id) {
                 await refreshScoringData(committee.numericId);
@@ -2982,35 +3019,73 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
         return idempotencyKey;
     };
 
-    const handleSubmitScore = async () => {
+    const handleSubmitScore = async (options?: { suppressToast?: boolean; intent?: "score" | "conclusion" }) => {
         if (!canSubmitScore) {
-            notifyError("Vai trò hiện tại không có quyền gửi điểm.");
-            return;
+            if (!options?.suppressToast) {
+                notifyError("Vai trò hiện tại không có quyền gửi điểm.");
+            }
+            return false;
         }
         if (isCurrentSessionLocked) {
-            notifyError("Phiên chấm đã khóa. Vui lòng yêu cầu Chủ tịch mở lại.");
-            return;
+            if (!options?.suppressToast) {
+                notifyError("Phiên chấm đã khóa. Vui lòng yêu cầu Chủ tịch mở lại.");
+            }
+            return false;
         }
         if (!isScoreValid) {
-            notifyError("Điểm phải nằm trong khoảng từ 0 đến 10.");
-            return;
+            if (!options?.suppressToast) {
+                notifyError("Điểm phải nằm trong khoảng từ 0 đến 10.");
+            }
+            return false;
         }
         try {
             const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-score-submit");
             const assignmentId = selectedAssignmentId;
             if (!assignmentId) {
-                notifyError("Vui lòng chọn đề tài cần chấm điểm.");
-                return;
+                if (!options?.suppressToast) {
+                    notifyError("Vui lòng chọn đề tài cần chấm điểm.");
+                }
+                return false;
             }
+            const revisionDeadlineValue = Number(revisionDeadlineDays);
+            const isRevisionPayloadInvalid =
+                revisionRequired &&
+                (!revisionReason.trim() ||
+                    !Number.isFinite(revisionDeadlineValue) ||
+                    revisionDeadlineValue < 1 ||
+                    revisionDeadlineValue > 60);
+
+            const chairDecisionPayload = isChairRole
+                ? {
+                    revisionRequired,
+                    ...(revisionRequired
+                        ? {
+                            revisionReason: revisionReason.trim(),
+                            revisionDeadlineDays: revisionDeadlineValue,
+                        }
+                        : {}),
+                }
+                : {};
+
+            if (isChairRole && isRevisionPayloadInvalid) {
+                if (!options?.suppressToast) {
+                    notifyError("Khi bật yêu cầu nộp lại báo cáo, bạn phải nhập lý do và deadline từ 1 đến 60 ngày.");
+                }
+                return false;
+            }
+
             const response = await lecturerApi.submitIndependentScore(selectedCommitteeNumericId, {
                 assignmentId,
                 score: Number(myScore),
                 comment: myComment,
+                ...chairDecisionPayload,
             }, idempotencyKey);
             if (notifyApiFailure(response as ApiResponse<unknown>, "Không gửi được điểm.")) {
-                return;
+                return false;
             }
-            setSubmitted(true);
+            // mark this assignment as submitted and record intent
+            setSubmittedByAssignment((prev) => ({ ...(prev ?? {}), [assignmentId]: true }));
+            setLastSubmitIntentByAssignment((prev) => ({ ...(prev ?? {}), [assignmentId]: options?.intent ?? "score" }));
 
             // Optimistic UI update: immediately reflect submitted score in the grid
             const submittedScoreValue = Number(myScore);
@@ -3030,13 +3105,69 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
             pushTrace("submit-score", `[UC3.2] Đã gửi điểm ${myRoleLabel}.`);
             setAssignmentConcurrencyToken(createConcurrencyToken("lecturer-assignment"));
             await refreshScoringData(selectedCommitteeNumericId);
-            if (response?.idempotencyReplay ?? response?.IdempotencyReplay) {
-                notifyInfo("Yêu cầu gửi điểm đã được xử lý trước đó (idempotency replay).");
-            } else {
-                notifySuccess(`Đã gửi điểm ${myRoleLabel} thành công.`);
+            if (!options?.suppressToast) {
+                if (response?.idempotencyReplay ?? response?.IdempotencyReplay) {
+                    notifyInfo("Yêu cầu gửi điểm đã được xử lý trước đó (idempotency replay).");
+                } else {
+                    notifySuccess(`Đã gửi điểm ${myRoleLabel} thành công.`);
+                }
             }
+            return true;
         } catch {
-            notifyError("Không gửi được điểm. Vui lòng thử lại.");
+            if (!options?.suppressToast) {
+                notifyError("Không gửi được điểm. Vui lòng thử lại.");
+            }
+            return false;
+        }
+    };
+
+    const handleChairLockSession = async () => {
+        if (!isChairRole) {
+            notifyError("Chỉ Chủ tịch hội đồng mới có thể chốt điểm.");
+            return;
+        }
+
+        if (!canLockSession) {
+            notifyError("Chỉ được chốt điểm khi toàn bộ đề tài đã được chấm xong.");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "Bạn có chắc chắn muốn chốt điểm? Hệ thống sẽ dựa trên điểm để tính đạt/không đạt; các đề tài được bật 'Yêu cầu nộp lại báo cáo' sẽ được tạo hậu bảo vệ sau khi chốt.",
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const submittedOk = await handleSubmitScore({ suppressToast: true });
+            if (!submittedOk) {
+                return;
+            }
+
+            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-lock");
+            const response = await lecturerApi.lockSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
+            if (notifyApiFailure(response as ApiResponse<unknown>, "Chốt điểm thất bại.")) {
+                return;
+            }
+
+            setSessionLocked(true);
+            setCommittees((prev) =>
+                prev.map((item) =>
+                    item.id === selectedCommitteeId ? { ...item, status: "Đã chốt" } : item,
+                ),
+            );
+            pushTrace("lock-session", "[UC3.5] Đã chốt điểm hội đồng.");
+            await refreshScoringData(selectedCommitteeNumericId);
+            await refreshAllScoringRows();
+            notifySuccess("Đã chốt điểm hội đồng thành công.");
+        } catch (error) {
+            const missingMembers = extractMissingMemberCodes(error);
+            if (missingMembers.length > 0) {
+                notifyError(`Thiếu điểm từ thành viên: ${missingMembers.join(", ")}`);
+                return;
+            }
+            notifyError("Chốt điểm thất bại.");
         }
     };
 
@@ -3613,7 +3744,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                         fontWeight: 500,
                                     }}
                                 >
-                                    {getCommitteeStatusVisual(joinedCommittee.status).label}
+                                    {getCommitteeStatusVisual(joinedCommittee.status).icon} {getCommitteeStatusVisual(joinedCommittee.status).label}
                                 </span>
                                 <span className="lec-clock-chip">
                                     <Clock3 size={13} /> {roomNow.toLocaleTimeString("vi-VN", { hour12: false })}
@@ -3678,35 +3809,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                 type="button"
                                                 className="lec-primary"
                                                 disabled={!canLockSession}
-                                                onClick={async () => {
-                                                    if (!window.confirm("Bạn có chắc chắn muốn chốt điểm cho hội đồng này? Sau khi chốt, các thành viên chỉ có thể chỉnh sửa lại khi Chủ tịch mở chốt.")) {
-                                                        return;
-                                                    }
-                                                    try {
-                                                        const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-session-lock");
-                                                        const response = await lecturerApi.lockSessionByCommittee(selectedCommitteeNumericId, idempotencyKey);
-                                                        if (notifyApiFailure(response as ApiResponse<unknown>, "Chốt điểm thất bại.")) {
-                                                            return;
-                                                        }
-                                                        setSessionLocked(true);
-                                                        setCommittees((prev) =>
-                                                            prev.map((item) =>
-                                                                item.id === selectedCommitteeId ? { ...item, status: "Đã chốt" } : item,
-                                                            ),
-                                                        );
-                                                        pushTrace("lock-session", "[UC3.5] Đã chốt điểm hội đồng.");
-                                                        await refreshScoringData(selectedCommitteeNumericId);
-                                                        await refreshAllScoringRows();
-                                                        notifySuccess("Đã chốt điểm hội đồng thành công.");
-                                                    } catch (error) {
-                                                        const missingMembers = extractMissingMemberCodes(error);
-                                                        if (missingMembers.length > 0) {
-                                                            notifyError(`Thiếu điểm từ thành viên: ${missingMembers.join(", ")}`);
-                                                            return;
-                                                        }
-                                                        notifyError("Chốt điểm thất bại.");
-                                                    }
-                                                }}
+                                                onClick={() => { void handleChairLockSession(); }}
                                             >
                                                 <Lock size={14} /> Chốt điểm
                                             </button>
@@ -3728,7 +3831,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                                 return;
                                                             }
                                                             setSessionLocked(false);
-                                                            setSubmitted(false);
+                                                            setSubmittedByAssignment((prev) => ({ ...(prev ?? {}), [selectedAssignmentId]: false }));
                                                             setCommittees((prev) =>
                                                                 prev.map((item) =>
                                                                     item.id === selectedCommitteeId ? { ...item, status: "Đang họp" } : item,
@@ -3788,544 +3891,551 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                             <div style={{ fontSize: 13, color: "#475569" }}>Không tìm thấy dữ liệu hội đồng đã tham gia trong snapshot hiện tại.</div>
                         ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                
-                            <div className="lec-workspace">
-                                <aside className="lec-left-pane">
-                                    <div style={{ fontWeight: 800, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                        <span>Danh sách đề tài theo ca</span>
-                                        <button
-                                            type="button"
-                                            className="lec-soft"
-                                            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 12, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff" }}
-                                            onClick={() => setPreviewModalType("scoreSheet")}
-                                        >
-                                            <Eye size={14} /> Xem bảng điểm
-                                        </button>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
-                                        {selectedCommittee.id} · {selectedCommittee.name}
-                                    </div>
 
-                                    <div className="lec-assign-list">
-                                        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>Ca sáng</div>
-                                        {morningRows.map((row) => {
-                                            const isScored = row.finalScore != null && Number(row.finalScore) > 0;
-                                            return (
+                                <div className="lec-workspace">
+                                    <aside className="lec-left-pane">
+                                        <div style={{ fontWeight: 800, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <span>Danh sách đề tài theo ca</span>
                                             <button
-                                                key={`morning-${row.assignmentId}`}
                                                 type="button"
-                                                className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
-                                                onClick={() => setSelectedAssignmentId(row.assignmentId)}
-                                                style={{
-                                                    background: isScored ? "#ecfdf5" : undefined,
-                                                    border: isScored ? "1px solid #22c55e" : undefined,
-                                                }}
+                                                className="lec-soft"
+                                                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", fontSize: 12, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff" }}
+                                                onClick={() => setPreviewModalType("scoreSheet")}
                                             >
-                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                                                        <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
-                                                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                                                            Lớp: <strong>{row.className ?? "-"}</strong> · Khóa: <strong>{row.cohortCode ?? "-"}</strong>
-                                                        </div>
-                                                    </div>
-                                                    {isScored && (
-                                                        <div style={{
-                                                            padding: "4px 8px",
-                                                            borderRadius: 6,
-                                                            background: "#22c55e",
-                                                            color: "#ffffff",
-                                                            fontSize: 11,
-                                                            fontWeight: 600,
-                                                            whiteSpace: "nowrap",
-                                                        }}>
-                                                            {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div style={{ fontSize: 12, color: "#475569" }}>
-                                                    Giảng viên Hướng dẫn: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
-                                                </div>
-                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                                    {row.topicTags.length > 0 ? (
-                                                        row.topicTags.slice(0, 3).map((tag) => (
-                                                            <span
-                                                                key={`m-tag-${row.assignmentId}-${tag}`}
-                                                                style={{
-                                                                    border: "1px solid #22c55e",
-                                                                    borderRadius: 999,
-                                                                    padding: "1px 7px",
-                                                                    fontSize: 11,
-                                                                    color: "#166534",
-                                                                    background: "#f0fdf4",
-                                                                }}
-                                                            >
-                                                                {tag}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
-                                                    )}
-                                                </div>
-                                                <div style={{ fontSize: 12, color: "#64748b" }}>
-                                                    {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                                                </div>
+                                                <Eye size={14} /> Xem bảng điểm
                                             </button>
-                                            );
-                                        })}
-                                        {morningRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca sáng.</div>}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: "#475569", marginBottom: 8 }}>
+                                            {selectedCommittee.id} · {selectedCommittee.name}
+                                        </div>
 
-                                        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginTop: 6 }}>Ca chiều</div>
-                                        {afternoonRows.map((row) => {
-                                            const isScored = row.finalScore != null && Number(row.finalScore) > 0;
-                                            return (
-                                            <button
-                                                key={`afternoon-${row.assignmentId}`}
-                                                type="button"
-                                                className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
-                                                onClick={() => setSelectedAssignmentId(row.assignmentId)}
-                                                style={{
-                                                    background: isScored ? "#ecfdf5" : undefined,
-                                                    border: isScored ? "1px solid #22c55e" : undefined,
-                                                }}
-                                            >
-                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                                                        <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
-                                                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                                                            Lớp: <strong>{row.className ?? "-"}</strong> · Khóa: <strong>{row.cohortCode ?? "-"}</strong>
-                                                        </div>
-                                                    </div>
-                                                    {isScored && (
-                                                        <div style={{
-                                                            padding: "4px 8px",
-                                                            borderRadius: 6,
-                                                            background: "#22c55e",
-                                                            color: "#ffffff",
-                                                            fontSize: 11,
-                                                            fontWeight: 600,
-                                                            whiteSpace: "nowrap",
-                                                        }}>
-                                                            {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div style={{ fontSize: 12, color: "#475569" }}>
-                                                    Giảng viên Hướng dẫn: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
-                                                </div>
-                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                                    {row.topicTags.length > 0 ? (
-                                                        row.topicTags.slice(0, 3).map((tag) => (
-                                                            <span
-                                                                key={`a-tag-${row.assignmentId}-${tag}`}
-                                                                style={{
-                                                                    border: "1px solid #22c55e",
-                                                                    borderRadius: 999,
-                                                                    padding: "1px 7px",
+                                        <div className="lec-assign-list">
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>Ca sáng</div>
+                                            {morningRows.map((row) => {
+                                                const isScored = row.finalScore != null && Number(row.finalScore) > 0;
+                                                return (
+                                                    <button
+                                                        key={`morning-${row.assignmentId}`}
+                                                        type="button"
+                                                        className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
+                                                        onClick={() => setSelectedAssignmentId(row.assignmentId)}
+                                                        style={{
+                                                            background: isScored ? "#ecfdf5" : undefined,
+                                                            border: isScored ? "1px solid #22c55e" : undefined,
+                                                        }}
+                                                    >
+                                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                                                            <div style={{ flex: 1 }}>
+                                                                <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
+                                                                <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
+                                                                <div style={{ fontSize: 12, color: "#64748b" }}>
+                                                                    Lớp: <strong>{row.className ?? "-"}</strong> · Khóa: <strong>{row.cohortCode ?? "-"}</strong>
+                                                                </div>
+                                                            </div>
+                                                            {isScored && (
+                                                                <div style={{
+                                                                    padding: "4px 8px",
+                                                                    borderRadius: 6,
+                                                                    background: "#22c55e",
+                                                                    color: "#ffffff",
                                                                     fontSize: 11,
-                                                                    color: "#166534",
-                                                                    background: "#f0fdf4",
-                                                                }}
-                                                            >
-                                                                {tag}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
-                                                    )}
-                                                </div>
-                                                <div style={{ fontSize: 12, color: "#64748b" }}>
-                                                    {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                                                </div>
-                                            </button>
-                                            );
-                                        })}
-                                        {afternoonRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca chiều.</div>}
+                                                                    fontWeight: 600,
+                                                                    whiteSpace: "nowrap",
+                                                                }}>
+                                                                    {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: "#475569" }}>
+                                                            Giảng viên Hướng dẫn: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
+                                                        </div>
+                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                            {row.topicTags.length > 0 ? (
+                                                                row.topicTags.slice(0, 3).map((tag) => (
+                                                                    <span
+                                                                        key={`m-tag-${row.assignmentId}-${tag}`}
+                                                                        style={{
+                                                                            border: "1px solid #22c55e",
+                                                                            borderRadius: 999,
+                                                                            padding: "1px 7px",
+                                                                            fontSize: 11,
+                                                                            color: "#166534",
+                                                                            background: "#f0fdf4",
+                                                                        }}
+                                                                    >
+                                                                        {tag}
+                                                                    </span>
+                                                                ))
+                                                            ) : (
+                                                                <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                                                            {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                            {morningRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca sáng.</div>}
 
-                                    </div>
-                                </aside>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginTop: 6 }}>Ca chiều</div>
+                                            {afternoonRows.map((row) => {
+                                                const isScored = row.finalScore != null && Number(row.finalScore) > 0;
+                                                return (
+                                                    <button
+                                                        key={`afternoon-${row.assignmentId}`}
+                                                        type="button"
+                                                        className={`lec-assign-btn ${selectedAssignmentId === row.assignmentId ? "active" : ""}`}
+                                                        onClick={() => setSelectedAssignmentId(row.assignmentId)}
+                                                        style={{
+                                                            background: isScored ? "#ecfdf5" : undefined,
+                                                            border: isScored ? "1px solid #22c55e" : undefined,
+                                                        }}
+                                                    >
+                                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                                                            <div style={{ flex: 1 }}>
+                                                                <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
+                                                                <div style={{ fontSize: 12, color: "#475569" }}>{row.studentCode} · {row.studentName}</div>
+                                                                <div style={{ fontSize: 12, color: "#64748b" }}>
+                                                                    Lớp: <strong>{row.className ?? "-"}</strong> · Khóa: <strong>{row.cohortCode ?? "-"}</strong>
+                                                                </div>
+                                                            </div>
+                                                            {isScored && (
+                                                                <div style={{
+                                                                    padding: "4px 8px",
+                                                                    borderRadius: 6,
+                                                                    background: "#22c55e",
+                                                                    color: "#ffffff",
+                                                                    fontSize: 11,
+                                                                    fontWeight: 600,
+                                                                    whiteSpace: "nowrap",
+                                                                }}>
+                                                                    {formatScore(row.finalScore)}{formatLetterGrade(row.finalScore, row.finalGrade) ? ` - ${formatLetterGrade(row.finalScore, row.finalGrade)}` : ""}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: "#475569" }}>
+                                                            Giảng viên Hướng dẫn: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong>
+                                                        </div>
+                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                            {row.topicTags.length > 0 ? (
+                                                                row.topicTags.slice(0, 3).map((tag) => (
+                                                                    <span
+                                                                        key={`a-tag-${row.assignmentId}-${tag}`}
+                                                                        style={{
+                                                                            border: "1px solid #22c55e",
+                                                                            borderRadius: 999,
+                                                                            padding: "1px 7px",
+                                                                            fontSize: 11,
+                                                                            color: "#166534",
+                                                                            background: "#f0fdf4",
+                                                                        }}
+                                                                    >
+                                                                        {tag}
+                                                                    </span>
+                                                                ))
+                                                            ) : (
+                                                                <span style={{ fontSize: 11, color: "#94a3b8" }}>Chưa có tags</span>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                                                            {row.committeeCode} · {row.committeeName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                            {afternoonRows.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có đề tài ca chiều.</div>}
 
-                                <div className="lec-right-pane">
-                                    <div className="lec-room-header" style={{ marginBottom: 10 }}>
-                                        <div style={{ display: "grid", gap: 4 }}>
-                                            <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
-                                                <PencilRuler size={16} color="#f37021" /> Màn hình chấm điểm hội đồng
-                                            </div>
-                                            <div style={{ fontSize: 12, color: "#111111" }}>
-                                                Mỗi thao tác chấm điểm, biên bản và phản biện được ghi nhận theo đề tài đang chọn.
+                                        </div>
+                                    </aside>
+
+                                    <div className="lec-right-pane">
+                                        <div className="lec-room-header" style={{ marginBottom: 10 }}>
+                                            <div style={{ display: "grid", gap: 4 }}>
+                                                <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+                                                    <PencilRuler size={16} color="#f37021" /> Màn hình chấm điểm hội đồng
+                                                </div>
+                                                <div style={{ fontSize: 12, color: "#111111" }}>
+                                                    Mỗi thao tác chấm điểm, biên bản và phản biện được ghi nhận theo đề tài đang chọn.
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, background: "#fff7ed" }}>
-                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, fontSize: 13 }}>
-                                            <div>
-                                                <span className="lec-kicker">Sinh viên</span>
-                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow ? `${selectedMatrixRow.studentCode} - ${selectedMatrixRow.studentName}` : "-"}</div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Đề tài</span>
-                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.topicTitle ?? "-"}</div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Giảng viên Hướng dẫn</span>
-                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.supervisorLecturerName ?? "Chưa cập nhật"}</div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Tags đề tài</span>
-                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                                    {(selectedMatrixRow?.topicTags ?? []).length > 0 ? (
-                                                        (selectedMatrixRow?.topicTags ?? []).slice(0, 4).map((tag) => (
-                                                            <span
-                                                                key={`selected-tag-${selectedMatrixRow?.assignmentId ?? 0}-${tag}`}
-                                                                style={{
-                                                                    border: "1px solid #fdba74",
-                                                                    borderRadius: 999,
-                                                                    padding: "1px 7px",
-                                                                    fontSize: 11,
-                                                                    color: "#9a3412",
-                                                                    background: "#fff7ed",
-                                                                }}
-                                                            >
-                                                                {tag}
-                                                            </span>
-                                                        ))
-                                                    ) : (
-                                                        <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags</span>
-                                                    )}
+                                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, background: "#fff7ed" }}>
+                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, fontSize: 13 }}>
+                                                <div>
+                                                    <span className="lec-kicker">Sinh viên</span>
+                                                    <div style={{ fontWeight: 700 }}>{selectedMatrixRow ? `${selectedMatrixRow.studentCode} - ${selectedMatrixRow.studentName}` : "-"}</div>
                                                 </div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Hội đồng</span>
-                                                <div style={{ fontWeight: 700 }}>
-                                                    {selectedMatrixRow ? `${selectedMatrixRow.committeeCode} - ${selectedMatrixRow.committeeName}` : "-"}
+                                                <div>
+                                                    <span className="lec-kicker">Đề tài</span>
+                                                    <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.topicTitle ?? "-"}</div>
                                                 </div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Trạng thái khóa điểm</span>
-                                                <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.isLocked ? "Đã chốt" : "Đang mở"}</div>
-                                            </div>
-                                            <div>
-                                                <span className="lec-kicker">Điểm Giảng viên Hướng dẫn</span>
-                                                <div style={{ fontWeight: 700 }}>{formatScore(scoreGvhdDisplay)}</div>
-                                            </div>
-                                            <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
-                                                <div style={{ textAlign: "right" }}>
-                                                    <span className="lec-kicker">Báo cáo đồ án</span>
-                                                    <div style={{ marginTop: 2 }}>
-                                                        {selectedMatrixRow?.defenseDocuments && selectedMatrixRow.defenseDocuments.length > 0 ? (
-                                                            <a
-                                                                href={selectedMatrixRow.defenseDocuments[0].fileUrl}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="lec-primary"
-                                                                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, textDecoration: "none", padding: "3px 10px", fontSize: 11, borderRadius: 6, background: "#f37021", color: "#fff", border: "none" }}
-                                                            >
-                                                                <ExternalLink size={13} /> Xem báo cáo
-                                                            </a>
+                                                <div>
+                                                    <span className="lec-kicker">Giảng viên Hướng dẫn</span>
+                                                    <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.supervisorLecturerName ?? "Chưa cập nhật"}</div>
+                                                </div>
+                                                <div>
+                                                    <span className="lec-kicker">Tags đề tài</span>
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                        {(selectedMatrixRow?.topicTags ?? []).length > 0 ? (
+                                                            (selectedMatrixRow?.topicTags ?? []).slice(0, 4).map((tag) => (
+                                                                <span
+                                                                    key={`selected-tag-${selectedMatrixRow?.assignmentId ?? 0}-${tag}`}
+                                                                    style={{
+                                                                        border: "1px solid #fdba74",
+                                                                        borderRadius: 999,
+                                                                        padding: "1px 7px",
+                                                                        fontSize: 11,
+                                                                        color: "#9a3412",
+                                                                        background: "#fff7ed",
+                                                                    }}
+                                                                >
+                                                                    {tag}
+                                                                </span>
+                                                            ))
                                                         ) : (
-                                                            <span style={{ fontSize: 13, color: "#94a3b8" }}>Chưa nộp báo cáo</span>
+                                                            <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags</span>
                                                         )}
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4, borderTop: "1px solid #fed7aa", paddingTop: 10 }}>
-                                                {canViewMinutesTab && (
-                                                    <button
-                                                        type="button"
-                                                        className="lec-soft"
-                                                        style={{ background: "#ffffff", border: "1px solid #fdba74" }}
-                                                        onClick={() => setPreviewModalType("meeting")}
-                                                    >
-                                                        <Eye size={14} /> Xem biên bản
-                                                    </button>
-                                                )}
-                                                {canViewReviewTab && (
-                                                    <button
-                                                        type="button"
-                                                        className="lec-soft"
-                                                        style={{ background: "#ffffff", border: "1px solid #fdba74" }}
-                                                        onClick={() => setPreviewModalType("reviewer")}
-                                                    >
-                                                        <Eye size={14} /> Xem nhận xét
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, background: "#ffffff", display: "grid", gap: 10, marginTop: 10 }}>
-                                        <div style={{ fontWeight: 700 }}>Thành viên tham gia hội đồng</div>
-                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
-                                            {selectedCommittee.members.length === 0 && (
-                                                <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
-                                            )}
-                                            {selectedCommittee.members.map((member) => {
-                                                return (
-                                                    <div
-                                                        key={member.memberId}
-                                                        style={{
-                                                            border: "1px solid #cbd5e1",
-                                                            borderRadius: 10,
-                                                            padding: 10,
-                                                            display: "grid",
-                                                            gap: 6,
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                display: "flex",
-                                                                alignItems: "center",
-                                                                justifyContent: "space-between",
-                                                                gap: 8,
-                                                            }}
-                                                        >
-                                                            <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
-                                                        </div>
-                                                        <div style={{ fontSize: 13, color: "#334155" }}>
-                                                            {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
-                                                            {member.degree ? `${member.degree} ` : ""}
-                                                            {member.lecturerName}
-                                                        </div>
-                                                        <div style={{ fontSize: 12, color: "#475569" }}>
-                                                            {member.organization || "Chưa cập nhật nơi công tác"}
+                                                <div>
+                                                    <span className="lec-kicker">Hội đồng</span>
+                                                    <div style={{ fontWeight: 700 }}>
+                                                        {selectedMatrixRow ? `${selectedMatrixRow.committeeCode} - ${selectedMatrixRow.committeeName}` : "-"}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <span className="lec-kicker">Trạng thái khóa điểm</span>
+                                                    <div style={{ fontWeight: 700 }}>{selectedMatrixRow?.isLocked ? "Đã chốt" : "Đang mở"}</div>
+                                                </div>
+                                                <div>
+                                                    <span className="lec-kicker">Điểm Giảng viên Hướng dẫn</span>
+                                                    <div style={{ fontWeight: 700 }}>{formatScore(scoreGvhdDisplay)}</div>
+                                                </div>
+                                                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+                                                    <div style={{ textAlign: "right" }}>
+                                                        <span className="lec-kicker">Báo cáo đồ án</span>
+                                                        <div style={{ marginTop: 2 }}>
+                                                            {selectedMatrixRow?.defenseDocuments && selectedMatrixRow.defenseDocuments.length > 0 ? (
+                                                                <a
+                                                                    href={selectedMatrixRow.defenseDocuments[0].fileUrl}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="lec-primary"
+                                                                    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, textDecoration: "none", padding: "3px 10px", fontSize: 11, borderRadius: 6, background: "#f37021", color: "#fff", border: "none" }}
+                                                                >
+                                                                    <ExternalLink size={13} /> Xem báo cáo
+                                                                </a>
+                                                            ) : (
+                                                                <span style={{ fontSize: 13, color: "#94a3b8" }}>Chưa nộp báo cáo</span>
+                                                            )}
                                                         </div>
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    <div className="lec-tab-bar">
-                                        {workspaceTabs
-                                            .filter((tab) => {
-                                                if (tab.key === "minutes") {
-                                                    return canViewMinutesTab;
-                                                }
-                                                if (tab.key === "review") {
-                                                    return canViewReviewTab;
-                                                }
-                                                return true;
-                                            })
-                                            .map((tab) => (
-                                                <button
-                                                    key={tab.key}
-                                                    type="button"
-                                                    className={`lec-pill ${workspaceTab === tab.key ? "active" : ""}`}
-                                                    onClick={() => setWorkspaceTab(tab.key)}
-                                                >
-                                                    {tab.icon} {tab.label}
-                                                </button>
-                                            ))}
-                                    </div>
-
-                                    {workspaceTab === "scoring" && (
-                                        <div style={{ display: "grid", gap: 12 }}>
-                                            <div className="lec-score-grid">
-                                                <div className="lec-score-item">
-                                                    <div className="lec-kicker">Giảng viên Hướng dẫn</div>
-                                                    <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreGvhd ?? scoreGvhdDisplay)}</div>
                                                 </div>
-                                                <div className="lec-score-item">
-                                                    <div className="lec-kicker">Chủ tịch</div>
-                                                    <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreCt ?? null)}</div>
-                                                </div>
-                                                <div className="lec-score-item">
-                                                    <div className="lec-kicker">Ủy viên thư ký</div>
-                                                    <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreTk ?? null)}</div>
-                                                </div>
-                                                <div className="lec-score-item">
-                                                    <div className="lec-kicker">Ủy viên phản biện</div>
-                                                    <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scorePb ?? null)}</div>
-                                                </div>
-                                                <div className="lec-score-item">
-                                                    <div className="lec-kicker">Điểm tổng hợp</div>
-                                                    <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(scoringOverview.finalScore)}</div>
-                                                </div>
-                                            </div>
-
-                                            <div style={{
-                                                border: "1px solid #e2e8f0",
-                                                borderRadius: 12,
-                                                padding: 14,
-                                                background: canScoreNow ? "#f0fdf4" : "#f8fafc",
-                                                display: "grid",
-                                                gap: 10,
-                                            }}>
-                                                <div style={{ fontWeight: 700, fontSize: 14, color: canScoreNow ? "#166534" : "#64748b" }}>
-                                                    Chấm điểm — Vai trò: {myRoleLabel}
-                                                    {isCurrentSessionLocked && (
-                                                        <span style={{ color: "#b91c1c", fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
-                                                            (Phiên đã khóa — không thể chỉnh sửa)
-                                                        </span>
+                                                <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4, borderTop: "1px solid #fed7aa", paddingTop: 10 }}>
+                                                    {canViewMinutesTab && (
+                                                        <button
+                                                            type="button"
+                                                            className="lec-soft"
+                                                            style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                            onClick={() => setPreviewModalType("meeting")}
+                                                        >
+                                                            <Eye size={14} /> Xem biên bản
+                                                        </button>
+                                                    )}
+                                                    {canViewReviewTab && (
+                                                        <button
+                                                            type="button"
+                                                            className="lec-soft"
+                                                            style={{ background: "#ffffff", border: "1px solid #fdba74" }}
+                                                            onClick={() => setPreviewModalType("reviewer")}
+                                                        >
+                                                            <Eye size={14} /> Xem nhận xét
+                                                        </button>
                                                     )}
                                                 </div>
-                                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, background: "#ffffff", display: "grid", gap: 10, marginTop: 10 }}>
+                                            <div style={{ fontWeight: 700 }}>Thành viên tham gia hội đồng</div>
+                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 8 }}>
+                                                {selectedCommittee.members.length === 0 && (
+                                                    <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
+                                                )}
+                                                {selectedCommittee.members.map((member) => {
+                                                    return (
+                                                        <div
+                                                            key={member.memberId}
+                                                            style={{
+                                                                border: "1px solid #cbd5e1",
+                                                                borderRadius: 10,
+                                                                padding: 10,
+                                                                display: "grid",
+                                                                gap: 6,
+                                                            }}
+                                                        >
+                                                            <div
+                                                                style={{
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    justifyContent: "space-between",
+                                                                    gap: 8,
+                                                                }}
+                                                            >
+                                                                <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
+                                                            </div>
+                                                            <div style={{ fontSize: 13, color: "#334155" }}>
+                                                                {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
+                                                                {member.degree ? `${member.degree} ` : ""}
+                                                                {member.lecturerName}
+                                                            </div>
+                                                            <div style={{ fontSize: 12, color: "#475569" }}>
+                                                                {member.organization || "Chưa cập nhật nơi công tác"}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="lec-tab-bar">
+                                            {workspaceTabs
+                                                .filter((tab) => {
+                                                    if (tab.key === "minutes") {
+                                                        return canViewMinutesTab;
+                                                    }
+                                                    if (tab.key === "review") {
+                                                        return canViewReviewTab;
+                                                    }
+                                                    return true;
+                                                })
+                                                .map((tab) => (
+                                                    <button
+                                                        key={tab.key}
+                                                        type="button"
+                                                        className={`lec-pill ${workspaceTab === tab.key ? "active" : ""}`}
+                                                        onClick={() => setWorkspaceTab(tab.key)}
+                                                    >
+                                                        {tab.icon} {tab.label}
+                                                    </button>
+                                                ))}
+                                        </div>
+
+                                        {workspaceTab === "scoring" && (
+                                            <div style={{ display: "grid", gap: 12 }}>
+                                                <div className="lec-score-grid">
+                                                    <div className="lec-score-item">
+                                                        <div className="lec-kicker">Giảng viên Hướng dẫn</div>
+                                                        <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreGvhd ?? scoreGvhdDisplay)}</div>
+                                                    </div>
+                                                    <div className="lec-score-item">
+                                                        <div className="lec-kicker">Chủ tịch</div>
+                                                        <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreCt ?? null)}</div>
+                                                    </div>
+                                                    <div className="lec-score-item">
+                                                        <div className="lec-kicker">Ủy viên thư ký</div>
+                                                        <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scoreTk ?? null)}</div>
+                                                    </div>
+                                                    <div className="lec-score-item">
+                                                        <div className="lec-kicker">Ủy viên phản biện</div>
+                                                        <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(selectedMatrixRow?.scorePb ?? null)}</div>
+                                                    </div>
+                                                    <div className="lec-score-item">
+                                                        <div className="lec-kicker">Điểm tổng hợp</div>
+                                                        <div className="lec-value" style={{ fontSize: 22 }}>{formatScore(scoringOverview.finalScore)}</div>
+                                                    </div>
+                                                </div>
+
+                                                <div style={{
+                                                    border: "1px solid #e2e8f0",
+                                                    borderRadius: 12,
+                                                    padding: 14,
+                                                    background: canScoreNow ? "#f0fdf4" : "#f8fafc",
+                                                    display: "grid",
+                                                    gap: 10,
+                                                }}>
+                                                    <div style={{ fontWeight: 700, fontSize: 14, color: canScoreNow ? "#166534" : "#64748b" }}>
+                                                        Chấm điểm — Vai trò: {myRoleLabel}
+                                                        {isCurrentSessionLocked && (
+                                                            <span style={{ color: "#b91c1c", fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+                                                                (Phiên đã khóa — không thể chỉnh sửa)
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">Điểm {myRoleLabel} (0-10)</span>
+                                                            <input
+                                                                className="lec-input"
+                                                                type="number"
+                                                                step={0.1}
+                                                                min={0}
+                                                                max={10}
+                                                                value={myScore}
+                                                                onChange={(event) => setMyScore(event.target.value)}
+                                                                disabled={!canScoreNow}
+                                                            />
+                                                        </label>
+                                                    </div>
+
                                                     <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">Điểm {myRoleLabel} (0-10)</span>
-                                                        <input
-                                                            className="lec-input"
-                                                            type="number"
-                                                            step={0.1}
-                                                            min={0}
-                                                            max={10}
-                                                            value={myScore}
-                                                            onChange={(event) => setMyScore(event.target.value)}
+                                                        <span className="lec-kicker">Nhận xét {myRoleLabel}</span>
+                                                        <textarea
+                                                            value={myComment}
+                                                            onChange={(event) => setMyComment(event.target.value)}
                                                             disabled={!canScoreNow}
+                                                            rows={3}
+                                                            placeholder={`Nhập nhận xét của ${myRoleLabel}...`}
                                                         />
                                                     </label>
                                                 </div>
 
-                                                <label style={{ display: "grid", gap: 6 }}>
-                                                    <span className="lec-kicker">Nhận xét {myRoleLabel}</span>
-                                                    <textarea
-                                                        value={myComment}
-                                                        onChange={(event) => setMyComment(event.target.value)}
-                                                        disabled={!canScoreNow}
-                                                        rows={3}
-                                                        placeholder={`Nhập nhận xét của ${myRoleLabel}...`}
-                                                    />
-                                                </label>
-                                            </div>
+                                                {!isScoreValid && <div style={{ color: "#b91c1c", fontSize: 13 }}>Điểm phải trong khoảng từ 0 đến 10.</div>}
+                                                {hasVarianceAlert && (
+                                                    <div style={{ border: "1px solid #fecaca", borderRadius: 10, padding: 10, background: "#fff7ed", color: "#9a3412", fontSize: 13 }}>
+                                                        Chênh lệch điểm vượt ngưỡng ({formatScore(scoringOverview.variance)} / {formatScore(scoringOverview.varianceThreshold)}).
+                                                    </div>
+                                                )}
 
-                                            {!isScoreValid && <div style={{ color: "#b91c1c", fontSize: 13 }}>Điểm phải trong khoảng từ 0 đến 10.</div>}
-                                            {hasVarianceAlert && (
-                                                <div style={{ border: "1px solid #fecaca", borderRadius: 10, padding: 10, background: "#fff7ed", color: "#9a3412", fontSize: 13 }}>
-                                                    Chênh lệch điểm vượt ngưỡng ({formatScore(scoringOverview.variance)} / {formatScore(scoringOverview.varianceThreshold)}).
+                                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                    <button
+                                                        type="button"
+                                                        className="lec-primary"
+                                                        onClick={async () => {
+                                                            await handleSubmitScore({ intent: "score" });
+                                                            await refreshAllScoringRows();
+                                                        }}
+                                                        disabled={!canScoreNow || !isScoreValid}
+                                                    >
+                                                        <Save size={14} /> {submitted ? `Cập nhật điểm ${myRoleLabel}` : `Gửi điểm ${myRoleLabel}`}
+                                                    </button>
                                                 </div>
-                                            )}
 
-                                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                <button
-                                                    type="button"
-                                                    className="lec-primary"
-                                                    onClick={async () => {
-                                                        await handleSubmitScore();
-                                                        await refreshAllScoringRows();
-                                                    }}
-                                                    disabled={!canScoreNow || !isScoreValid}
-                                                >
-                                                    <Save size={14} /> {submitted ? `Cập nhật điểm ${myRoleLabel}` : `Gửi điểm ${myRoleLabel}`}
-                                                </button>
-                                            </div>
+                                                {submitted && (
+                                                    <div style={{ fontSize: 13, color: "#166534" }}>
+                                                        {lastSubmitIntent === "conclusion"
+                                                            ? "Đã lưu kết luận thành công."
+                                                            : "Đã lưu điểm thành công. Bạn vẫn có thể chỉnh sửa lại điểm nếu cần."}
+                                                    </div>
+                                                )}
 
-                                            {submitted && <div style={{ fontSize: 13, color: "#166534" }}>Đã lưu điểm thành công. Bạn vẫn có thể chỉnh sửa lại điểm nếu cần.</div>}
-                                        </div>
-                                    )}
-
-                                    {workspaceTab === "minutes" && (
-                                        <div style={{ display: "grid", gap: 10 }}>
-                                            {!canViewMinutesTab ? (
-                                                <div style={{ fontSize: 13, color: "#64748b" }}>
-                                                    Vai trò hiện tại không có màn hình nhập biên bản hội đồng này.
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <div style={{ fontWeight: 800, fontSize: 18, color: "#111111" }}>NỘI DUNG HỌP HỘI ĐỒNG CHẤM ĐỒ ÁN</div>
-                                                    {isChairRole && !canChairSeeMinutesSections123 && (
-                                                        <div style={{ fontSize: 13, color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 10, padding: 10, background: "#fff7ed" }}>
-                                                            Nội dung I, II, III sẽ hiển thị cho Chủ tịch sau khi Thư ký bấm lưu biên bản.
-                                                        </div>
-                                                    )}
-
-                                                    {shouldShowMinutesSections123 && (
-                                                        <>
-
-                                                            <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
-                                                                <div style={{ fontWeight: 800, color: "#111111" }}>I. Tóm tắt nội dung đồ án</div>
-                                                                
-                                                                <div style={{ fontWeight: 600, color: "#334155", fontSize: 13, marginTop: 4 }}>Chi tiết chương</div>
-                                                                {chapterContents.length === 0 && (
-                                                                    <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có mục chương. Bấm "Thêm chương" để nhập Chương I, II, III, IV...n.</div>
-                                                                )}
-                                                                {chapterContents.map((chapter, index) => (
-                                                                    <div key={`chapter-${index}`} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
-                                                                        <div style={{ fontWeight: 700, color: "#111111" }}>{`${String.fromCharCode(97 + index)}. Chương ${toRomanNumeral(index + 1)}`}</div>
-                                                                        <textarea
-                                                                            value={chapter.content}
-                                                                            onChange={(event) =>
-                                                                                setChapterContents((prev) =>
-                                                                                    prev.map((item, idx) => (idx === index ? { ...item, content: event.target.value } : item)),
-                                                                                )
-                                                                            }
-                                                                            readOnly={!canEditMinutesSections123}
-                                                                            rows={5}
-                                                                        />
-                                                                        {canEditMinutesSections123 && (
-                                                                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    className="lec-soft"
-                                                                                    style={{ width: "fit-content" }}
-                                                                                    onClick={() => clearChapterContent(index)}
-                                                                                    title="Xóa trắng nội dung chương"
-                                                                                >
-                                                                                    <Eraser size={14} /> Clear
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    className="lec-soft"
-                                                                                    style={{ width: "fit-content" }}
-                                                                                    onClick={() => deleteChapterWithConfirm(index)}
-                                                                                    title="Xóa chương"
-                                                                                >
-                                                                                    <Trash2 size={14} /> Xóa chương
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                                {canEditMinutesSections123 && (
-                                                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="lec-soft"
-                                                                            style={{ width: "fit-content" }}
-                                                                            onClick={() =>
-                                                                                setChapterContents((prev) => [...prev, { chapterTitle: `Chương ${toRomanNumeral(prev.length + 1)}`, content: "" }])
-                                                                            }
-                                                                        >
-                                                                            <Plus size={14} /> Thêm chương
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="lec-soft"
-                                                                            style={{ width: "fit-content" }}
-                                                                            onClick={restoreDeletedChapter}
-                                                                            disabled={!deletedChapterDraft}
-                                                                            title={deletedChapterDraft ? "Phục hồi chương vừa xóa" : "Chưa có chương nào bị xóa"}
-                                                                        >
-                                                                            <Undo2 size={14} /> Phục hồi chương
-                                                                        </button>
-                                                                    </div>
-                                                                )}
+                                                {isChairRole && (
+                                                    <div style={{ border: "1px solid #fdba74", borderRadius: 12, padding: 14, background: "#fff7ed", display: "grid", gap: 12 }}>
+                                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                                                            <div style={{ fontWeight: 800, fontSize: 15, color: "#9a3412" }}>
+                                                                Kết luận của Chủ tịch
                                                             </div>
+                                                            <div style={{ fontSize: 12, color: "#9a3412" }}>
+                                                                Chỉ quyết định việc yêu cầu nộp lại báo cáo.
+                                                            </div>
+                                                        </div>
 
-                                                            <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
-                                                                <div style={{ fontWeight: 800, color: "#111111" }}>II. Ý kiến của các thành viên Hội đồng đánh giá tốt nghiệp</div>
-                                                                <span className="lec-kicker">1. Ủy viên phản biện: Đọc nhận xét (có bản nhận xét kèm theo)</span>
-                                                                <div style={{ display: "grid", gap: 8, paddingLeft: 12 }}>
-                                                                    {getQuestionItemsBySource(QUESTION_SOURCE_REVIEWER).length === 0 && (
-                                                                        <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có câu hỏi.</div>
+                                                        <label
+                                                            style={{
+                                                                display: "grid",
+                                                                gap: 4,
+                                                                border: `1px solid ${revisionRequired ? "#f37021" : "#e2e8f0"}`,
+                                                                borderRadius: 10,
+                                                                padding: 10,
+                                                                background: revisionRequired ? "#ffffff" : "#fffdf9",
+                                                                cursor: canEditChairConclusion ? "pointer" : "not-allowed",
+                                                                opacity: canEditChairConclusion ? 1 : 0.75,
+                                                            }}
+                                                        >
+                                                            <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: "#111111" }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={revisionRequired}
+                                                                    disabled={!canEditChairConclusion}
+                                                                    onChange={(event) => setRevisionRequired(event.target.checked)}
+                                                                />
+                                                                Yêu cầu nộp lại báo cáo
+                                                            </span>
+                                                        </label>
+
+                                                        {revisionRequired && (
+                                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                                                                <label style={{ display: "grid", gap: 6 }}>
+                                                                    <span className="lec-kicker">Lý do cần chỉnh sửa *</span>
+                                                                    <textarea
+                                                                        value={revisionReason}
+                                                                        onChange={(event) => setRevisionReason(event.target.value)}
+                                                                        placeholder="Nhập lý do sinh hậu bảo vệ..."
+                                                                        rows={3}
+                                                                        disabled={!canEditChairConclusion}
+                                                                    />
+                                                                </label>
+                                                                <label style={{ display: "grid", gap: 6 }}>
+                                                                    <span className="lec-kicker">Deadline (ngày) *</span>
+                                                                    <input
+                                                                        className="lec-input"
+                                                                        type="number"
+                                                                        min={1}
+                                                                        max={60}
+                                                                        step={1}
+                                                                        value={revisionDeadlineDays}
+                                                                        onChange={(event) => setRevisionDeadlineDays(event.target.value)}
+                                                                        placeholder="14"
+                                                                        disabled={!canEditChairConclusion}
+                                                                    />
+                                                                </label>
+                                                            </div>
+                                                        )}
+
+                                                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                            <button
+                                                                type="button"
+                                                                className="lec-soft"
+                                                                onClick={() => { void handleSubmitScore({ intent: "conclusion" }); }}
+                                                                disabled={!canEditChairConclusion || !isScoreValid}
+                                                            >
+                                                                <Save size={14} /> Lưu kết luận
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {workspaceTab === "minutes" && (
+                                            <div style={{ display: "grid", gap: 10 }}>
+                                                {!canViewMinutesTab ? (
+                                                    <div style={{ fontSize: 13, color: "#64748b" }}>
+                                                        Vai trò hiện tại không có màn hình nhập biên bản hội đồng này.
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div style={{ fontWeight: 800, fontSize: 18, color: "#111111" }}>NỘI DUNG HỌP HỘI ĐỒNG CHẤM ĐỒ ÁN</div>
+                                                        {isChairRole && !canChairSeeMinutesSections123 && (
+                                                            <div style={{ fontSize: 13, color: "#9a3412", border: "1px solid #fed7aa", borderRadius: 10, padding: 10, background: "#fff7ed" }}>
+                                                                Nội dung I, II, III sẽ hiển thị cho Chủ tịch sau khi Thư ký bấm lưu biên bản.
+                                                            </div>
+                                                        )}
+
+                                                        {shouldShowMinutesSections123 && (
+                                                            <>
+
+                                                                <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
+                                                                    <div style={{ fontWeight: 800, color: "#111111" }}>I. Tóm tắt nội dung đồ án</div>
+
+                                                                    <div style={{ fontWeight: 600, color: "#334155", fontSize: 13, marginTop: 4 }}>Chi tiết chương</div>
+                                                                    {chapterContents.length === 0 && (
+                                                                        <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có mục chương. Bấm "Thêm chương" để nhập Chương I, II, III, IV...n.</div>
                                                                     )}
-                                                                    {getQuestionItemsBySource(QUESTION_SOURCE_REVIEWER).map(({ pair, index }) => (
-                                                                        <div key={`q-reviewer-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
-                                                                            <div style={{ fontWeight: 700, color: "#111111" }}>{`Câu hỏi ${index + 1}`}</div>
+                                                                    {chapterContents.map((chapter, index) => (
+                                                                        <div key={`chapter-${index}`} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
+                                                                            <div style={{ fontWeight: 700, color: "#111111" }}>{`${String.fromCharCode(97 + index)}. Chương ${toRomanNumeral(index + 1)}`}</div>
                                                                             <textarea
-                                                                                value={stripQuestionSource(pair.question)}
+                                                                                value={chapter.content}
                                                                                 onChange={(event) =>
-                                                                                    setQuestionAnswers((prev) =>
-                                                                                        prev.map((item, itemIndex) =>
-                                                                                            itemIndex === index
-                                                                                                ? { ...item, question: composeQuestionWithSource(QUESTION_SOURCE_REVIEWER, event.target.value) }
-                                                                                                : item,
-                                                                                        ),
+                                                                                    setChapterContents((prev) =>
+                                                                                        prev.map((item, idx) => (idx === index ? { ...item, content: event.target.value } : item)),
                                                                                     )
                                                                                 }
                                                                                 readOnly={!canEditMinutesSections123}
-                                                                                rows={3}
-                                                                                style={{ minHeight: 120 }}
+                                                                                rows={5}
                                                                             />
                                                                             {canEditMinutesSections123 && (
                                                                                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -4333,49 +4443,59 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                                                         type="button"
                                                                                         className="lec-soft"
                                                                                         style={{ width: "fit-content" }}
-                                                                                        onClick={() =>
-                                                                                            setQuestionAnswers((prev) =>
-                                                                                                prev.map((item, itemIndex) =>
-                                                                                                    itemIndex === index ? { ...item, question: `[${QUESTION_SOURCE_REVIEWER}] ` } : item,
-                                                                                                ),
-                                                                                            )
-                                                                                        }
-                                                                                        title="Xóa trắng nội dung câu hỏi"
+                                                                                        onClick={() => clearChapterContent(index)}
+                                                                                        title="Xóa trắng nội dung chương"
                                                                                     >
-                                                                                        <Eraser size={14} /> Clear câu hỏi
+                                                                                        <Eraser size={14} /> Clear
                                                                                     </button>
                                                                                     <button
                                                                                         type="button"
                                                                                         className="lec-soft"
                                                                                         style={{ width: "fit-content" }}
-                                                                                        onClick={() => deleteQuestionAnswerWithConfirm(index)}
-                                                                                        title="Xóa câu hỏi"
+                                                                                        onClick={() => deleteChapterWithConfirm(index)}
+                                                                                        title="Xóa chương"
                                                                                     >
-                                                                                        <Trash2 size={14} /> Xóa câu hỏi
+                                                                                        <Trash2 size={14} /> Xóa chương
                                                                                     </button>
                                                                                 </div>
                                                                             )}
                                                                         </div>
                                                                     ))}
                                                                     {canEditMinutesSections123 && (
-                                                                        <button
-                                                                            type="button"
-                                                                            className="lec-soft"
-                                                                            style={{ width: "fit-content" }}
-                                                                            onClick={() => addQuestionWithSource(QUESTION_SOURCE_REVIEWER)}
-                                                                        >
-                                                                            <Plus size={14} /> Thêm câu hỏi
-                                                                        </button>
+                                                                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="lec-soft"
+                                                                                style={{ width: "fit-content" }}
+                                                                                onClick={() =>
+                                                                                    setChapterContents((prev) => [...prev, { chapterTitle: `Chương ${toRomanNumeral(prev.length + 1)}`, content: "" }])
+                                                                                }
+                                                                            >
+                                                                                <Plus size={14} /> Thêm chương
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="lec-soft"
+                                                                                style={{ width: "fit-content" }}
+                                                                                onClick={restoreDeletedChapter}
+                                                                                disabled={!deletedChapterDraft}
+                                                                                title={deletedChapterDraft ? "Phục hồi chương vừa xóa" : "Chưa có chương nào bị xóa"}
+                                                                            >
+                                                                                <Undo2 size={14} /> Phục hồi chương
+                                                                            </button>
+                                                                        </div>
                                                                     )}
                                                                 </div>
-                                                                <div style={{ display: "grid", gap: 8 }}>
-                                                                    <span className="lec-kicker">2. Các thành viên Hội đồng nhận xét và thêm câu hỏi</span>
+
+                                                                <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
+                                                                    <div style={{ fontWeight: 800, color: "#111111" }}>II. Ý kiến của các thành viên Hội đồng đánh giá tốt nghiệp</div>
+                                                                    <span className="lec-kicker">1. Ủy viên phản biện: Đọc nhận xét (có bản nhận xét kèm theo)</span>
                                                                     <div style={{ display: "grid", gap: 8, paddingLeft: 12 }}>
-                                                                        {getQuestionItemsBySource(QUESTION_SOURCE_COUNCIL).length === 0 && (
+                                                                        {getQuestionItemsBySource(QUESTION_SOURCE_REVIEWER).length === 0 && (
                                                                             <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có câu hỏi.</div>
                                                                         )}
-                                                                        {getQuestionItemsBySource(QUESTION_SOURCE_COUNCIL).map(({ pair, index }) => (
-                                                                            <div key={`q-council-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                                                                        {getQuestionItemsBySource(QUESTION_SOURCE_REVIEWER).map(({ pair, index }) => (
+                                                                            <div key={`q-reviewer-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
                                                                                 <div style={{ fontWeight: 700, color: "#111111" }}>{`Câu hỏi ${index + 1}`}</div>
                                                                                 <textarea
                                                                                     value={stripQuestionSource(pair.question)}
@@ -4383,7 +4503,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                                                         setQuestionAnswers((prev) =>
                                                                                             prev.map((item, itemIndex) =>
                                                                                                 itemIndex === index
-                                                                                                    ? { ...item, question: composeQuestionWithSource(QUESTION_SOURCE_COUNCIL, event.target.value) }
+                                                                                                    ? { ...item, question: composeQuestionWithSource(QUESTION_SOURCE_REVIEWER, event.target.value) }
                                                                                                     : item,
                                                                                             ),
                                                                                         )
@@ -4401,7 +4521,7 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                                                             onClick={() =>
                                                                                                 setQuestionAnswers((prev) =>
                                                                                                     prev.map((item, itemIndex) =>
-                                                                                                        itemIndex === index ? { ...item, question: `[${QUESTION_SOURCE_COUNCIL}] ` } : item,
+                                                                                                        itemIndex === index ? { ...item, question: `[${QUESTION_SOURCE_REVIEWER}] ` } : item,
                                                                                                     ),
                                                                                                 )
                                                                                             }
@@ -4427,973 +4547,957 @@ const LecturerCommitteeGradingRoom: React.FC = () => {
                                                                                 type="button"
                                                                                 className="lec-soft"
                                                                                 style={{ width: "fit-content" }}
-                                                                                onClick={() => addQuestionWithSource(QUESTION_SOURCE_COUNCIL)}
+                                                                                onClick={() => addQuestionWithSource(QUESTION_SOURCE_REVIEWER)}
                                                                             >
                                                                                 <Plus size={14} /> Thêm câu hỏi
                                                                             </button>
                                                                         )}
                                                                     </div>
-                                                                </div>
-
-                                                                {canEditMinutesSections123 && (
-                                                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                                        <button
-                                                                            type="button"
-                                                                            className="lec-soft"
-                                                                            style={{ width: "fit-content" }}
-                                                                            onClick={restoreDeletedQuestionAnswer}
-                                                                            disabled={!deletedQuestionAnswerDraft}
-                                                                            title={deletedQuestionAnswerDraft ? "Phục hồi câu hỏi vừa xóa" : "Chưa có câu hỏi nào bị xóa"}
-                                                                        >
-                                                                            <Undo2 size={14} /> Phục hồi câu hỏi
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
-                                                                <div style={{ fontWeight: 800, color: "#111111" }}>III. Tác giả trả lời các câu hỏi đặt ra của Hội đồng</div>
-                                                                {questionAnswers.length === 0 ? (
-                                                                    <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có câu hỏi ở phần II nên chưa có thứ tự để nhập câu trả lời.</div>
-                                                                ) : (
-                                                                    questionAnswers.map((pair, index) => (
-                                                                        <div key={`a-only-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
-                                                                            <div style={{ fontWeight: 700, color: "#111111" }}>{`Trả lời câu ${index + 1}`}</div>
-                                                                            <div style={{ fontSize: 13, color: "#475569" }}>
-                                                                                Câu hỏi: {stripQuestionSource(pair.question)?.trim() ? stripQuestionSource(pair.question) : "(Chưa nhập câu hỏi ở phần II)"}
-                                                                            </div>
-                                                                            <textarea
-                                                                                value={pair.answer}
-                                                                                onChange={(event) =>
-                                                                                    setQuestionAnswers((prev) =>
-                                                                                        prev.map((item, itemIndex) => (itemIndex === index ? { ...item, answer: event.target.value } : item)),
-                                                                                    )
-                                                                                }
-                                                                                readOnly={!canEditMinutesSections123}
-                                                                                rows={4}
-                                                                                style={{ minHeight: 140 }}
-                                                                            />
+                                                                    <div style={{ display: "grid", gap: 8 }}>
+                                                                        <span className="lec-kicker">2. Các thành viên Hội đồng nhận xét và thêm câu hỏi</span>
+                                                                        <div style={{ display: "grid", gap: 8, paddingLeft: 12 }}>
+                                                                            {getQuestionItemsBySource(QUESTION_SOURCE_COUNCIL).length === 0 && (
+                                                                                <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có câu hỏi.</div>
+                                                                            )}
+                                                                            {getQuestionItemsBySource(QUESTION_SOURCE_COUNCIL).map(({ pair, index }) => (
+                                                                                <div key={`q-council-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                                                                                    <div style={{ fontWeight: 700, color: "#111111" }}>{`Câu hỏi ${index + 1}`}</div>
+                                                                                    <textarea
+                                                                                        value={stripQuestionSource(pair.question)}
+                                                                                        onChange={(event) =>
+                                                                                            setQuestionAnswers((prev) =>
+                                                                                                prev.map((item, itemIndex) =>
+                                                                                                    itemIndex === index
+                                                                                                        ? { ...item, question: composeQuestionWithSource(QUESTION_SOURCE_COUNCIL, event.target.value) }
+                                                                                                        : item,
+                                                                                                ),
+                                                                                            )
+                                                                                        }
+                                                                                        readOnly={!canEditMinutesSections123}
+                                                                                        rows={3}
+                                                                                        style={{ minHeight: 120 }}
+                                                                                    />
+                                                                                    {canEditMinutesSections123 && (
+                                                                                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="lec-soft"
+                                                                                                style={{ width: "fit-content" }}
+                                                                                                onClick={() =>
+                                                                                                    setQuestionAnswers((prev) =>
+                                                                                                        prev.map((item, itemIndex) =>
+                                                                                                            itemIndex === index ? { ...item, question: `[${QUESTION_SOURCE_COUNCIL}] ` } : item,
+                                                                                                        ),
+                                                                                                    )
+                                                                                                }
+                                                                                                title="Xóa trắng nội dung câu hỏi"
+                                                                                            >
+                                                                                                <Eraser size={14} /> Clear câu hỏi
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="lec-soft"
+                                                                                                style={{ width: "fit-content" }}
+                                                                                                onClick={() => deleteQuestionAnswerWithConfirm(index)}
+                                                                                                title="Xóa câu hỏi"
+                                                                                            >
+                                                                                                <Trash2 size={14} /> Xóa câu hỏi
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ))}
                                                                             {canEditMinutesSections123 && (
                                                                                 <button
                                                                                     type="button"
                                                                                     className="lec-soft"
                                                                                     style={{ width: "fit-content" }}
-                                                                                    onClick={() =>
-                                                                                        setQuestionAnswers((prev) =>
-                                                                                            prev.map((item, itemIndex) => (itemIndex === index ? { ...item, answer: "" } : item)),
-                                                                                        )
-                                                                                    }
-                                                                                    title="Xóa trắng câu trả lời"
+                                                                                    onClick={() => addQuestionWithSource(QUESTION_SOURCE_COUNCIL)}
                                                                                 >
-                                                                                    <Eraser size={14} /> Clear câu trả lời
+                                                                                    <Plus size={14} /> Thêm câu hỏi
                                                                                 </button>
                                                                             )}
                                                                         </div>
-                                                                    ))
-                                                                )}
+                                                                    </div>
+
+                                                                    {canEditMinutesSections123 && (
+                                                                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="lec-soft"
+                                                                                style={{ width: "fit-content" }}
+                                                                                onClick={restoreDeletedQuestionAnswer}
+                                                                                disabled={!deletedQuestionAnswerDraft}
+                                                                                title={deletedQuestionAnswerDraft ? "Phục hồi câu hỏi vừa xóa" : "Chưa có câu hỏi nào bị xóa"}
+                                                                            >
+                                                                                <Undo2 size={14} /> Phục hồi câu hỏi
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
+                                                                    <div style={{ fontWeight: 800, color: "#111111" }}>III. Tác giả trả lời các câu hỏi đặt ra của Hội đồng</div>
+                                                                    {questionAnswers.length === 0 ? (
+                                                                        <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có câu hỏi ở phần II nên chưa có thứ tự để nhập câu trả lời.</div>
+                                                                    ) : (
+                                                                        questionAnswers.map((pair, index) => (
+                                                                            <div key={`a-only-${index}`} style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                                                                                <div style={{ fontWeight: 700, color: "#111111" }}>{`Trả lời câu ${index + 1}`}</div>
+                                                                                <div style={{ fontSize: 13, color: "#475569" }}>
+                                                                                    Câu hỏi: {stripQuestionSource(pair.question)?.trim() ? stripQuestionSource(pair.question) : "(Chưa nhập câu hỏi ở phần II)"}
+                                                                                </div>
+                                                                                <textarea
+                                                                                    value={pair.answer}
+                                                                                    onChange={(event) =>
+                                                                                        setQuestionAnswers((prev) =>
+                                                                                            prev.map((item, itemIndex) => (itemIndex === index ? { ...item, answer: event.target.value } : item)),
+                                                                                        )
+                                                                                    }
+                                                                                    readOnly={!canEditMinutesSections123}
+                                                                                    rows={4}
+                                                                                    style={{ minHeight: 140 }}
+                                                                                />
+                                                                                {canEditMinutesSections123 && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="lec-soft"
+                                                                                        style={{ width: "fit-content" }}
+                                                                                        onClick={() =>
+                                                                                            setQuestionAnswers((prev) =>
+                                                                                                prev.map((item, itemIndex) => (itemIndex === index ? { ...item, answer: "" } : item)),
+                                                                                            )
+                                                                                        }
+                                                                                        title="Xóa trắng câu trả lời"
+                                                                                    >
+                                                                                        <Eraser size={14} /> Clear câu trả lời
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        ))
+                                                                    )}
+                                                                </div>
+                                                            </>
+                                                        )}
+
+                                                        {isChairRole && (
+                                                            <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
+                                                                <div style={{ fontWeight: 800, color: "#111111" }}>IV. Đánh giá của Hội đồng (do Chủ tịch Hội đồng tổng hợp nhận xét)</div>
+                                                                <label style={{ display: "grid", gap: 6 }}>
+                                                                    <span className="lec-kicker">a. Ưu điểm của đồ án</span>
+                                                                    <textarea value={strengths} onChange={(event) => setStrengths(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
+                                                                </label>
+                                                                <label style={{ display: "grid", gap: 6 }}>
+                                                                    <span className="lec-kicker">b. Thiếu sót, tồn tại</span>
+                                                                    <textarea value={weaknesses} onChange={(event) => setWeaknesses(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
+                                                                </label>
+                                                                <label style={{ display: "grid", gap: 6 }}>
+                                                                    <span className="lec-kicker">c. Các kiến nghị của Hội đồng</span>
+                                                                    <textarea value={recommendations} onChange={(event) => setRecommendations(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
+                                                                </label>
                                                             </div>
-                                                        </>
-                                                    )}
+                                                        )}
 
-                                                    {isChairRole && (
-                                                        <div style={{ display: "grid", gap: 8, border: "1px solid #e2e8f0", borderRadius: 10, padding: 10 }}>
-                                                            <div style={{ fontWeight: 800, color: "#111111" }}>IV. Đánh giá của Hội đồng (do Chủ tịch Hội đồng tổng hợp nhận xét)</div>
-                                                            <label style={{ display: "grid", gap: 6 }}>
-                                                                <span className="lec-kicker">a. Ưu điểm của đồ án</span>
-                                                                <textarea value={strengths} onChange={(event) => setStrengths(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
-                                                            </label>
-                                                            <label style={{ display: "grid", gap: 6 }}>
-                                                                <span className="lec-kicker">b. Thiếu sót, tồn tại</span>
-                                                                <textarea value={weaknesses} onChange={(event) => setWeaknesses(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
-                                                            </label>
-                                                            <label style={{ display: "grid", gap: 6 }}>
-                                                                <span className="lec-kicker">c. Các kiến nghị của Hội đồng</span>
-                                                                <textarea value={recommendations} onChange={(event) => setRecommendations(event.target.value)} readOnly={!canEditMinutesSection4} rows={6} style={{ minHeight: 150 }} />
-                                                            </label>
-                                                        </div>
-                                                    )}
-
-                                                </>
-                                            )}
-
-                                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                                                <div style={{ fontSize: 12, color: "#64748b" }}>{lastAutoSave ? `Autosave local: ${lastAutoSave}` : "Autosave local mỗi 30 giây"}</div>
-                                                <button
-                                                    type="button"
-                                                    className="lec-primary"
-                                                    disabled={!canSaveMinutes || !selectedAssignmentId}
-                                                    onClick={async () => {
-                                                        if (!selectedAssignmentId) {
-                                                            notifyError("Vui lòng chọn assignment để lưu biên bản.");
-                                                            return;
-                                                        }
-                                                        try {
-                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-minutes-save");
-                                                            const response = await lecturerApi.updateCommitteeMinutes(
-                                                                selectedCommitteeNumericId,
-                                                                {
-                                                                    assignmentId: selectedAssignmentId,
-                                                                    reviewerComments: review,
-                                                                    committeeMemberComments: questions,
-                                                                    qnaDetails: answers,
-                                                                    questionAnswers,
-                                                                    strengths,
-                                                                    weaknesses,
-                                                                    recommendations,
-                                                                    chapterContents,
-                                                                    councilDiscussionConclusion,
-                                                                    chairConclusion,
-                                                                    reviewerSections,
-                                                                },
-                                                                idempotencyKey,
-                                                            );
-                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được biên bản.")) {
-                                                                return;
-                                                            }
-                                                            notifySuccess("Lưu biên bản thành công.");
-                                                            setMinuteSavedAt(new Date().toISOString());
-                                                            setLastAutoSave(new Date().toLocaleTimeString("vi-VN"));
-                                                            pushTrace("minutes-upsert", "Đã lưu biên bản họp.");
-                                                            await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
-                                                            await refreshAllScoringRows();
-                                                        } catch {
-                                                            notifyError("Không lưu được biên bản.");
-                                                        }
-                                                    }}
-                                                >
-                                                    <Save size={14} /> Lưu biên bản
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {workspaceTab === "review" && (
-                                        <div style={{ display: "grid", gap: 10 }}>
-                                            {!canViewReviewTab ? (
-                                                <div style={{ fontSize: 13, color: "#64748b" }}>
-                                                    Vai trò hiện tại không có màn hình nhận xét phản biện.
-                                                </div>
-                                            ) : !minuteSavedAt && isChairRole ? (
-                                                <div style={{ fontSize: 13, color: "#64748b" }}>
-                                                    Chủ tịch chỉ xem tổng hợp nhận xét sau khi thành viên lưu biên bản/nhận xét của đề tài này.
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <div style={{ fontWeight: 800, fontSize: 18, color: "#111111" }}>NỘI DUNG NHẬN XÉT</div>
-                                                    <div style={{ fontSize: 13, color: "#334155" }}>
-                                                        Nhập đầy đủ 7 nội dung theo mẫu nhận xét của người phản biện đồ án.
-                                                    </div>
-
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">1. Tính cấp thiết của đề tài</span>
-                                                        <textarea
-                                                            value={reviewerSections.necessity}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, necessity: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">2. Tính trùng và tính mới của đề tài nghiên cứu</span>
-                                                        <textarea
-                                                            value={reviewerSections.novelty}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, novelty: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">3. Mức độ hợp lý và độ tin cậy của phương pháp nghiên cứu</span>
-                                                        <textarea
-                                                            value={reviewerSections.methodologyReliability}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, methodologyReliability: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">4. Nội dung và các kết quả đạt được</span>
-                                                        <textarea
-                                                            value={reviewerSections.resultsContent}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, resultsContent: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">5. Hạn chế của đồ án</span>
-                                                        <textarea
-                                                            value={reviewerSections.limitations}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, limitations: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">6. Một vài gợi ý để tác giả nghiên cứu và hoàn thiện đề tài</span>
-                                                        <textarea
-                                                            value={reviewerSections.suggestions}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, suggestions: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">7. Kết luận (mức độ đạt được so với mục tiêu), đồng ý hay không đồng ý thông qua đồ án của sinh viên</span>
-                                                        <textarea
-                                                            value={reviewerSections.overallConclusion}
-                                                            onChange={(event) => setReviewerSections((prev) => ({ ...prev, overallConclusion: event.target.value }))}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={5}
-                                                            style={{ minHeight: 150 }}
-                                                        />
-                                                    </label>
-
-                                                    <label style={{ display: "grid", gap: 6 }}>
-                                                        <span className="lec-kicker">Nhận xét tổng hợp phản biện</span>
-                                                        <textarea
-                                                            value={review}
-                                                            onChange={(event) => setReview(event.target.value)}
-                                                            readOnly={!canEditReviewerComments}
-                                                            rows={4}
-                                                        />
-                                                    </label>
-                                                </>
-                                            )}
-
-                                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                                <button
-                                                    type="button"
-                                                    className="lec-primary"
-                                                    disabled={!canEditReviewerComments || !selectedAssignmentId}
-                                                    onClick={async () => {
-                                                        if (!selectedAssignmentId) {
-                                                            notifyError("Vui lòng chọn assignment trước khi lưu nhận xét phản biện.");
-                                                            return;
-                                                        }
-                                                        try {
-                                                            const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-review-save");
-                                                            const response = await lecturerApi.updateCommitteeMinutes(
-                                                                selectedCommitteeNumericId,
-                                                                {
-                                                                    assignmentId: selectedAssignmentId,
-                                                                    reviewerComments: review,
-                                                                    committeeMemberComments: questions,
-                                                                    qnaDetails: answers,
-                                                                    questionAnswers,
-                                                                    strengths,
-                                                                    weaknesses,
-                                                                    recommendations,
-                                                                    chapterContents,
-                                                                    councilDiscussionConclusion,
-                                                                    chairConclusion,
-                                                                    reviewerSections,
-                                                                },
-                                                                idempotencyKey,
-                                                            );
-                                                            if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được nhận xét phản biện.")) {
-                                                                return;
-                                                            }
-                                                            notifySuccess("Lưu nhận xét phản biện thành công.");
-                                                            setMinuteSavedAt(new Date().toISOString());
-                                                            pushTrace("reviewer-comments-upsert", "Đã lưu nhận xét phản biện.");
-                                                            await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
-                                                        } catch {
-                                                            notifyError("Không lưu được nhận xét phản biện.");
-                                                        }
-                                                    }}
-                                                >
-                                                    <Save size={14} /> Lưu nhận xét
-                                                </button>
-                                            </div>
-
-                                            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                                <div style={{ fontWeight: 700, marginBottom: 6 }}>Liên thông chỉnh sửa sau bảo vệ</div>
-                                                <div style={{ fontSize: 13, marginBottom: 8 }}>
-                                                    Revision hiện chọn: {selectedRevisionItem.topicTitle || "-"} · {selectedRevisionItem.studentCode || "-"}
-                                                </div>
-                                                {selectedRevisionItem.revisionFileUrl && (
-                                                    <a
-                                                        href={normalizeUrl(selectedRevisionItem.revisionFileUrl)}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f172a" }}
-                                                    >
-                                                        <ExternalLink size={13} /> Mở tệp chỉnh sửa
-                                                    </a>
+                                                    </>
                                                 )}
-                                                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+
+                                                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                                                    <div style={{ fontSize: 12, color: "#64748b" }}>{lastAutoSave ? `Autosave local: ${lastAutoSave}` : "Autosave local mỗi 30 giây"}</div>
                                                     <button
                                                         type="button"
-                                                        className="lec-soft"
-                                                        disabled={!canApproveRevision || !selectedRevisionItem.revisionId}
+                                                        className="lec-primary"
+                                                        disabled={!canSaveMinutes || !selectedAssignmentId}
                                                         onClick={async () => {
-                                                            const revisionId = selectedRevisionItem.revisionId || 0;
-                                                            if (!revisionId) {
-                                                                notifyError("Không tìm thấy revision để duyệt.");
+                                                            if (!selectedAssignmentId) {
+                                                                notifyError("Vui lòng chọn assignment để lưu biên bản.");
                                                                 return;
                                                             }
                                                             try {
-                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-approve-revision");
-                                                                const response = await lecturerApi.approveRevision(revisionId, idempotencyKey);
-                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không duyệt được bản chỉnh sửa.")) {
+                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-minutes-save");
+                                                                const response = await lecturerApi.updateCommitteeMinutes(
+                                                                    selectedCommitteeNumericId,
+                                                                    {
+                                                                        assignmentId: selectedAssignmentId,
+                                                                        reviewerComments: review,
+                                                                        committeeMemberComments: questions,
+                                                                        qnaDetails: answers,
+                                                                        questionAnswers,
+                                                                        strengths,
+                                                                        weaknesses,
+                                                                        recommendations,
+                                                                        chapterContents,
+                                                                        councilDiscussionConclusion,
+                                                                        chairConclusion,
+                                                                        reviewerSections,
+                                                                    },
+                                                                    idempotencyKey,
+                                                                );
+                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được biên bản.")) {
                                                                     return;
                                                                 }
-                                                                pushTrace("approve-revision", "[UC4.2] Duyệt bản chỉnh sửa.");
-                                                                await refreshRevisionQueue();
+                                                                notifySuccess("Lưu biên bản thành công.");
+                                                                setMinuteSavedAt(new Date().toISOString());
+                                                                setLastAutoSave(new Date().toLocaleTimeString("vi-VN"));
+                                                                pushTrace("minutes-upsert", "Đã lưu biên bản họp.");
+                                                                await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
+                                                                await refreshAllScoringRows();
                                                             } catch {
-                                                                notifyError("Không duyệt được bản chỉnh sửa.");
+                                                                notifyError("Không lưu được biên bản.");
                                                             }
                                                         }}
                                                     >
-                                                        <CheckCircle2 size={14} /> Duyệt
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="lec-soft"
-                                                        disabled={!canRejectRevision || !selectedRevisionItem.revisionId}
-                                                        onClick={async () => {
-                                                            if (!rejectReason.trim()) {
-                                                                notifyError(ucError("UC4.2-REJECT_REASON_REQUIRED"));
-                                                                return;
-                                                            }
-                                                            const revisionId = selectedRevisionItem.revisionId || 0;
-                                                            if (!revisionId) {
-                                                                notifyError("Không tìm thấy revision để từ chối.");
-                                                                return;
-                                                            }
-                                                            try {
-                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-reject-revision");
-                                                                const response = await lecturerApi.rejectRevision(revisionId, rejectReason.trim(), idempotencyKey);
-                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không từ chối được bản chỉnh sửa.")) {
-                                                                    return;
-                                                                }
-                                                                pushTrace("reject-revision", "[UC4.2] Từ chối bản chỉnh sửa.");
-                                                                await refreshRevisionQueue();
-                                                            } catch {
-                                                                notifyError("Không từ chối được bản chỉnh sửa.");
-                                                            }
-                                                        }}
-                                                    >
-                                                        <XCircle size={14} /> Từ chối
+                                                        <Save size={14} /> Lưu biên bản
                                                     </button>
                                                 </div>
                                             </div>
+                                        )}
 
-                                            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                                <div style={{ fontWeight: 700, marginBottom: 6 }}>Danh sách revision</div>
-                                                {revisionQueue.length === 0 && <div style={{ fontSize: 13, color: "#64748b" }}>Không có bản chỉnh sửa chờ duyệt.</div>}
-                                                {revisionQueue.map((item) => (
+                                        {workspaceTab === "review" && (
+                                            <div style={{ display: "grid", gap: 10 }}>
+                                                {!canViewReviewTab ? (
+                                                    <div style={{ fontSize: 13, color: "#64748b" }}>
+                                                        Vai trò hiện tại không có màn hình nhận xét phản biện.
+                                                    </div>
+                                                ) : !minuteSavedAt && isChairRole ? (
+                                                    <div style={{ fontSize: 13, color: "#64748b" }}>
+                                                        Chủ tịch chỉ xem tổng hợp nhận xét sau khi thành viên lưu biên bản/nhận xét của đề tài này.
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div style={{ fontWeight: 800, fontSize: 18, color: "#111111" }}>NỘI DUNG NHẬN XÉT</div>
+                                                        <div style={{ fontSize: 13, color: "#334155" }}>
+                                                            Nhập đầy đủ 7 nội dung theo mẫu nhận xét của người phản biện đồ án.
+                                                        </div>
+
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">1. Tính cấp thiết của đề tài</span>
+                                                            <textarea
+                                                                value={reviewerSections.necessity}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, necessity: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">2. Tính trùng và tính mới của đề tài nghiên cứu</span>
+                                                            <textarea
+                                                                value={reviewerSections.novelty}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, novelty: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">3. Mức độ hợp lý và độ tin cậy của phương pháp nghiên cứu</span>
+                                                            <textarea
+                                                                value={reviewerSections.methodologyReliability}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, methodologyReliability: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">4. Nội dung và các kết quả đạt được</span>
+                                                            <textarea
+                                                                value={reviewerSections.resultsContent}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, resultsContent: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">5. Hạn chế của đồ án</span>
+                                                            <textarea
+                                                                value={reviewerSections.limitations}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, limitations: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">6. Một vài gợi ý để tác giả nghiên cứu và hoàn thiện đề tài</span>
+                                                            <textarea
+                                                                value={reviewerSections.suggestions}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, suggestions: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">7. Kết luận (mức độ đạt được so với mục tiêu), đồng ý hay không đồng ý thông qua đồ án của sinh viên</span>
+                                                            <textarea
+                                                                value={reviewerSections.overallConclusion}
+                                                                onChange={(event) => setReviewerSections((prev) => ({ ...prev, overallConclusion: event.target.value }))}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={5}
+                                                                style={{ minHeight: 150 }}
+                                                            />
+                                                        </label>
+
+                                                        <label style={{ display: "grid", gap: 6 }}>
+                                                            <span className="lec-kicker">Nhận xét tổng hợp phản biện</span>
+                                                            <textarea
+                                                                value={review}
+                                                                onChange={(event) => setReview(event.target.value)}
+                                                                readOnly={!canEditReviewerComments}
+                                                                rows={4}
+                                                            />
+                                                        </label>
+                                                    </>
+                                                )}
+
+                                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                                     <button
-                                                        key={`revision-${item.revisionId}-${item.assignmentId ?? "na"}`}
                                                         type="button"
-                                                        className="lec-assign-btn"
-                                                        style={{ width: "100%", marginBottom: 6 }}
-                                                        onClick={() => setRevision(item)}
+                                                        className="lec-primary"
+                                                        disabled={!canEditReviewerComments || !selectedAssignmentId}
+                                                        onClick={async () => {
+                                                            if (!selectedAssignmentId) {
+                                                                notifyError("Vui lòng chọn assignment trước khi lưu nhận xét phản biện.");
+                                                                return;
+                                                            }
+                                                            try {
+                                                                const idempotencyKey = createIdempotencyKey(periodIdText || "NA", "lecturer-review-save");
+                                                                const response = await lecturerApi.updateCommitteeMinutes(
+                                                                    selectedCommitteeNumericId,
+                                                                    {
+                                                                        assignmentId: selectedAssignmentId,
+                                                                        reviewerComments: review,
+                                                                        committeeMemberComments: questions,
+                                                                        qnaDetails: answers,
+                                                                        questionAnswers,
+                                                                        strengths,
+                                                                        weaknesses,
+                                                                        recommendations,
+                                                                        chapterContents,
+                                                                        councilDiscussionConclusion,
+                                                                        chairConclusion,
+                                                                        reviewerSections,
+                                                                    },
+                                                                    idempotencyKey,
+                                                                );
+                                                                if (notifyApiFailure(response as ApiResponse<unknown>, "Không lưu được nhận xét phản biện.")) {
+                                                                    return;
+                                                                }
+                                                                notifySuccess("Lưu nhận xét phản biện thành công.");
+                                                                setMinuteSavedAt(new Date().toISOString());
+                                                                pushTrace("reviewer-comments-upsert", "Đã lưu nhận xét phản biện.");
+                                                                await hydrateMinutes(selectedCommitteeNumericId, selectedAssignmentId);
+                                                            } catch {
+                                                                notifyError("Không lưu được nhận xét phản biện.");
+                                                            }
+                                                        }}
                                                     >
-                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                                                            <span style={{ fontWeight: 700 }}>{item.topicTitle}</span>
-                                                            <span style={{ fontSize: 12, color: "#475569" }}>{item.status}</span>
-                                                        </div>
-                                                        <div style={{ fontSize: 12, color: "#64748b" }}>
-                                                            {item.studentCode} · Assignment {item.assignmentId ?? "-"} · {formatDateTime(item.lastUpdated)}
-                                                        </div>
+                                                        <Save size={14} /> Lưu nhận xét
                                                     </button>
-                                                ))}
+                                                </div>
+
+                                                {/* Revision panels removed per UX request */}
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
                         )}
                     </section>
                 )}
 
-            {previewModalType && renderPortal(
-                <div
-                    style={{
-                        position: "fixed",
-                        inset: 0,
-                        background: "rgba(15, 23, 42, 0.45)",
-                        zIndex: 100000,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 18,
-                    }}
-                    onClick={() => setPreviewModalType(null)}
-                >
+                {previewModalType && renderPortal(
                     <div
                         style={{
-                            width: "min(980px, calc(100vw - 24px))",
-                            maxHeight: "calc(100vh - 36px)",
-                            overflowY: "auto",
-                            background: "#ffffff",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 14,
-                            padding: 16,
-                            boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
-                            display: "grid",
-                            gap: 10,
+                            position: "fixed",
+                            inset: 0,
+                            background: "rgba(15, 23, 42, 0.45)",
+                            zIndex: 100000,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 18,
                         }}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={() => setPreviewModalType(null)}
                     >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                            <div>
-                                <div style={{ fontWeight: 800, fontSize: 18 }}>
-                                    {previewModalType === "meeting"
-                                        ? "BIÊN BẢN HỌP HỘI ĐỒNG CHẤM LUẬN ĐỒ ÁN"
-                                        : previewModalType === "reviewer"
-                                            ? "NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN ĐỒ ÁN"
-                                            : "BẢNG ĐIỂM GHI KẾT QUẢ BẢO VỆ"}
-                                </div>
-                                <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+                        <div
+                            style={{
+                                width: "min(980px, calc(100vw - 24px))",
+                                maxHeight: "calc(100vh - 36px)",
+                                overflowY: "auto",
+                                background: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 14,
+                                padding: 16,
+                                boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
+                                display: "grid",
+                                gap: 10,
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                                <div>
+                                    <div style={{ fontWeight: 800, fontSize: 18 }}>
+                                        {previewModalType === "meeting"
+                                            ? "BIÊN BẢN HỌP HỘI ĐỒNG CHẤM LUẬN ĐỒ ÁN"
+                                            : previewModalType === "reviewer"
+                                                ? "NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN ĐỒ ÁN"
+                                                : "BẢNG ĐIỂM GHI KẾT QUẢ BẢO VỆ"}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
                                         {previewModalType === "scoreSheet"
                                             ? "Xem trước bảng điểm của toàn bộ đề tài trong hội đồng trước khi tải file."
                                             : "Xem trước theo dữ liệu đã nhập của đề tài đang chọn trước khi tải file."}
+                                    </div>
                                 </div>
-                            </div>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                <div style={{ position: "relative" }}>
-                                    <button
-                                        type="button"
-                                        style={{ border: "1px solid #cbd5e1", background: canDownloadPreviewDocuments ? "#0f172a" : "#94a3b8", color: "#ffffff", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: canDownloadPreviewDocuments ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}
-                                        disabled={isDownloadingPreviewFile || !canDownloadPreviewDocuments}
-                                        onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
-                                    >
-                                        <Download size={14} /> {isDownloadingPreviewFile ? "Đang xử lý..." : "Tải xuống"} <ChevronDown size={14} style={{ transform: showDownloadDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
-                                    </button>
-                                    {!canDownloadPreviewDocuments && (
-                                        <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>
-                                            Chỉ tải được khi hội đồng đã chốt điểm.
-                                        </div>
-                                    )}
-                                    {showDownloadDropdown && (
-                                        <div
-                                            style={{
-                                                position: "absolute",
-                                                top: "calc(100% + 6px)",
-                                                right: 0,
-                                                background: "#ffffff",
-                                                border: "1px solid #cbd5e1",
-                                                borderRadius: 10,
-                                                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                                                minWidth: 160,
-                                                zIndex: 4100,
-                                                overflow: "hidden",
-                                                display: "grid",
-                                                padding: 4,
-                                            }}
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                    <div style={{ position: "relative" }}>
+                                        <button
+                                            type="button"
+                                            style={{ border: "1px solid #cbd5e1", background: canDownloadPreviewDocuments ? "#0f172a" : "#94a3b8", color: "#ffffff", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: canDownloadPreviewDocuments ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}
+                                            disabled={isDownloadingPreviewFile || !canDownloadPreviewDocuments}
+                                            onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
                                         >
-                                            <button
-                                                type="button"
-                                                onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "word"); }}
-                                                style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
-                                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
-                                                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                                            <Download size={14} /> {isDownloadingPreviewFile ? "Đang xử lý..." : "Tải xuống"} <ChevronDown size={14} style={{ transform: showDownloadDropdown ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} />
+                                        </button>
+                                        {!canDownloadPreviewDocuments && (
+                                            <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>
+                                                Chỉ tải được khi hội đồng đã chốt điểm.
+                                            </div>
+                                        )}
+                                        {showDownloadDropdown && (
+                                            <div
+                                                style={{
+                                                    position: "absolute",
+                                                    top: "calc(100% + 6px)",
+                                                    right: 0,
+                                                    background: "#ffffff",
+                                                    border: "1px solid #cbd5e1",
+                                                    borderRadius: 10,
+                                                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                                                    minWidth: 160,
+                                                    zIndex: 4100,
+                                                    overflow: "hidden",
+                                                    display: "grid",
+                                                    padding: 4,
+                                                }}
                                             >
-                                                <FileText size={14} color="#2563eb" /> Xuất bản Word (.docx)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "pdf"); }}
-                                                style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
-                                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
-                                                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                                            >
-                                                <Download size={14} color="#dc2626" /> Xuất bản PDF (.pdf)
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "word"); }}
+                                                    style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
+                                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                                                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                                                >
+                                                    <FileText size={14} color="#2563eb" /> Xuất bản Word (.docx)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setShowDownloadDropdown(false); void downloadPreviewDocument(previewModalType, "pdf"); }}
+                                                    style={{ background: "none", border: "none", padding: "10px 12px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#0f172a", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}
+                                                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                                                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                                                >
+                                                    <Download size={14} color="#dc2626" /> Xuất bản PDF (.pdf)
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
 
-                                <button type="button" style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }} onClick={() => { setPreviewModalType(null); setShowDownloadDropdown(false); }}>
-                                    Đóng
-                                </button>
+                                    <button type="button" style={{ border: "1px solid #cbd5e1", background: "#f8fafc", color: "#64748b", padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }} onClick={() => { setPreviewModalType(null); setShowDownloadDropdown(false); }}>
+                                        Đóng
+                                    </button>
+                                </div>
                             </div>
-                        </div>
 
-                        {previewModalType === "meeting" ? (
-                            <div style={{ display: "grid", gap: 10, fontSize: 14, lineHeight: 1.6 }}>
-                                <div style={{ textAlign: "center", fontWeight: "bold", fontSize: 16, marginBottom: 10 }}>
-                                    BIÊN BẢN HỌP<br />
-                                    HỘI ĐỒNG CHẤM LUẬN ĐỒ ÁN
-                                </div>
-                                
-                                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10 }}>
-                                    <thead>
-                                        <tr>
-                                            <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>STT</th>
-                                            <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Họ và tên, Học vị, chức danh</th>
-                                            <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Trách nhiệm trong HĐ</th>
-                                            <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Chữ ký Thành viên Hội đồng</th>
-                                            <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Ghi chú</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(selectedCommittee?.members ?? []).map((member, idx) => (
-                                            <tr key={`preview-member-${member.memberId}`}>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>{idx + 1}</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>{`${member.degree ? `${member.degree} ` : ""}${member.lecturerName}`}</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>
-                                                    {member.roleCode === "CT" ? "Chủ tịch" : member.roleCode === "UVPB" ? "UV Phản biện" : member.roleCode === "UVTK" ? "UV Thư ký" : member.roleLabel}
-                                                </td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-
-                                <div>
-                                    Hội đồng đã họp vào ngày <strong>{formatDate(selectedMatrixRow?.scheduledAt ?? selectedCommittee?.date ?? null)}</strong> tại Trường Đại học Đại Nam để chấm đồ án cho sinh viên: <strong>{selectedMatrixRow?.studentName ?? ""}</strong> MSV: <strong>{selectedMatrixRow?.studentCode ?? ""}</strong>
-                                </div>
-                                <div>Lớp: <strong>{selectedMatrixRow?.className ?? "-"}</strong> Khóa: <strong>{selectedMatrixRow?.cohortCode ?? "-"}</strong> Ngành đào tạo: <strong>Công nghệ thông tin</strong></div>
-                                <div>Về đề tài: <strong>{selectedMatrixRow?.topicTitle ?? ""}</strong></div>
-                                <div>Ngành đào tạo: <strong>Công nghệ thông tin</strong> Mã số: <strong>{selectedMatrixRow?.topicCode ?? ""}</strong></div>
-                                <div>Số thành viên có mặt trong phiên họp chấm đồ án tốt nghiệp là: <strong>{selectedCommittee?.members.length ?? 0}</strong> người. Số vắng mặt: <strong>0</strong> người.</div>
-                                <div>Họ tên và chức danh người hướng dẫn: <strong>{selectedMatrixRow?.supervisorLecturerName ?? ""}</strong> · Nơi công tác: <strong>{selectedMatrixRow?.supervisorOrganization ?? "-"}</strong></div>
-
-                                <div style={{ textAlign: "center", fontWeight: "bold", marginTop: 10, marginBottom: 10 }}>NỘI DUNG HỌP HỘI ĐỒNG CHẤM ĐỒ ÁN</div>
-
-                                <div>
-                                    <strong>I. Tóm tắt nội dung đồ án</strong><br />
-                                    Hội đồng đã nghe tác giả trình bày tóm tắt nội dung đồ án bao gồm: <strong>{chapterContents?.length ?? 0}</strong> chương. Cụ thể:<br />
-                                    {(chapterContents ?? []).map((chapter, idx) => (
-                                        <div key={`preview-chapter-${idx}`} style={{ paddingLeft: 20 }}>
-                                            <strong>{String.fromCharCode(97 + idx)}) Chương {toRomanNumeral(idx + 1)}:</strong> {chapter.content}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div>
-                                    <strong>II. Ý kiến của các thành viên Hội đồng đánh giá tốt nghiệp</strong><br />
-                                    <strong>1. Uỷ viên phản biện: Đọc nhận xét (có bản nhận xét kèm theo) và đặt câu hỏi:</strong>
-                                    {getQuestionItemsBySource("II.1").length === 0 ? <div style={{ paddingLeft: 20 }}>...................................................................................</div> : getQuestionItemsBySource("II.1").map(({ pair, index }) => (
-                                        <div key={`preview-q1-${index}`} style={{ paddingLeft: 20 }}>- Câu hỏi {index + 1}: {stripQuestionSource(pair.question)}</div>
-                                    ))}
-                                    <div style={{ marginTop: 6 }}><strong>2. Các thành viên Hội đồng nhận xét và đặt câu hỏi:</strong></div>
-                                    {getQuestionItemsBySource("II.2").length === 0 ? <div style={{ paddingLeft: 20 }}>...................................................................................</div> : getQuestionItemsBySource("II.2").map(({ pair, index }) => (
-                                        <div key={`preview-q2-${index}`} style={{ paddingLeft: 20 }}>- Câu hỏi {index + 1}: {stripQuestionSource(pair.question)}</div>
-                                    ))}
-                                </div>
-
-                                <div>
-                                    <strong>III. Tác giả trả lời các câu hỏi đặt ra của Hội đồng</strong><br />
-                                    <div style={{ paddingLeft: 20 }}>
-                                        {(questionAnswers ?? []).length === 0 ? "..................................................................................." : (questionAnswers ?? []).map((item, idx) => (
-                                            <div key={`preview-a-${idx}`}>- {stripQuestionSource(item.question)}: {item.answer}</div>
-                                        ))}
+                            {previewModalType === "meeting" ? (
+                                <div style={{ display: "grid", gap: 10, fontSize: 14, lineHeight: 1.6 }}>
+                                    <div style={{ textAlign: "center", fontWeight: "bold", fontSize: 16, marginBottom: 10 }}>
+                                        BIÊN BẢN HỌP<br />
+                                        HỘI ĐỒNG CHẤM LUẬN ĐỒ ÁN
                                     </div>
-                                </div>
 
-                                <div>
-                                    <strong>IV. Đánh giá của Hội đồng (do Chủ tịch Hội đồng tổng hợp nhận xét)</strong><br />
-                                    <div style={{ paddingLeft: 20 }}>
-                                        <strong>a. Ưu điểm của đồ án</strong><br />
-                                        {strengths || "..................................................................................."}<br />
-                                        <strong>b. Thiếu sót, tồn tại</strong><br />
-                                        {weaknesses || "..................................................................................."}<br />
-                                        <strong>c. Các kiến nghị của Hội đồng</strong><br />
-                                        {recommendations || "..................................................................................."}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <strong>V. Hội đồng thảo luận, thống nhất kết quả đánh giá</strong>
-                                    <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6, marginBottom: 6 }}>
+                                    <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10 }}>
                                         <thead>
                                             <tr>
-                                                <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>TT</th>
-                                                <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Thành viên Hội đồng</th>
-                                                <th colSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Điểm số</th>
-                                                <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Ghi chú</th>
-                                            </tr>
-                                            <tr>
-                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Bằng số</th>
-                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Bằng chữ</th>
+                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>STT</th>
+                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Họ và tên, Học vị, chức danh</th>
+                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Trách nhiệm trong HĐ</th>
+                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Chữ ký Thành viên Hội đồng</th>
+                                                <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Ghi chú</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {(selectedCommittee?.members ?? []).map((member, idx) => (
-                                                <tr key={`preview-score-${member.memberId}`}>
+                                                <tr key={`preview-member-${member.memberId}`}>
                                                     <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>{idx + 1}</td>
-                                                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>{member.lecturerName}</td>
+                                                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>{`${member.degree ? `${member.degree} ` : ""}${member.lecturerName}`}</td>
                                                     <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>
-                                                        {member.roleCode === "CT" ? formatScore(selectedMatrixRow?.scoreCt ?? null) :
-                                                         member.roleCode === "UVPB" ? formatScore(selectedMatrixRow?.scorePb ?? null) :
-                                                         member.roleCode === "UVTK" ? formatScore(selectedMatrixRow?.scoreTk ?? null) : ""}
+                                                        {member.roleCode === "CT" ? "Chủ tịch" : member.roleCode === "UVPB" ? "UV Phản biện" : member.roleCode === "UVTK" ? "UV Thư ký" : member.roleLabel}
                                                     </td>
                                                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
                                                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
                                                 </tr>
                                             ))}
-                                            <tr>
-                                                <td colSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>Điểm trung bình</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatScore(selectedMatrixRow?.finalScore ?? null)}</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</td>
-                                                <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
-                                            </tr>
                                         </tbody>
                                     </table>
-                                </div>
 
-                                <div>
-                                    <strong>VI. Kết luận của Chủ tịch Hội đồng đánh giá tốt nghiệp</strong><br />
-                                    - Hội đồng thống nhất đánh giá đồ án với kết quả:<br />
-                                    + Bằng số: <strong>{formatScore(selectedMatrixRow?.finalScore ?? null)}</strong> (điểm)<br />
-                                    + Bằng chữ: <strong>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</strong> (điểm)<br />
-                                    Hội đồng đánh giá tốt nghiệp kết thúc vào hồi ........phút.........cùng ngày./.
-                                </div>
-
-                                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 30, marginBottom: 40, textAlign: "center" }}>
-                                    <div style={{ width: "50%" }}>
-                                        <strong>Thư ký Hội đồng</strong><br />
-                                        (Ký và ghi rõ họ tên)<br /><br /><br /><br />
-                                        <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVTK")?.lecturerName ?? ""}</strong>
+                                    <div>
+                                        Hội đồng đã họp vào ngày <strong>{formatDate(selectedMatrixRow?.scheduledAt ?? selectedCommittee?.date ?? null)}</strong> tại Trường Đại học Đại Nam để chấm đồ án cho sinh viên: <strong>{selectedMatrixRow?.studentName ?? ""}</strong> MSV: <strong>{selectedMatrixRow?.studentCode ?? ""}</strong>
                                     </div>
-                                    <div style={{ width: "50%" }}>
-                                        <strong>Chủ tịch Hội đồng</strong><br />
-                                        (Ký và ghi rõ họ tên)<br /><br /><br /><br />
-                                        <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "CT")?.lecturerName ?? ""}</strong>
+                                    <div>Lớp: <strong>{selectedMatrixRow?.className ?? "-"}</strong> Khóa: <strong>{selectedMatrixRow?.cohortCode ?? "-"}</strong> Ngành đào tạo: <strong>Công nghệ thông tin</strong></div>
+                                    <div>Về đề tài: <strong>{selectedMatrixRow?.topicTitle ?? ""}</strong></div>
+                                    <div>Ngành đào tạo: <strong>Công nghệ thông tin</strong> Mã số: <strong>{selectedMatrixRow?.topicCode ?? ""}</strong></div>
+                                    <div>Số thành viên có mặt trong phiên họp chấm đồ án tốt nghiệp là: <strong>{selectedCommittee?.members.length ?? 0}</strong> người. Số vắng mặt: <strong>0</strong> người.</div>
+                                    <div>Họ tên và chức danh người hướng dẫn: <strong>{selectedMatrixRow?.supervisorLecturerName ?? ""}</strong> · Nơi công tác: <strong>{selectedMatrixRow?.supervisorOrganization ?? "-"}</strong></div>
+
+                                    <div style={{ textAlign: "center", fontWeight: "bold", marginTop: 10, marginBottom: 10 }}>NỘI DUNG HỌP HỘI ĐỒNG CHẤM ĐỒ ÁN</div>
+
+                                    <div>
+                                        <strong>I. Tóm tắt nội dung đồ án</strong><br />
+                                        Hội đồng đã nghe tác giả trình bày tóm tắt nội dung đồ án bao gồm: <strong>{chapterContents?.length ?? 0}</strong> chương. Cụ thể:<br />
+                                        {(chapterContents ?? []).map((chapter, idx) => (
+                                            <div key={`preview-chapter-${idx}`} style={{ paddingLeft: 20 }}>
+                                                <strong>{String.fromCharCode(97 + idx)}) Chương {toRomanNumeral(idx + 1)}:</strong> {chapter.content}
+                                            </div>
+                                        ))}
                                     </div>
-                                </div>
-                            </div>
-                        ) : previewModalType === "reviewer" ? (
-                            <div style={{ display: "grid", gap: 10, fontSize: 14, lineHeight: 1.6 }}>
-                                <div style={{ textAlign: "center", fontWeight: "bold", fontSize: 16, marginBottom: 10 }}>
-                                    NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN ĐỒ ÁN<br />
-                                    NGÀNH CÔNG NGHỆ THÔNG TIN<br />
-                                    <span style={{ fontSize: 14, fontWeight: "normal" }}>(Dành cho thành viên Hội đồng)</span>
-                                </div>
-                                
-                                <div>Họ và tên sinh viên: <strong>{selectedMatrixRow?.studentName ?? ""}</strong> MSV: <strong>{selectedMatrixRow?.studentCode ?? ""}</strong></div>
-                                <div>Lớp: <strong>{selectedMatrixRow?.className ?? "-"}</strong> Khóa: <strong>{selectedMatrixRow?.cohortCode ?? "-"}</strong> Ngành học: <strong>Công nghệ thông tin</strong></div>
-                                <div>Tên đề tài: <strong>{selectedMatrixRow?.topicTitle ?? ""}</strong></div>
-                                <div>Học hàm/học vị - Họ và tên người phản biện: <strong>{(() => {
-                                    const reviewerMember = (selectedCommittee?.members ?? []).find((x) => x.roleCode === "UVPB");
-                                    if (!reviewerMember) return "";
-                                    return `${reviewerMember.degree ? `${reviewerMember.degree} ` : ""}${reviewerMember.lecturerName}`.trim();
-                                })()}</strong></div>
-                                <div>Nơi công tác: <strong>{(selectedCommittee?.members ?? []).find((x) => x.roleCode === "UVPB")?.organization ?? "-"}</strong></div>
 
-                                <div style={{ textAlign: "center", fontWeight: "bold", marginTop: 10, marginBottom: 10 }}>NỘI DUNG NHẬN XÉT</div>
-
-                                <div><strong>1. Tính cấp thiết của đề tài:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.necessity || "..................................................................................."}</div></div>
-                                <div><strong>2. Tính trùng và tính mới của đề tài nghiên cứu:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.novelty || "..................................................................................."}</div></div>
-                                <div><strong>3. Mức độ hợp lý và độ tin cậy của phương pháp nghiên cứu:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.methodologyReliability || "..................................................................................."}</div></div>
-                                <div><strong>4. Nội dung và các kết quả đạt được:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.resultsContent || "..................................................................................."}</div></div>
-                                <div><strong>5. Hạn chế của đồ án:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.limitations || "..................................................................................."}</div></div>
-                                <div><strong>6. Một vài gợi ý để tác giả nghiên cứu và hoàn thiện đề tài:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.suggestions || "..................................................................................."}</div></div>
-                                <div><strong>7. Kết luận (mức độ đạt được so với mục tiêu), đồng ý hay không đồng ý thông qua đồ án của sinh viên:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.overallConclusion || review || "..................................................................................."}</div></div>
-
-                                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 30, marginBottom: 40, textAlign: "center" }}>
-                                    <div style={{ width: "50%" }}>
-                                        <strong>Uỷ viên</strong><br />
-                                        (Ký và ghi rõ họ tên)<br /><br /><br /><br />
-                                        <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVPB")?.lecturerName ?? ""}</strong>
+                                    <div>
+                                        <strong>II. Ý kiến của các thành viên Hội đồng đánh giá tốt nghiệp</strong><br />
+                                        <strong>1. Uỷ viên phản biện: Đọc nhận xét (có bản nhận xét kèm theo) và đặt câu hỏi:</strong>
+                                        {getQuestionItemsBySource("II.1").length === 0 ? <div style={{ paddingLeft: 20 }}>...................................................................................</div> : getQuestionItemsBySource("II.1").map(({ pair, index }) => (
+                                            <div key={`preview-q1-${index}`} style={{ paddingLeft: 20 }}>- Câu hỏi {index + 1}: {stripQuestionSource(pair.question)}</div>
+                                        ))}
+                                        <div style={{ marginTop: 6 }}><strong>2. Các thành viên Hội đồng nhận xét và đặt câu hỏi:</strong></div>
+                                        {getQuestionItemsBySource("II.2").length === 0 ? <div style={{ paddingLeft: 20 }}>...................................................................................</div> : getQuestionItemsBySource("II.2").map(({ pair, index }) => (
+                                            <div key={`preview-q2-${index}`} style={{ paddingLeft: 20 }}>- Câu hỏi {index + 1}: {stripQuestionSource(pair.question)}</div>
+                                        ))}
                                     </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div style={{ display: "grid", gap: 10, fontSize: 13, lineHeight: 1.5 }}>
-                                <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontSize: 12, fontWeight: "bold" }}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-                                    <div style={{ fontSize: 13, fontWeight: "bold" }}>TRƯỜNG ĐẠI HỌC ĐẠI NAM</div>
-                                    <div style={{ fontSize: 14, fontWeight: "bold", marginTop: 6 }}>BẢNG ĐIỂM GHI KẾT QUẢ BẢO VỆ ĐỒ ÁN</div>
-                                    <div style={{ fontSize: 12, marginTop: 4 }}>NGÀNH: Công nghệ thông tin</div>
-                                    <div style={{ fontSize: 12, fontWeight: "bold", marginTop: 4 }}>HỘI ĐỒNG SỐ: {selectedMatrixRow?.committeeCode ?? selectedCommittee?.name ?? "-"}   NGÀY BẢO VỆ: {formatDate(selectedCommittee?.date ?? null)}</div>
-                                </div>
 
-                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 8 }}>
-                                    <tbody>
-                                        <tr>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>STT</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>MSSV</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên sinh viên</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Khoá</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên giảng viên hướng dẫn</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Điểm GVHD</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>CT</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>UVTK</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>UVPB</td>
-                                            <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 60 }}>ĐIỂM TỔNG KẾT</td>
-                                        </tr>
-                                        {selectedCommitteeScoreRows.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={10} style={{ border: "1px solid #000", padding: 8, textAlign: "center", color: "#64748b" }}>Chưa có dữ liệu bảng điểm cho hội đồng này.</td>
-                                            </tr>
-                                        ) : (
-                                            selectedCommitteeScoreRows.map((row, idx) => (
-                                                <tr key={`preview-score-sheet-${row.assignmentId}`}>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{idx + 1}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{row.studentCode}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4 }}>{row.studentName}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{row.cohortCode ?? "-"}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4 }}>{row.supervisorLecturerName ?? "-"}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreGvhd)}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreCt)}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreTk)}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scorePb)}</td>
-                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>{formatScore(row.finalScore)}</td>
+                                    <div>
+                                        <strong>III. Tác giả trả lời các câu hỏi đặt ra của Hội đồng</strong><br />
+                                        <div style={{ paddingLeft: 20 }}>
+                                            {(questionAnswers ?? []).length === 0 ? "..................................................................................." : (questionAnswers ?? []).map((item, idx) => (
+                                                <div key={`preview-a-${idx}`}>- {stripQuestionSource(item.question)}: {item.answer}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <strong>IV. Đánh giá của Hội đồng (do Chủ tịch Hội đồng tổng hợp nhận xét)</strong><br />
+                                        <div style={{ paddingLeft: 20 }}>
+                                            <strong>a. Ưu điểm của đồ án</strong><br />
+                                            {strengths || "..................................................................................."}<br />
+                                            <strong>b. Thiếu sót, tồn tại</strong><br />
+                                            {weaknesses || "..................................................................................."}<br />
+                                            <strong>c. Các kiến nghị của Hội đồng</strong><br />
+                                            {recommendations || "..................................................................................."}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <strong>V. Hội đồng thảo luận, thống nhất kết quả đánh giá</strong>
+                                        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6, marginBottom: 6 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>TT</th>
+                                                    <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Thành viên Hội đồng</th>
+                                                    <th colSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Điểm số</th>
+                                                    <th rowSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Ghi chú</th>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                                                <tr>
+                                                    <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Bằng số</th>
+                                                    <th style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>Bằng chữ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(selectedCommittee?.members ?? []).map((member, idx) => {
+                                                    const memberScore = member.roleCode === "CT" ? (selectedMatrixRow?.scoreCt ?? null) :
+                                                        member.roleCode === "UVPB" ? (selectedMatrixRow?.scorePb ?? null) :
+                                                            member.roleCode === "UVTK" ? (selectedMatrixRow?.scoreTk ?? null) : null;
+                                                    return (
+                                                        <tr key={`preview-score-${member.memberId}`}>
+                                                            <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>{idx + 1}</td>
+                                                            <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>{member.lecturerName}</td>
+                                                            <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>
+                                                                {formatScore(memberScore)}
+                                                            </td>
+                                                            <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>
+                                                                {formatLetterGrade(memberScore ?? null)}
+                                                            </td>
+                                                            <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                                <tr>
+                                                    <td colSpan={2} style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>Điểm trung bình</td>
+                                                    <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatScore(selectedMatrixRow?.finalScore ?? null)}</td>
+                                                    <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center", fontWeight: "bold" }}>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</td>
+                                                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                <div style={{ marginTop: 12 }}>
-                                    <div style={{ fontWeight: "bold", marginBottom: 8 }}>CÁC THÀNH VIÊN HỘI ĐỒNG</div>
-                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                                    <div>
+                                        <strong>VI. Kết luận của Chủ tịch Hội đồng đánh giá tốt nghiệp</strong><br />
+                                        - Hội đồng thống nhất đánh giá đồ án với kết quả:<br />
+                                        + Bằng số: <strong>{formatScore(selectedMatrixRow?.finalScore ?? null)}</strong> (điểm)<br />
+                                        + Bằng chữ: <strong>{formatLetterGrade(selectedMatrixRow?.finalScore ?? null, selectedMatrixRow?.finalGrade)}</strong> (điểm)<br />
+                                        Hội đồng đánh giá tốt nghiệp kết thúc vào hồi ........phút.........cùng ngày./.
+                                    </div>
+
+                                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 30, marginBottom: 40, textAlign: "center" }}>
+                                        <div style={{ width: "50%" }}>
+                                            <strong>Thư ký Hội đồng</strong><br />
+                                            (Ký và ghi rõ họ tên)<br /><br /><br /><br />
+                                            <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVTK")?.lecturerName ?? ""}</strong>
+                                        </div>
+                                        <div style={{ width: "50%" }}>
+                                            <strong>Chủ tịch Hội đồng</strong><br />
+                                            (Ký và ghi rõ họ tên)<br /><br /><br /><br />
+                                            <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "CT")?.lecturerName ?? ""}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : previewModalType === "reviewer" ? (
+                                <div style={{ display: "grid", gap: 10, fontSize: 14, lineHeight: 1.6 }}>
+                                    <div style={{ textAlign: "center", fontWeight: "bold", fontSize: 16, marginBottom: 10 }}>
+                                        NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN ĐỒ ÁN<br />
+                                        NGÀNH CÔNG NGHỆ THÔNG TIN<br />
+                                        <span style={{ fontSize: 14, fontWeight: "normal" }}>(Dành cho thành viên Hội đồng)</span>
+                                    </div>
+
+                                    <div>Họ và tên sinh viên: <strong>{selectedMatrixRow?.studentName ?? ""}</strong> MSV: <strong>{selectedMatrixRow?.studentCode ?? ""}</strong></div>
+                                    <div>Lớp: <strong>{selectedMatrixRow?.className ?? "-"}</strong> Khóa: <strong>{selectedMatrixRow?.cohortCode ?? "-"}</strong> Ngành học: <strong>Công nghệ thông tin</strong></div>
+                                    <div>Tên đề tài: <strong>{selectedMatrixRow?.topicTitle ?? ""}</strong></div>
+                                    <div>Học hàm/học vị - Họ và tên người phản biện: <strong>{(() => {
+                                        const reviewerMember = (selectedCommittee?.members ?? []).find((x) => x.roleCode === "UVPB");
+                                        if (!reviewerMember) return "";
+                                        return `${reviewerMember.degree ? `${reviewerMember.degree} ` : ""}${reviewerMember.lecturerName}`.trim();
+                                    })()}</strong></div>
+                                    <div>Nơi công tác: <strong>{(selectedCommittee?.members ?? []).find((x) => x.roleCode === "UVPB")?.organization ?? "-"}</strong></div>
+
+                                    <div style={{ textAlign: "center", fontWeight: "bold", marginTop: 10, marginBottom: 10 }}>NỘI DUNG NHẬN XÉT</div>
+
+                                    <div><strong>1. Tính cấp thiết của đề tài:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.necessity || "..................................................................................."}</div></div>
+                                    <div><strong>2. Tính trùng và tính mới của đề tài nghiên cứu:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.novelty || "..................................................................................."}</div></div>
+                                    <div><strong>3. Mức độ hợp lý và độ tin cậy của phương pháp nghiên cứu:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.methodologyReliability || "..................................................................................."}</div></div>
+                                    <div><strong>4. Nội dung và các kết quả đạt được:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.resultsContent || "..................................................................................."}</div></div>
+                                    <div><strong>5. Hạn chế của đồ án:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.limitations || "..................................................................................."}</div></div>
+                                    <div><strong>6. Một vài gợi ý để tác giả nghiên cứu và hoàn thiện đề tài:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.suggestions || "..................................................................................."}</div></div>
+                                    <div><strong>7. Kết luận (mức độ đạt được so với mục tiêu), đồng ý hay không đồng ý thông qua đồ án của sinh viên:</strong><br /><div style={{ paddingLeft: 20 }}>{reviewerSections.overallConclusion || review || "..................................................................................."}</div></div>
+
+                                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 30, marginBottom: 40, textAlign: "center" }}>
+                                        <div style={{ width: "50%" }}>
+                                            <strong>Uỷ viên</strong><br />
+                                            (Ký và ghi rõ họ tên)<br /><br /><br /><br />
+                                            <strong>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVPB")?.lecturerName ?? ""}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: "grid", gap: 10, fontSize: 13, lineHeight: 1.5 }}>
+                                    <div style={{ textAlign: "center" }}>
+                                        <div style={{ fontSize: 12, fontWeight: "bold" }}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
+                                        <div style={{ fontSize: 13, fontWeight: "bold" }}>TRƯỜNG ĐẠI HỌC ĐẠI NAM</div>
+                                        <div style={{ fontSize: 14, fontWeight: "bold", marginTop: 6 }}>BẢNG ĐIỂM GHI KẾT QUẢ BẢO VỆ ĐỒ ÁN</div>
+                                        <div style={{ fontSize: 12, marginTop: 4 }}>NGÀNH: Công nghệ thông tin</div>
+                                        <div style={{ fontSize: 12, fontWeight: "bold", marginTop: 4 }}>HỘI ĐỒNG SỐ: {selectedMatrixRow?.committeeCode ?? selectedCommittee?.name ?? "-"}   NGÀY BẢO VỆ: {formatDate(selectedCommittee?.date ?? null)}</div>
+                                    </div>
+
+                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 8 }}>
                                         <tbody>
                                             <tr>
                                                 <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>STT</td>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Chức danh</td>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên</td>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Ký tên</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>MSSV</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên sinh viên</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Khoá</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên giảng viên hướng dẫn</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Điểm GVHD</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>CT</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>UVTK</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 50 }}>UVPB</td>
+                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold", minWidth: 60 }}>ĐIỂM TỔNG KẾT</td>
                                             </tr>
-                                            <tr>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}></td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>CHỦ TỊCH</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "CT")?.lecturerName ?? "-"}</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}></td>
-                                            </tr>
-                                            <tr>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>2</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>ỦY VIÊN THƯ KÝ</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVTK")?.lecturerName ?? "-"}</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}></td>
-                                            </tr>
-                                            <tr>
-                                                <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}></td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>ỦY VIÊN PHẢN BIỆN</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVPB")?.lecturerName ?? "-"}</td>
-                                                <td style={{ border: "1px solid #000", padding: 4 }}></td>
-                                            </tr>
+                                            {selectedCommitteeScoreRows.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={10} style={{ border: "1px solid #000", padding: 8, textAlign: "center", color: "#64748b" }}>Chưa có dữ liệu bảng điểm cho hội đồng này.</td>
+                                                </tr>
+                                            ) : (
+                                                selectedCommitteeScoreRows.map((row, idx) => (
+                                                    <tr key={`preview-score-sheet-${row.assignmentId}`}>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{idx + 1}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{row.studentCode}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4 }}>{row.studentName}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{row.cohortCode ?? "-"}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4 }}>{row.supervisorLecturerName ?? "-"}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreGvhd)}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreCt)}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scoreTk)}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>{formatScore(row.scorePb)}</td>
+                                                        <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>{formatScore(row.finalScore)}</td>
+                                                    </tr>
+                                                ))
+                                            )}
                                         </tbody>
                                     </table>
-                                </div>
 
-                                <div style={{ marginTop: 16, textAlign: "center", fontSize: 12 }}>
-                                    <div>Hà Nội, ngày .........tháng.........năm 202.....</div>
-                                    <div style={{ marginTop: 12, fontWeight: "bold" }}>Chủ tịch Hội đồng</div>
-                                    <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 2 }}>(Ký và ghi rõ họ tên)</div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+                                    <div style={{ marginTop: 12 }}>
+                                        <div style={{ fontWeight: "bold", marginBottom: 8 }}>CÁC THÀNH VIÊN HỘI ĐỒNG</div>
+                                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                                            <tbody>
+                                                <tr>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>STT</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Chức danh</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Họ và tên</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center", fontWeight: "bold" }}>Ký tên</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>1</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>CHỦ TỊCH</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "CT")?.lecturerName ?? "-"}</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}></td>
+                                                </tr>
+                                                <tr>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>2</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>ỦY VIÊN THƯ KÝ</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVTK")?.lecturerName ?? "-"}</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}></td>
+                                                </tr>
+                                                <tr>
+                                                    <td style={{ border: "1px solid #000", padding: 4, textAlign: "center" }}>3</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>ỦY VIÊN PHẢN BIỆN</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}>{(selectedCommittee?.members ?? []).find(m => m.roleCode === "UVPB")?.lecturerName ?? "-"}</td>
+                                                    <td style={{ border: "1px solid #000", padding: 4 }}></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-            {detailCommittee && renderPortal(
-                <div
-                    style={{
-                        position: "fixed",
-                        inset: 0,
-                        background: "rgba(15, 23, 42, 0.45)",
-                        zIndex: 100000,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 18,
-                    }}
-                    onClick={() => setDetailCommitteeId("")}
-                >
+                                    <div style={{ marginTop: 16, textAlign: "center", fontSize: 12 }}>
+                                        <div>
+                                            {(() => {
+                                                const defenseDate = new Date(selectedCommittee?.date || selectedMatrixRow?.scheduledAt || new Date());
+                                                const day = defenseDate.getDate();
+                                                const month = defenseDate.getMonth() + 1;
+                                                const year = defenseDate.getFullYear();
+                                                return `Hà Nội, ngày ${day} tháng ${month} năm ${year}`;
+                                            })()}
+                                        </div>
+                                        <div style={{ marginTop: 12, fontWeight: "bold" }}>Chủ tịch Hội đồng</div>
+                                        <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 2 }}>(Ký và ghi rõ họ tên)</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>                </div>
+                )}
+
+                {detailCommittee && renderPortal(
                     <div
                         style={{
-                            width: "min(860px, calc(100vw - 24px))",
-                            maxHeight: "calc(100vh - 36px)",
-                            overflowY: "auto",
-                            background: "#ffffff",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 14,
-                            padding: 16,
-                            boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
+                            position: "fixed",
+                            inset: 0,
+                            background: "rgba(15, 23, 42, 0.45)",
+                            zIndex: 100000,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 18,
                         }}
-                        onClick={(event) => event.stopPropagation()}
+                        onClick={() => setDetailCommitteeId("")}
                     >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                            <div>
-                                <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <Info size={18} /> Chi tiết hội đồng {detailCommittee.id}
-                                </h3>
-                                <div style={{ marginTop: 4, fontSize: 13, color: "#334155" }}>{detailCommittee.name}</div>
+                        <div
+                            style={{
+                                width: "min(860px, calc(100vw - 24px))",
+                                maxHeight: "calc(100vh - 36px)",
+                                overflowY: "auto",
+                                background: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 14,
+                                padding: 16,
+                                boxShadow: "0 20px 44px rgba(2, 6, 23, 0.24)",
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                                <div>
+                                    <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <Info size={18} /> Chi tiết hội đồng {detailCommittee.id}
+                                    </h3>
+                                    <div style={{ marginTop: 4, fontSize: 13, color: "#334155" }}>{detailCommittee.name}</div>
+                                </div>
+                                <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
                             </div>
-                            <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
-                        </div>
 
-                        <div className="lec-tab-bar">
-                            {detailTabs.map((tab) => (
+                            <div className="lec-tab-bar">
+                                {detailTabs.map((tab) => (
+                                    <button
+                                        key={tab.key}
+                                        type="button"
+                                        className={`lec-pill ${detailTab === tab.key ? "active" : ""}`}
+                                        onClick={() => setDetailTab(tab.key)}
+                                    >
+                                        {tab.icon} {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {detailTab === "overview" && (
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Mã hội đồng</div>
+                                        <div style={{ fontWeight: 700 }}>{detailCommittee.id}</div>
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Vai trò của tôi</div>
+                                        <div style={{ fontWeight: 700 }}>{detailCommittee.roleLabel}</div>
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Lịch bảo vệ</div>
+                                        <div style={{ fontWeight: 700 }}>{formatDate(detailCommittee.date)} · {formatSession(detailCommittee.session)}</div>
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Ngành</div>
+                                        <div style={{ fontWeight: 700 }}>Công nghệ thông tin</div>
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Phòng</div>
+                                        <div style={{ fontWeight: 700 }}>{detailCommittee.room}</div>
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Trạng thái phiên</div>
+                                        {(() => {
+                                            const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
+
+                                            return (
+                                                <span
+                                                    style={{
+                                                        display: "inline-flex",
+                                                        alignItems: "center",
+                                                        gap: 6,
+                                                        width: "fit-content",
+                                                        borderRadius: 999,
+                                                        padding: "5px 10px",
+                                                        fontSize: 12,
+                                                        fontWeight: 500,
+                                                        border: `1px solid ${statusVisual.chipBorder}`,
+                                                        background: statusVisual.chipBg,
+                                                        color: statusVisual.chipText,
+                                                    }}
+                                                >
+                                                    {statusVisual.icon} {statusVisual.label}
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                    <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                        <div className="lec-kicker">Số đề tài</div>
+                                        <div style={{ fontWeight: 700 }}>{committeeBadgeStats.get(detailCommittee.id)?.total ?? detailCommittee.studentCount}</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {detailTab === "members" && (
+                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                    {detailCommittee.members.length === 0 && (
+                                        <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
+                                    )}
+                                    {detailCommittee.members.map((member) => (
+                                        <div
+                                            key={member.memberId}
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
+                                                gap: 8,
+                                                padding: "8px 0",
+                                                borderBottom: "1px dashed #e2e8f0",
+                                            }}
+                                        >
+                                            <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
+                                            <div style={{ display: "grid", gap: 6 }}>
+                                                <div style={{ fontSize: 13 }}>
+                                                    {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
+                                                    {member.degree ? `${member.degree} ` : ""}
+                                                    {member.lecturerName}
+                                                </div>
+                                                <div style={{ fontSize: 12, color: "#475569" }}>
+                                                    {member.organization || "Chưa cập nhật nơi công tác"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {detailTab === "topics" && (
+                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
+                                    {detailCommitteeRows.length === 0 && (
+                                        <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có assignment trong scoring matrix cho hội đồng này.</div>
+                                    )}
+                                    {detailCommitteeRows.map((row) => (
+                                        <div
+                                            key={`detail-topic-${row.assignmentId}`}
+                                            style={{
+                                                display: "grid",
+                                                gap: 4,
+                                                padding: "8px 0",
+                                                borderBottom: "1px dashed #e2e8f0",
+                                            }}
+                                        >
+                                            <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
+                                            <div style={{ fontSize: 13, color: "#475569" }}>
+                                                {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
+                                            </div>
+                                            <div style={{ fontSize: 13, color: "#475569" }}>
+                                                GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
+                                            </div>
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                                {row.topicTags.length > 0 ? (
+                                                    row.topicTags.map((tag) => (
+                                                        <span
+                                                            key={`detail-tag-${row.assignmentId}-${tag}`}
+                                                            style={{
+                                                                border: "1px solid #fdba74",
+                                                                borderRadius: 999,
+                                                                padding: "1px 8px",
+                                                                fontSize: 11,
+                                                                color: "#9a3412",
+                                                                background: "#fff7ed",
+                                                            }}
+                                                        >
+                                                            {tag}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                                <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
                                 <button
-                                    key={tab.key}
                                     type="button"
-                                    className={`lec-pill ${detailTab === tab.key ? "active" : ""}`}
-                                    onClick={() => setDetailTab(tab.key)}
+                                    className="lec-primary"
+                                    onClick={() => {
+                                        openRoleWorkspace(detailCommittee);
+                                        setDetailCommitteeId("");
+                                    }}
+                                    disabled={detailCommittee.status !== "Đang họp"}
                                 >
-                                    {tab.icon} {tab.label}
+                                    <ArrowRight size={14} /> Tham gia
                                 </button>
-                            ))}
-                        </div>
-
-                        {detailTab === "overview" && (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Mã hội đồng</div>
-                                    <div style={{ fontWeight: 700 }}>{detailCommittee.id}</div>
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Vai trò của tôi</div>
-                                    <div style={{ fontWeight: 700 }}>{detailCommittee.roleLabel}</div>
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Lịch bảo vệ</div>
-                                    <div style={{ fontWeight: 700 }}>{formatDate(detailCommittee.date)} · {formatSession(detailCommittee.session)}</div>
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Ngành</div>
-                                    <div style={{ fontWeight: 700 }}>Công nghệ thông tin</div>
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Phòng</div>
-                                    <div style={{ fontWeight: 700 }}>{detailCommittee.room}</div>
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Trạng thái phiên</div>
-                                    {(() => {
-                                        const statusVisual = getCommitteeStatusVisual(detailCommittee.status);
-
-                                        return (
-                                            <span
-                                                style={{
-                                                    display: "inline-flex",
-                                                    alignItems: "center",
-                                                    gap: 6,
-                                                    width: "fit-content",
-                                                    borderRadius: 999,
-                                                    padding: "5px 10px",
-                                                    fontSize: 12,
-                                                    fontWeight: 500,
-                                                    border: `1px solid ${statusVisual.chipBorder}`,
-                                                    background: statusVisual.chipBg,
-                                                    color: statusVisual.chipText,
-                                                }}
-                                            >
-                                                {statusVisual.label}
-                                            </span>
-                                        );
-                                    })()}
-                                </div>
-                                <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                    <div className="lec-kicker">Số đề tài</div>
-                                    <div style={{ fontWeight: 700 }}>{committeeBadgeStats.get(detailCommittee.id)?.total ?? detailCommittee.studentCount}</div>
-                                </div>
                             </div>
-                        )}
-
-                        {detailTab === "members" && (
-                            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                {detailCommittee.members.length === 0 && (
-                                    <div style={{ fontSize: 13, color: "#64748b" }}>Snapshot chưa có danh sách thành viên cho hội đồng này.</div>
-                                )}
-                                {detailCommittee.members.map((member) => (
-                                    <div
-                                        key={member.memberId}
-                                        style={{
-                                            display: "grid",
-                                            gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
-                                            gap: 8,
-                                            padding: "8px 0",
-                                            borderBottom: "1px dashed #e2e8f0",
-                                        }}
-                                    >
-                                        <div style={{ fontWeight: 700 }}>{member.roleLabel}</div>
-                                        <div style={{ display: "grid", gap: 6 }}>
-                                            <div style={{ fontSize: 13 }}>
-                                                {member.lecturerCode ? `${member.lecturerCode} - ` : ""}
-                                                {member.degree ? `${member.degree} ` : ""}
-                                                {member.lecturerName}
-                                            </div>
-                                            <div style={{ fontSize: 12, color: "#475569" }}>
-                                                {member.organization || "Chưa cập nhật nơi công tác"}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {detailTab === "topics" && (
-                            <div style={{ border: "1px solid #cbd5e1", borderRadius: 12, padding: 10 }}>
-                                {detailCommitteeRows.length === 0 && (
-                                    <div style={{ fontSize: 13, color: "#64748b" }}>Chưa có assignment trong scoring matrix cho hội đồng này.</div>
-                                )}
-                                {detailCommitteeRows.map((row) => (
-                                    <div
-                                        key={`detail-topic-${row.assignmentId}`}
-                                        style={{
-                                            display: "grid",
-                                            gap: 4,
-                                            padding: "8px 0",
-                                            borderBottom: "1px dashed #e2e8f0",
-                                        }}
-                                    >
-                                        <div style={{ fontWeight: 700 }}>{row.topicTitle}</div>
-                                        <div style={{ fontSize: 13, color: "#475569" }}>
-                                            {row.studentCode} - {row.studentName} · {formatSession(row.session)} · {formatRowTimeRange(row)}
-                                        </div>
-                                        <div style={{ fontSize: 13, color: "#475569" }}>
-                                            GVHD: <strong>{row.supervisorLecturerName ?? "Chưa cập nhật"}</strong> · Hội đồng: <strong>{row.committeeCode} - {row.committeeName}</strong>
-                                        </div>
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                            {row.topicTags.length > 0 ? (
-                                                row.topicTags.map((tag) => (
-                                                    <span
-                                                        key={`detail-tag-${row.assignmentId}-${tag}`}
-                                                        style={{
-                                                            border: "1px solid #fdba74",
-                                                            borderRadius: 999,
-                                                            padding: "1px 8px",
-                                                            fontSize: 11,
-                                                            color: "#9a3412",
-                                                            background: "#fff7ed",
-                                                        }}
-                                                    >
-                                                        {tag}
-                                                    </span>
-                                                ))
-                                            ) : (
-                                                <span style={{ fontSize: 12, color: "#94a3b8" }}>Chưa có tags đề tài</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                            <button type="button" className="lec-ghost" onClick={() => setDetailCommitteeId("")}>Đóng</button>
-                            <button
-                                type="button"
-                                className="lec-primary"
-                                onClick={() => {
-                                    openRoleWorkspace(detailCommittee);
-                                    setDetailCommitteeId("");
-                                }}
-                                disabled={detailCommittee.status !== "Đang họp"}
-                            >
-                                <ArrowRight size={14} /> Tham gia
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
             </div>
         </div>
     );

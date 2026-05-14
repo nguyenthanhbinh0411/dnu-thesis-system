@@ -25,6 +25,11 @@ namespace ThesisManagement.Api.DTOs.DefenseTermStudents.Query
             int studentProfileID,
             string studentCode,
             string userCode,
+            string? fullName,
+            string? classCode,
+            string? facultyCode,
+            string? departmentCode,
+            decimal? gpa,
             DateTime createdAt,
             DateTime lastUpdated)
         {
@@ -33,6 +38,11 @@ namespace ThesisManagement.Api.DTOs.DefenseTermStudents.Query
             StudentProfileID = studentProfileID;
             StudentCode = studentCode;
             UserCode = userCode;
+            FullName = fullName;
+            ClassCode = classCode;
+            FacultyCode = facultyCode;
+            DepartmentCode = departmentCode;
+            GPA = gpa;
             CreatedAt = createdAt;
             LastUpdated = lastUpdated;
         }

@@ -16,6 +16,7 @@ import {
   Building,
   Users,
   BookOpen,
+  AlertTriangle,
 } from "lucide-react";
 
 const LecturerProfilePage: React.FC = () => {
@@ -300,7 +301,7 @@ const LecturerProfilePage: React.FC = () => {
             borderRadius: "12px",
           }}
         >
-          <div style={{ color: "#ffffff", fontSize: "20px" }}>⚠️</div>
+          <AlertTriangle size={20} color="#ffffff" />
           <span
             style={{ color: "#ffffff", fontSize: "16px", fontWeight: "500" }}
           >

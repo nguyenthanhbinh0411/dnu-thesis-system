@@ -33,6 +33,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         Task<ApiResponse<List<CommitteeTagUsageDto>>> GetCommitteeTagsAsync(int periodId, string? tagCode = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<DefensePeriodTagOverviewDto>> GetTagOverviewAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<DefensePeriodCalendarDayDto>>> GetCouncilCalendarAsync(int periodId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default);
+        Task<ApiResponse<DefensePeriodPipelineOverviewDto>> GetPipelineOverviewAsync(int periodId, CancellationToken cancellationToken = default);
 
         Task<ApiResponse<object>> GetLecturerCommitteesAsync(string lecturerCode, int? periodId = null, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<LecturerCommitteeMinuteDto>>> GetLecturerMinutesAsync(int committeeId, int? periodId = null, CancellationToken cancellationToken = default);
@@ -55,8 +56,9 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         Task<ApiResponse<List<PublishHistoryDto>>> GetPublishHistoryAsync(int periodId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<CouncilAuditHistoryDto>>> GetCouncilAuditHistoryAsync(int periodId, int? councilId, CancellationToken cancellationToken = default);
         Task<ApiResponse<List<RevisionAuditTrailDto>>> GetRevisionAuditTrailAsync(int periodId, int revisionId, CancellationToken cancellationToken = default);
-          Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default);
-     }
+        Task<ApiResponse<CommitteeRosterExportSnapshotDto>> GetCommitteeRosterExportAsync(int periodId, CancellationToken cancellationToken = default);
+        Task<ApiResponse<DefenseOperationsExportSnapshotDto>> GetOperationsSnapshotAsync(int periodId, DefensePeriodOperationsSnapshotQueryDto query, CancellationToken cancellationToken = default);
+    }
 
     internal sealed class DefensePeriodConfigSnapshot
     {
@@ -71,6 +73,18 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
         public bool ScoresPublished { get; set; }
         public ConfirmCouncilConfigDto CouncilConfig { get; set; } = new();
         public List<int> CouncilIds { get; set; } = new();
+    }
+
+    public sealed class DefensePeriodPipelineContext
+    {
+        public List<Models.Topic> Topics { get; set; } = new();
+        public List<DefenseAssignment> Assignments { get; set; } = new();
+        public List<DefenseResult> Results { get; set; } = new();
+        public List<DefenseRevision> Revisions { get; set; } = new();
+        public List<ProgressMilestone> Milestones { get; set; } = new();
+        public List<ProgressSubmission> Submissions { get; set; } = new();
+        public List<Models.Committee> Committees { get; set; } = new();
+        public List<Models.CommitteeMember> CommitteeMembers { get; set; } = new();
     }
 
     public class DefensePeriodQueryProcessor : IDefensePeriodQueryProcessor
@@ -198,7 +212,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var periodExists = await PeriodExistsAsync(periodId, cancellationToken);
             if (!periodExists)
             {
-                return ApiResponse<List<EligibleStudentDto>>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<List<EligibleStudentDto>>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var periodStudents = await _db.DefenseTermStudents.AsNoTracking()
@@ -268,7 +282,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
             if (period == null)
             {
-                return ApiResponse<DefensePeriodConfigDto>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<DefensePeriodConfigDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var config = await GetPeriodConfigAsync(periodId, cancellationToken);
@@ -293,7 +307,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
             if (period == null)
             {
-                return ApiResponse<DefensePeriodStateDto>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<DefensePeriodStateDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var config = await GetPeriodConfigAsync(periodId, cancellationToken);
@@ -430,7 +444,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
             if (period == null)
             {
-                return ApiResponse<RollbackAvailabilityDto>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<RollbackAvailabilityDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var config = await GetPeriodConfigAsync(periodId, cancellationToken);
@@ -445,7 +459,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
 
             if (!config.Finalized)
             {
-                blockers.Add("Đợt bảo vệ chưa finalize nên không thể rollback finalize.");
+                blockers.Add("Đợt đồ án tốt nghiệp chưa finalize nên không thể rollback finalize.");
             }
             else if (config.ScoresPublished)
             {
@@ -483,7 +497,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var periodExists = await PeriodExistsAsync(periodId, cancellationToken);
             if (!periodExists)
             {
-                return ApiResponse<List<SyncErrorDetailDto>>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<List<SyncErrorDetailDto>>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var rows = await BuildSyncErrorRowsAsync(periodId, cancellationToken);
@@ -501,7 +515,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var periodExists = await PeriodExistsAsync(periodId, cancellationToken);
             if (!periodExists)
             {
-                return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<(byte[] Content, string FileName, string ContentType)>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var rows = await BuildSyncErrorRowsAsync(periodId, cancellationToken);
@@ -542,7 +556,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var periodExists = await PeriodExistsAsync(periodId, cancellationToken);
             if (!periodExists)
             {
-                return ApiResponse<List<LecturerCapabilityDto>>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<List<LecturerCapabilityDto>>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var periodLecturers = await _db.DefenseTermLecturers.AsNoTracking()
@@ -642,7 +656,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
             if (period == null)
             {
-                return ApiResponse<List<DefensePeriodCalendarDayDto>>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                return ApiResponse<List<DefensePeriodCalendarDayDto>>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
             }
 
             var rangeStart = (fromDate ?? period.StartDate).Date;
@@ -706,7 +720,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var config = await GetPeriodConfigAsync(periodId, cancellationToken);
             if (!config.CouncilIds.Contains(councilId))
             {
-                return ApiResponse<CouncilDraftDto>.Fail("Hội đồng không thuộc đợt bảo vệ.", 404);
+                return ApiResponse<CouncilDraftDto>.Fail("Hội đồng không thuộc đợt đồ án tốt nghiệp.", 404);
             }
 
             var detail = await BuildCouncilDtoAsync(periodId, councilId, cancellationToken);
@@ -993,6 +1007,15 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 .Where(x => !string.IsNullOrWhiteSpace(x.LecturerCode))
                 .ToDictionary(x => x.LecturerCode, x => x.Organization, StringComparer.OrdinalIgnoreCase);
 
+            var scoredCountByCommittee = committeeIds.Count == 0
+                ? new Dictionary<int, int>()
+                : await _db.DefenseAssignments.AsNoTracking()
+                    .Where(x => x.CommitteeID.HasValue && committeeIds.Contains(x.CommitteeID.Value))
+                    .Join(_db.DefenseResults.AsNoTracking(), a => a.AssignmentID, r => r.AssignmentId, (a, r) => new { a.CommitteeID, r.FinalScoreNumeric })
+                    .Where(x => x.FinalScoreNumeric != null)
+                    .GroupBy(x => x.CommitteeID!.Value)
+                    .ToDictionaryAsync(g => g.Key, g => g.Count(), cancellationToken);
+
             var membersByCommittee = committeeMembers
                 .GroupBy(x => x.CommitteeId)
                 .ToDictionary(
@@ -1014,6 +1037,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                                 ? organization
                                 : null,
                             Role = member.Role ?? string.Empty,
+                            RoleLabel = GetFullRoleLabel(member.Role),
                             RoleCode = NormalizeCommitteeRole(member.Role),
                             IsOnline = member.IsOnline,
                             OnlineStatus = ToMemberOnlineStatus(member.IsOnline)
@@ -1060,7 +1084,10 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 var normalizedRole = NormalizeCommitteeRole(x.Role);
                 scheduleByCommittee.TryGetValue(x.CommitteeID, out var schedule);
                 membersByCommittee.TryGetValue(x.CommitteeID, out var members);
+                scoredCountByCommittee.TryGetValue(x.CommitteeID, out var scoredCount);
                 members ??= new List<object>();
+
+                var totalTopics = schedule?.AssignmentCount ?? 0;
 
                 return new
                 {
@@ -1072,12 +1099,15 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     Session = schedule?.SessionCode ?? DefenseSessionCodes.Morning,
                     StartTime = schedule?.StartTime,
                     EndTime = schedule?.EndTime,
-                    AssignmentCount = schedule?.AssignmentCount ?? 0,
-                    StudentCount = schedule?.AssignmentCount ?? 0,
+                    AssignmentCount = totalTopics,
+                    StudentCount = totalTopics,
+                    ScoredTopics = scoredCount,
+                    TotalTopics = totalTopics,
                     MemberCount = members.Count,
                     Members = members,
                     Status = x.Status,
                     Role = x.Role,
+                    RoleLabel = GetFullRoleLabel(x.Role),
                     NormalizedRole = normalizedRole,
                     AllowedScoringActions = BuildAllowedScoringActions(normalizedRole),
                     AllowedMinuteActions = BuildAllowedMinuteActions(normalizedRole),
@@ -1103,7 +1133,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 var config = await GetPeriodConfigAsync(periodId.Value, cancellationToken);
                 if (!config.CouncilIds.Contains(committeeId))
                 {
-                    return ApiResponse<List<LecturerCommitteeMinuteDto>>.Fail("Hội đồng không thuộc đợt bảo vệ.", 404);
+                    return ApiResponse<List<LecturerCommitteeMinuteDto>>.Fail("Hội đồng không thuộc đợt đồ án tốt nghiệp.", 404);
                 }
             }
 
@@ -1272,53 +1302,184 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             if (periodId.HasValue)
             {
                 var config = await GetPeriodConfigAsync(periodId.Value, cancellationToken);
+                if (!config.CouncilListLocked)
+                {
+                    return ApiResponse<List<object>>.SuccessResponse(new List<object>());
+                }
+
                 scopedCouncilIds = config.CouncilIds.ToHashSet();
             }
 
-            var committeeQueue = await _db.CommitteeMembers.AsNoTracking()
+            var committeeRows = await _db.CommitteeMembers.AsNoTracking()
                 .Where(cm => cm.MemberLecturerCode == lecturerCode)
-                .Join(_db.DefenseAssignments.AsNoTracking(), cm => cm.CommitteeID, da => da.CommitteeID, (cm, da) => da)
-                .Where(da => scopedCouncilIds == null || (da.CommitteeID.HasValue && scopedCouncilIds.Contains(da.CommitteeID.Value)))
+                .Join(_db.Committees.AsNoTracking(), cm => cm.CommitteeID, c => c.CommitteeID, (cm, c) => new
+                {
+                    c.CommitteeID,
+                    c.CommitteeCode,
+                    CommitteeName = c.Name,
+                    c.Room,
+                    c.DefenseDate,
+                    c.Status,
+                    Role = cm.Role
+                })
+                .ToListAsync(cancellationToken);
+
+            var relevantCommittees = committeeRows
+                .Where(x => scopedCouncilIds == null || scopedCouncilIds.Contains(x.CommitteeID))
+                .ToList();
+
+            var committeeIds = relevantCommittees
+                .Select(x => x.CommitteeID)
+                .Distinct()
+                .ToList();
+
+            if (committeeIds.Count == 0)
+            {
+                return ApiResponse<List<object>>.SuccessResponse(new List<object>());
+            }
+
+            var revisionRows = await _db.DefenseAssignments.AsNoTracking()
+                .Where(da => da.CommitteeID.HasValue && committeeIds.Contains(da.CommitteeID.Value))
                 .Join(_db.DefenseRevisions.AsNoTracking(), da => da.AssignmentID, rv => rv.AssignmentId, (da, rv) => new { da, rv })
                 .Join(_db.Topics.AsNoTracking(), x => x.da.TopicCode, t => t.TopicCode, (x, t) => new
                 {
+                    x.da.CommitteeID,
+                    x.da.AssignmentID,
+                    x.da.OrderIndex,
+                    x.da.ScheduledAt,
                     x.rv.Id,
                     x.rv.AssignmentId,
                     x.rv.FinalStatus,
                     x.rv.RevisionFileUrl,
+                    x.rv.RequiredRevisionContent,
+                    x.rv.RevisionReason,
+                    x.rv.SubmissionDeadline,
+                    x.rv.SecretaryComment,
+                    x.rv.SecretaryUserCode,
+                    x.rv.SecretaryApprovedAt,
+                    x.rv.IsGvhdApproved,
+                    x.rv.IsUvtkApproved,
+                    x.rv.IsCtApproved,
+                    StatusCode = x.rv.Status,
+                    Status = x.rv.Status.ToString(),
                     x.rv.LastUpdated,
                     t.TopicCode,
                     t.Title,
-                    t.ProposerStudentCode
+                    t.ProposerStudentCode,
+                    t.ProposerStudentProfileID
                 })
-                .Where(x => x.FinalStatus == RevisionFinalStatus.Pending)
+                .Where(x => x.FinalStatus == RevisionFinalStatus.Pending || x.FinalStatus == null)
                 .OrderByDescending(x => x.LastUpdated)
                 .ToListAsync(cancellationToken);
 
-            var supervisorQueue = await _db.Topics.AsNoTracking()
-                .Where(t => t.SupervisorLecturerCode == lecturerCode)
-                .Join(_db.DefenseAssignments.AsNoTracking(), t => t.TopicCode, da => da.TopicCode, (t, da) => new { t, da })
-                .Where(td => scopedCouncilIds == null || (td.da.CommitteeID.HasValue && scopedCouncilIds.Contains(td.da.CommitteeID.Value)))
-                .Join(_db.DefenseRevisions.AsNoTracking(), td => td.da.AssignmentID, rv => rv.AssignmentId, (td, rv) => new
+            var revisionStudentCodes = revisionRows
+                .Where(x => !string.IsNullOrWhiteSpace(x.ProposerStudentCode))
+                .Select(x => x.ProposerStudentCode!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var revisionStudentProfileIds = revisionRows
+                .Where(x => x.ProposerStudentProfileID.HasValue)
+                .Select(x => x.ProposerStudentProfileID!.Value)
+                .Distinct()
+                .ToList();
+
+            var revisionStudentProfiles = await _db.StudentProfiles.AsNoTracking()
+                .Where(x =>
+                    (x.StudentCode != null && revisionStudentCodes.Contains(x.StudentCode)) ||
+                    (x.UserCode != null && revisionStudentCodes.Contains(x.UserCode)) ||
+                    revisionStudentProfileIds.Contains(x.StudentProfileID))
+                .Select(x => new
                 {
-                    rv.Id,
-                    rv.AssignmentId,
-                    rv.FinalStatus,
-                    rv.RevisionFileUrl,
-                    rv.LastUpdated,
-                    td.t.TopicCode,
-                    td.t.Title,
-                    td.t.ProposerStudentCode
+                    x.StudentProfileID,
+                    x.StudentCode,
+                    x.UserCode,
+                    x.FullName
                 })
-                .Where(x => x.FinalStatus == RevisionFinalStatus.Pending)
-                .OrderByDescending(x => x.LastUpdated)
                 .ToListAsync(cancellationToken);
 
-            var queue = committeeQueue
-                .Concat(supervisorQueue)
-                .GroupBy(x => x.Id)
-                .Select(g => g.First())
-                .OrderByDescending(x => x.LastUpdated)
+            var revisionStudentNameLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var profile in revisionStudentProfiles)
+            {
+                var studentName = string.IsNullOrWhiteSpace(profile.FullName)
+                    ? (profile.StudentCode ?? profile.UserCode ?? profile.StudentProfileID.ToString())
+                    : profile.FullName.Trim();
+
+                if (!string.IsNullOrWhiteSpace(profile.StudentCode))
+                {
+                    revisionStudentNameLookup[profile.StudentCode.Trim()] = studentName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(profile.UserCode))
+                {
+                    revisionStudentNameLookup[profile.UserCode.Trim()] = studentName;
+                }
+
+                revisionStudentNameLookup[profile.StudentProfileID.ToString()] = studentName;
+            }
+
+            string ResolveRevisionStudentName(string? studentCode, int? studentProfileId)
+            {
+                if (!string.IsNullOrWhiteSpace(studentCode) && revisionStudentNameLookup.TryGetValue(studentCode.Trim(), out var byCode))
+                {
+                    return byCode;
+                }
+
+                if (studentProfileId.HasValue && revisionStudentNameLookup.TryGetValue(studentProfileId.Value.ToString(), out var byId))
+                {
+                    return byId;
+                }
+
+                return string.IsNullOrWhiteSpace(studentCode) ? string.Empty : studentCode.Trim();
+            }
+
+            var committeeLookup = relevantCommittees.ToDictionary(x => x.CommitteeID, x => x);
+
+            var queue = relevantCommittees
+                .Select(group =>
+                {
+                    var committeeRevisions = revisionRows.Where(r => r.CommitteeID == group.CommitteeID).ToList();
+                    var normalizedRole = NormalizeCommitteeRole(group.Role);
+                    
+                    return new
+                    {
+                        CommitteeId = group.CommitteeID,
+                        group.CommitteeCode,
+                        group.CommitteeName,
+                        group.Room,
+                        group.DefenseDate,
+                        CommitteeStatus = group.Status,
+                        LecturerRole = group.Role,
+                        NormalizedRole = normalizedRole,
+                        AllowedRevisionActions = BuildAllowedRevisionActions(normalizedRole),
+                        PendingRevisionCount = committeeRevisions.Count(x => x.StatusCode == RevisionStatus.StudentSubmitted),
+                        WaitingRevisionCount = committeeRevisions.Count(x => x.StatusCode == RevisionStatus.WaitingStudent),
+                        Revisions = committeeRevisions.Select(x => new
+                        {
+                            RevisionId = x.Id,
+                            x.AssignmentId,
+                            x.TopicCode,
+                            TopicTitle = x.Title,
+                            x.ProposerStudentCode,
+                            FinalStatus = x.FinalStatus?.ToString().ToUpperInvariant() ?? "PENDING",
+                            x.RevisionFileUrl,
+                            x.RequiredRevisionContent,
+                            x.RevisionReason,
+                            x.SubmissionDeadline,
+                            x.SecretaryComment,
+                            x.SecretaryUserCode,
+                            x.SecretaryApprovedAt,
+                            x.IsGvhdApproved,
+                            x.IsUvtkApproved,
+                            x.IsCtApproved,
+                            x.Status,
+                            x.LastUpdated,
+                            ProposerStudentName = ResolveRevisionStudentName(x.ProposerStudentCode, x.ProposerStudentProfileID)
+                        }).ToList()
+                    };
+                })
+                .OrderByDescending(x => x.DefenseDate)
+                .ThenBy(x => x.CommitteeCode)
                 .Cast<object>()
                 .ToList();
 
@@ -1352,7 +1513,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 var periodExists = await PeriodExistsAsync(periodId.Value, cancellationToken);
                 if (!periodExists)
                 {
-                    return ApiResponse<StudentDefenseInfoDtoV2>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                    return ApiResponse<StudentDefenseInfoDtoV2>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
                 }
 
                 periodConfig = await GetPeriodConfigAsync(periodId.Value, cancellationToken);
@@ -1393,12 +1554,12 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                             {
                                 Type = "soft",
                                 Code = "DEFENSE_INFO_NOT_READY",
-                                Message = "Chưa có thông tin bảo vệ chi tiết cho sinh viên trong đợt hiện tại."
+                                Message = "Chưa có thông tin đồ án tốt nghiệp chi tiết cho sinh viên trong đợt hiện tại."
                             }
                         });
                 }
 
-                return ApiResponse<StudentDefenseInfoDtoV2>.Fail("Chưa có thông tin bảo vệ.", 404);
+                return ApiResponse<StudentDefenseInfoDtoV2>.Fail("Chưa có thông tin đồ án tốt nghiệp.", 404);
             }
 
             var assignmentQuery = _db.DefenseAssignments.AsNoTracking()
@@ -1444,6 +1605,14 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                     .FirstOrDefaultAsync(r => r.AssignmentId == assignment.AssignmentID, cancellationToken);
             }
 
+            DefenseRevision? revision = null;
+            if (assignment != null)
+            {
+                revision = await _db.DefenseRevisions.AsNoTracking()
+                    .OrderByDescending(x => x.LastUpdated)
+                    .FirstOrDefaultAsync(x => x.AssignmentId == assignment.AssignmentID, cancellationToken);
+            }
+
             var warnings = new List<ApiWarning>();
             if (periodId.HasValue && periodConfig != null && !periodConfig.CouncilListLocked)
             {
@@ -1451,7 +1620,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 {
                     Type = "soft",
                     Code = "DEFENSE_INFO_NOT_READY",
-                    Message = "Danh sách hội đồng chưa chốt, một số thông tin bảo vệ có thể đang được cập nhật."
+                    Message = "Danh sách hội đồng chưa chốt, một số thông tin đồ án tốt nghiệp có thể đang được cập nhật."
                 });
             }
 
@@ -1461,7 +1630,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 {
                     Type = "soft",
                     Code = "DEFENSE_INFO_ASSIGNMENT_PENDING",
-                    Message = "Đã có đề tài nhưng lịch bảo vệ chưa được phân công đầy đủ."
+                    Message = "Đã có đề tài nhưng lịch đồ án tốt nghiệp chưa được phân công đầy đủ."
                 });
             }
             else if (committee == null)
@@ -1470,7 +1639,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 {
                     Type = "soft",
                     Code = "DEFENSE_INFO_COMMITTEE_PENDING",
-                    Message = "Lịch bảo vệ đã có nhưng thông tin hội đồng/phòng đang được cập nhật."
+                    Message = "Lịch đồ án tốt nghiệp đã có nhưng thông tin hội đồng/phòng đang được cập nhật."
                 });
             }
 
@@ -1491,11 +1660,30 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 Room = committee?.Room,
                 ScheduledAt = scheduledAt,
                 Session = assignment?.Session,
-                SessionCode = assignment?.Session.HasValue == true ? ToSessionCode(assignment.Session) : null,
+                SessionCode = assignment?.Session == 1 ? "MORNING" : (assignment?.Session == 2 ? "AFTERNOON" : null),
                 FinalScore = result != null ? result.FinalScoreNumeric : null,
                 Grade = result != null ? result.FinalScoreText : null,
                 CouncilListLocked = councilListLocked,
-                CouncilLockStatus = ToCouncilLockStatus(councilListLocked)
+                CouncilLockStatus = councilListLocked ? "LOCKED" : "UNLOCKED",
+
+                // Scoring Details
+                ScoreCt = result?.ScoreCt,
+                ScoreUvtk = result?.ScoreUvtk,
+                ScoreUvpb = result?.ScoreUvpb,
+                ScoreGvhd = result?.ScoreGvhd,
+                IsScoreLocked = result?.IsLocked ?? false,
+
+                // Revision
+                Revision = revision == null ? null : new StudentRevisionInfoDto
+                {
+                    RevisionId = revision.Id,
+                    AssignmentId = revision.AssignmentId,
+                    NeedsRevision = true,
+                    RevisionReason = revision.RevisionReason,
+                    RequiredContent = revision.RequiredRevisionContent,
+                    Deadline = revision.SubmissionDeadline,
+                    Status = revision.Status.ToString()
+                }
             };
 
             return ApiResponse<StudentDefenseInfoDtoV2>.SuccessResponse(
@@ -2158,6 +2346,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         TopicSupervisorScore = topicSupervisorScore,
                         FinalScore = liveFinalScore,
                         FinalGrade = liveFinalGrade,
+                        IsPassed = liveFinalScore.HasValue ? liveFinalScore >= 5m : null,
                         Variance = variance,
                         Status = status,
                         DefenseDocuments = documents
@@ -2564,7 +2753,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             var rows = await query
                 .OrderByDescending(x => x.Timestamp)
                 .Take(300)
-                .Select(x => new CouncilAuditHistoryDto
+                .Select(x => new ThesisManagement.Api.DTOs.DefensePeriods.CouncilAuditHistoryDto
                 {
                     SyncAuditLogId = x.SyncAuditLogId,
                     Action = x.Action,
@@ -2868,7 +3057,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                 return "Đề tài đạt mức trung bình, cần chỉnh sửa trước khi lưu hồ sơ.";
             }
 
-            return "Đề tài cần bổ sung nội dung và bảo vệ lại theo góp ý hội đồng.";
+            return "Đề tài cần bổ sung nội dung và tham gia đồ án tốt nghiệp lại theo góp ý hội đồng.";
         }
 
         private static byte[] BuildCsvContent(List<ScoreRowData> rows, string reportType, int? councilId)
@@ -3932,8 +4121,23 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             if (upper.Contains("CHU") || upper == "CT") return "CT";
             if (upper.Contains("UVTK") || upper.Contains("THU") || upper == "TK" || upper.Contains("SECRETARY")) return "UVTK";
             if (upper.Contains("UVPB") || upper.Contains("PHAN") || upper == "PB" || upper.Contains("REVIEWER")) return "UVPB";
-            if (upper == "UV" || upper.Contains("UY VIEN") || upper == "MEMBER") return "UV";
+            if (upper == "UV") return "UV";
+            if (upper.Contains("UY VIEN") || upper == "MEMBER") return "UV";
             return upper;
+        }
+
+        private static string GetFullRoleLabel(string? role)
+        {
+            var normalized = NormalizeCommitteeRole(role);
+            return normalized switch
+            {
+                "CT" => "Chủ tịch hội đồng",
+                "UVTK" => "Ủy viên thư ký",
+                "UVPB" => "Ủy viên phản biện",
+                "UV" => "Ủy viên hội đồng",
+                "GVHD" => "Giảng viên hướng dẫn",
+                _ => "Thành viên hội đồng"
+            };
         }
 
         private static bool? ReadCommitteeMemberOnlineFlag(ThesisManagement.Api.Models.CommitteeMember member)
@@ -4232,7 +4436,7 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
                         SupervisorCode = supervisorCode,
                         Field = "TopicStatus",
                         ErrorCode = DefenseUcErrorCodes.Sync.InvalidTopicStatus,
-                        Message = "Topic chưa có trạng thái 'Đủ điều kiện bảo vệ'."
+                        Message = "Topic chưa có trạng thái 'Đủ điều kiện đồ án tốt nghiệp'."
                     });
                 }
             }
@@ -4630,6 +4834,377 @@ namespace ThesisManagement.Api.Application.Query.DefensePeriods
             if (upper.Contains("UVPB") || upper.Contains("PHAN") || upper == "PB" || upper.Contains("REVIEWER")) return "UVPB";
             if (upper == "UV" || upper.Contains("UY VIEN") || upper == "MEMBER") return "UV";
             return upper;
+        }
+
+        public async Task<ApiResponse<DefenseOperationsExportSnapshotDto>> GetOperationsSnapshotAsync(int periodId, DefensePeriodOperationsSnapshotQueryDto query, CancellationToken cancellationToken = default)
+        {
+            var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
+            if (period == null)
+            {
+                return ApiResponse<DefenseOperationsExportSnapshotDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
+            }
+
+            // Build shared context once to avoid DbContext concurrency issues
+            var context = await BuildPeriodPipelineContextAsync(periodId, cancellationToken);
+
+            // Execute queries sequentially to avoid DbContext threading issues
+            var pipelineResponse = await GetPipelineOverviewAsyncInternal(periodId, context, cancellationToken);
+            var registrationResponse = await GetRegistrationTopicsAsyncInternal(periodId, context, cancellationToken);
+            var progressResponse = await GetTopicFinalScoreProgressAsync(periodId, null, cancellationToken);
+            var scoringMatrixResponse = await GetScoringMatrixAsync(periodId, query.CommitteeId, false, cancellationToken);
+            var auditSnapshotResponse = await GetAuditSnapshotCompactAsync(periodId, query, cancellationToken);
+
+            // Apply masking to scoring matrix if not locked
+            var safeScoringMatrix = scoringMatrixResponse.Data?.Select(row =>
+            {
+                if (row.IsLocked || row.Status == "LOCKED")
+                {
+                    return row;
+                }
+
+                return new ScoringMatrixRowDto
+                {
+                    CommitteeId = row.CommitteeId,
+                    CommitteeCode = row.CommitteeCode,
+                    CommitteeName = row.CommitteeName,
+                    Room = row.Room,
+                    AssignmentId = row.AssignmentId,
+                    AssignmentCode = row.AssignmentCode,
+                    TopicCode = row.TopicCode,
+                    TopicTitle = row.TopicTitle,
+                    SupervisorLecturerCode = row.SupervisorLecturerCode,
+                    SupervisorLecturerName = row.SupervisorLecturerName,
+                    CommitteeChairCode = row.CommitteeChairCode,
+                    CommitteeChairName = row.CommitteeChairName,
+                    CommitteeSecretaryCode = row.CommitteeSecretaryCode,
+                    CommitteeSecretaryName = row.CommitteeSecretaryName,
+                    CommitteeReviewerCode = row.CommitteeReviewerCode,
+                    CommitteeReviewerName = row.CommitteeReviewerName,
+                    Chair = row.Chair,
+                    ChairName = row.ChairName,
+                    Secretary = row.Secretary,
+                    SecretaryName = row.SecretaryName,
+                    Reviewer = row.Reviewer,
+                    ReviewerName = row.ReviewerName,
+                    TopicTags = row.TopicTags,
+                    Session = row.Session,
+                    SessionCode = row.SessionCode,
+                    ScheduledAt = row.ScheduledAt,
+                    StartTime = row.StartTime,
+                    EndTime = row.EndTime,
+                    StudentCode = row.StudentCode,
+                    StudentName = row.StudentName,
+                    ClassName = row.ClassName,
+                    CohortCode = row.CohortCode,
+                    SupervisorOrganization = row.SupervisorOrganization,
+                    SubmittedCount = row.SubmittedCount,
+                    RequiredCount = row.RequiredCount,
+                    IsLocked = row.IsLocked,
+                    Status = row.Status,
+                    DefenseDocuments = row.DefenseDocuments,
+                    TopicSupervisorScore = row.TopicSupervisorScore,
+                    ScoreCt = null,
+                    ScoreTk = null,
+                    ScorePb = null,
+                    ScoreGvhd = null,
+                    FinalScore = null,
+                    FinalGrade = null,
+                    Variance = null,
+                    CommentCt = null,
+                    CommentTk = null,
+                    CommentPb = null,
+                    CommentGvhd = null
+                };
+            }).ToList();
+
+            // Fetch post-defense data separately since it's more complex
+            var postDefenseResponse = await GetPostDefenseOverviewAsyncInternal(periodId, query, context, cancellationToken);
+            var stateResponse = await GetStateAsync(periodId, cancellationToken);
+
+            var snapshot = new DefenseOperationsExportSnapshotDto
+            {
+                DefenseTermId = periodId,
+                State = stateResponse.Data ?? new DefensePeriodStateDto(),
+                Monitoring = new DefenseOperationsMonitoringSnapshotDto
+                {
+                    Pipeline = pipelineResponse.Data ?? new DefensePeriodPipelineOverviewDto()
+                },
+                ScoringMatrix = safeScoringMatrix ?? new List<ScoringMatrixRowDto>(),
+                PostDefense = postDefenseResponse.Data ?? new DefensePeriodPostDefenseOverviewDto(),
+                Audit = auditSnapshotResponse.Data ?? new DefenseOperationsAuditSnapshotDto()
+            };
+
+            return ApiResponse<DefenseOperationsExportSnapshotDto>.SuccessResponse(snapshot);
+        }
+
+        private async Task<ApiResponse<DefensePeriodRegistrationOverviewDto>> GetRegistrationTopicsAsync(int periodId, CancellationToken cancellationToken)
+        {
+            var context = await BuildPeriodPipelineContextAsync(periodId, cancellationToken);
+            return await GetRegistrationTopicsAsyncInternal(periodId, context, cancellationToken);
+        }
+
+        private async Task<ApiResponse<DefensePeriodRegistrationOverviewDto>> GetRegistrationTopicsAsyncInternal(int periodId, DefensePeriodPipelineContext context, CancellationToken cancellationToken)
+        {
+            var items = await BuildRegistrationItemsAsync(context);
+
+            var dto = new DefensePeriodRegistrationOverviewDto
+            {
+                DefenseTermId = periodId,
+                TotalTopics = items.Count,
+                EligibleTopics = items.Count(x => x.IsEligibleForDefense),
+                MissingStudentCount = items.Count(x => string.IsNullOrWhiteSpace(x.StudentCode)),
+                MissingSupervisorCount = items.Count(x => string.IsNullOrWhiteSpace(x.SupervisorCode)),
+                AssignedTopics = items.Count(x => x.IsAssignedToCouncil),
+                UnassignedEligibleTopics = items.Count(x => x.IsEligibleForDefense && !x.IsAssignedToCouncil),
+                Items = items.Take(100).ToList() // Limit to 100 for snapshot
+            };
+
+            return ApiResponse<DefensePeriodRegistrationOverviewDto>.SuccessResponse(dto);
+        }
+
+        private async Task<ApiResponse<DefensePeriodPostDefenseOverviewDto>> GetPostDefenseOverviewAsync(int periodId, DefensePeriodOperationsSnapshotQueryDto query, CancellationToken cancellationToken)
+        {
+            var context = await BuildPeriodPipelineContextAsync(periodId, cancellationToken);
+            return await GetPostDefenseOverviewAsyncInternal(periodId, query, context, cancellationToken);
+        }
+
+        private async Task<ApiResponse<DefensePeriodPostDefenseOverviewDto>> GetPostDefenseOverviewAsyncInternal(int periodId, DefensePeriodOperationsSnapshotQueryDto query, DefensePeriodPipelineContext context, CancellationToken cancellationToken)
+        {
+            var assignmentById = context.Assignments.ToDictionary(x => x.AssignmentID, x => x);
+            var topicByCode = context.Topics
+                .Where(x => !string.IsNullOrWhiteSpace(x.TopicCode))
+                .GroupBy(x => x.TopicCode, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastUpdated ?? x.CreatedAt).First(), StringComparer.OrdinalIgnoreCase);
+
+            var studentCodes = topicByCode.Values
+                .Where(x => !string.IsNullOrWhiteSpace(x.ProposerStudentCode))
+                .Select(x => x.ProposerStudentCode!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var studentNameMap = studentCodes.Count == 0
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : (await _db.StudentProfiles.AsNoTracking()
+                    .Where(x => studentCodes.Contains(x.StudentCode))
+                    .Select(x => new { x.StudentCode, x.FullName })
+                    .ToListAsync(cancellationToken))
+                    .ToDictionary(
+                        x => x.StudentCode,
+                        x => string.IsNullOrWhiteSpace(x.FullName) ? x.StudentCode : x.FullName!,
+                        StringComparer.OrdinalIgnoreCase);
+
+            var membersByCommittee = context.CommitteeMembers
+                .GroupBy(x => x.CommitteeID ?? 0)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var rows = context.Revisions
+                .Select(revision =>
+                {
+                    assignmentById.TryGetValue(revision.AssignmentId, out var assignment);
+                    Models.Topic? topic = null;
+                    if (!string.IsNullOrWhiteSpace(assignment?.TopicCode))
+                    {
+                        topicByCode.TryGetValue(assignment.TopicCode, out topic);
+                    }
+
+                    var studentCode = topic?.ProposerStudentCode ?? string.Empty;
+                    var studentName = string.IsNullOrWhiteSpace(studentCode)
+                        ? string.Empty
+                        : (studentNameMap.TryGetValue(studentCode, out var foundName) ? foundName : studentCode);
+
+                    membersByCommittee.TryGetValue(assignment?.CommitteeID ?? 0, out var members);
+                    var chair = members?.FirstOrDefault(m => m.IsChair == true || string.Equals(m.Role, "CT", StringComparison.OrdinalIgnoreCase) || string.Equals(m.Role, "CHAIR", StringComparison.OrdinalIgnoreCase));
+                    var secretary = members?.FirstOrDefault(m => string.Equals(m.Role, "UVTK", StringComparison.OrdinalIgnoreCase) || string.Equals(m.Role, "TK", StringComparison.OrdinalIgnoreCase) || string.Equals(m.Role, "SECRETARY", StringComparison.OrdinalIgnoreCase));
+
+                    return new DefensePeriodPostDefenseRevisionItemDto
+                    {
+                        RevisionId = revision.Id,
+                        AssignmentId = revision.AssignmentId,
+                        TopicCode = assignment?.TopicCode ?? string.Empty,
+                        TopicTitle = topic?.Title ?? string.Empty,
+                        StudentCode = studentCode,
+                        StudentName = studentName,
+                        FinalStatus = (revision.FinalStatus?.ToString() ?? "PENDING").ToUpperInvariant(),
+                        RevisionReason = revision.RevisionReason ?? string.Empty,
+                        SubmissionDeadline = revision.SubmissionDeadline,
+                        SecretaryComment = revision.SecretaryComment ?? string.Empty,
+                        CommitteeCode = assignment?.CommitteeCode ?? string.Empty,
+                        SecretaryName = secretary?.MemberLecturerProfile?.FullName ?? secretary?.MemberUserCode ?? "-",
+                        ChairName = chair?.MemberLecturerProfile?.FullName ?? chair?.MemberUserCode ?? "-",
+                        IsGvhdApproved = revision.IsGvhdApproved,
+                        IsUvtkApproved = revision.IsUvtkApproved,
+                        IsCtApproved = revision.IsCtApproved,
+                        LastUpdated = revision.LastUpdated
+                    };
+                })
+                .ToList();
+
+            IEnumerable<DefensePeriodPostDefenseRevisionItemDto> filtered = rows;
+            if (!string.IsNullOrWhiteSpace(query.RevisionStatus) && query.RevisionStatus != "all")
+            {
+                var norm = query.RevisionStatus.Trim().ToUpperInvariant();
+                filtered = filtered.Where(x => x.FinalStatus == norm);
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.RevisionKeyword))
+            {
+                var kw = query.RevisionKeyword.Trim().ToUpperInvariant();
+                filtered = filtered.Where(x =>
+                    x.TopicCode.ToUpperInvariant().Contains(kw)
+                    || x.TopicTitle.ToUpperInvariant().Contains(kw)
+                    || x.StudentCode.ToUpperInvariant().Contains(kw)
+                    || x.StudentName.ToUpperInvariant().Contains(kw));
+            }
+
+            var filteredList = filtered
+                .OrderByDescending(x => x.LastUpdated)
+                .ThenByDescending(x => x.RevisionId)
+                .ToList();
+
+            var safePage = Math.Max(query.RevisionPage, 1);
+            var safePageSize = Math.Clamp(query.RevisionSize, 1, 200);
+            var pagedItems = filteredList
+                .Skip((safePage - 1) * safePageSize)
+                .Take(safePageSize)
+                .ToList();
+
+            var dto = new DefensePeriodPostDefenseOverviewDto
+            {
+                DefenseTermId = periodId,
+                TotalRevisions = rows.Count,
+                PendingRevisions = rows.Count(x => x.FinalStatus == RevisionFinalStatus.Pending.ToString().ToUpper()),
+                ApprovedRevisions = rows.Count(x => x.FinalStatus == RevisionFinalStatus.Approved.ToString().ToUpper()),
+                RejectedRevisions = rows.Count(x => x.FinalStatus == RevisionFinalStatus.Rejected.ToString().ToUpper()),
+                PublishedScores = context.Results.Count(x => !string.IsNullOrWhiteSpace(x.FinalScoreText)),
+                LockedScores = context.Results.Count(x => x.IsLocked),
+                Items = pagedItems
+            };
+
+            return ApiResponse<DefensePeriodPostDefenseOverviewDto>.SuccessResponse(dto, filteredList.Count);
+        }
+
+        private async Task<ApiResponse<DefenseOperationsAuditSnapshotDto>> GetAuditSnapshotCompactAsync(int periodId, DefensePeriodOperationsSnapshotQueryDto query, CancellationToken cancellationToken)
+        {
+            var limit = Math.Clamp(query.AuditSize, 1, 500);
+            var periodToken = $"period={periodId}";
+
+            // Execute queries sequentially to avoid DbContext concurrency issues
+            var syncHistory = await _db.SyncAuditLogs.AsNoTracking()
+                .Where(x => x.Records.Contains(periodToken) || x.Action.Contains("SYNC"))
+                .OrderByDescending(x => x.Timestamp)
+                .Take(limit)
+                .Select(x => new CouncilAuditHistoryDto
+                {
+                    SyncAuditLogId = x.SyncAuditLogId,
+                    Action = x.Action,
+                    Result = x.Result,
+                    Records = x.Records,
+                    Timestamp = x.Timestamp
+                })
+                .ToListAsync(cancellationToken);
+
+            var publishHistoryResponse = await GetPublishHistoryAsync(periodId, cancellationToken);
+            var councilAuditResponse = await GetCouncilAuditHistoryAsync(periodId, query.CommitteeId, cancellationToken);
+
+            List<RevisionAuditTrailDto> revisionTrail = new();
+            if (query.RevisionId.HasValue)
+            {
+                var revisionTrailResponse = await GetRevisionAuditTrailAsync(periodId, query.RevisionId.Value, cancellationToken);
+                revisionTrail = revisionTrailResponse.Data ?? new List<RevisionAuditTrailDto>();
+            }
+
+            var snapshot = new DefenseOperationsAuditSnapshotDto
+            {
+                SyncHistory = syncHistory,
+                PublishHistory = publishHistoryResponse.Data ?? new List<PublishHistoryDto>(),
+                CouncilAuditHistory = councilAuditResponse.Data ?? new List<CouncilAuditHistoryDto>(),
+                RevisionAuditTrail = revisionTrail
+            };
+
+            return ApiResponse<DefenseOperationsAuditSnapshotDto>.SuccessResponse(snapshot);
+        }
+
+        private async Task<DefensePeriodPipelineContext> BuildPeriodPipelineContextAsync(int periodId, CancellationToken cancellationToken)
+        {
+            var topics = await _db.Topics.AsNoTracking().Where(x => x.DefenseTermId == periodId).ToListAsync(cancellationToken);
+            var topicIds = topics.Select(x => x.TopicID).ToList();
+            var assignments = await _db.DefenseAssignments.AsNoTracking().Where(x => x.DefenseTermId == periodId).ToListAsync(cancellationToken);
+            var assignmentIds = assignments.Select(a => a.AssignmentID).ToList();
+            
+            var results = await _db.DefenseResults.AsNoTracking().Where(x => assignmentIds.Contains(x.AssignmentId)).ToListAsync(cancellationToken);
+            var revisions = await _db.DefenseRevisions.AsNoTracking().Where(x => assignmentIds.Contains(x.AssignmentId)).ToListAsync(cancellationToken);
+            var milestones = await _db.ProgressMilestones.AsNoTracking().Where(x => topicIds.Contains(x.TopicID)).ToListAsync(cancellationToken);
+            var milestoneIds = milestones.Select(m => m.MilestoneID).ToList();
+            var submissions = await _db.ProgressSubmissions.AsNoTracking().Where(x => x.MilestoneID.HasValue && milestoneIds.Contains(x.MilestoneID.Value)).ToListAsync(cancellationToken);
+
+            var committees = await _db.Committees.AsNoTracking().Where(x => x.DefenseTermId == periodId).ToListAsync(cancellationToken);
+            var committeeIds = committees.Select(c => c.CommitteeID).ToList();
+            var committeeMembers = await _db.CommitteeMembers.AsNoTracking()
+                .Include(m => m.MemberLecturerProfile)
+                .Where(x => committeeIds.Contains(x.CommitteeID ?? 0)).ToListAsync(cancellationToken);
+
+            return new DefensePeriodPipelineContext
+            {
+                Topics = topics,
+                Assignments = assignments,
+                Results = results,
+                Revisions = revisions,
+                Milestones = milestones,
+                Submissions = submissions,
+                Committees = committees,
+                CommitteeMembers = committeeMembers
+            };
+        }
+
+        private async Task<List<DefensePeriodRegistrationTopicItemDto>> BuildRegistrationItemsAsync(DefensePeriodPipelineContext context)
+        {
+            // Simplified version for snapshot
+            return context.Topics.Select(t => new DefensePeriodRegistrationTopicItemDto
+            {
+                TopicCode = t.TopicCode,
+                TopicTitle = t.Title,
+                StudentCode = t.ProposerStudentCode,
+                SupervisorCode = t.SupervisorLecturerCode,
+                IsEligibleForDefense = !string.IsNullOrWhiteSpace(t.ProposerStudentCode),
+                IsAssignedToCouncil = context.Assignments.Any(a => a.TopicCode == t.TopicCode)
+            }).ToList();
+        }
+        private async Task<ApiResponse<DefensePeriodPipelineOverviewDto>> GetPipelineOverviewAsyncInternal(int periodId, DefensePeriodPipelineContext context, CancellationToken cancellationToken)
+        {
+            return await GetPipelineOverviewAsyncFromContext(periodId, context, cancellationToken);
+        }
+
+        public async Task<ApiResponse<DefensePeriodPipelineOverviewDto>> GetPipelineOverviewAsync(int periodId, CancellationToken cancellationToken = default)
+        {
+            var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
+            if (period == null) return ApiResponse<DefensePeriodPipelineOverviewDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
+
+            var context = await BuildPeriodPipelineContextAsync(periodId, cancellationToken);
+            return await GetPipelineOverviewAsyncFromContext(periodId, context, cancellationToken);
+        }
+
+        private async Task<ApiResponse<DefensePeriodPipelineOverviewDto>> GetPipelineOverviewAsyncFromContext(int periodId, DefensePeriodPipelineContext context, CancellationToken cancellationToken)
+        {
+            var period = await _db.DefenseTerms.AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId, cancellationToken);
+            if (period == null) return ApiResponse<DefensePeriodPipelineOverviewDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
+
+            var dto = new DefensePeriodPipelineOverviewDto
+            {
+                DefenseTermId = periodId,
+                Name = period.Name,
+                Status = period.Status,
+                StartDate = period.StartDate,
+                EndDate = period.EndDate,
+                TotalTopics = context.Topics.Count,
+                EligibleTopics = context.Topics.Count(t => !string.IsNullOrWhiteSpace(t.ProposerStudentCode)),
+                AssignedTopics = context.Assignments.Count,
+                ScoredTopics = context.Results.Count(r => r.FinalScoreNumeric.HasValue),
+                PendingRevisionCount = context.Revisions.Count(r => r.FinalStatus == RevisionFinalStatus.Pending),
+                ApprovedRevisionCount = context.Revisions.Count(r => r.FinalStatus == RevisionFinalStatus.Approved),
+                RejectedRevisionCount = context.Revisions.Count(r => r.FinalStatus == RevisionFinalStatus.Rejected)
+            };
+
+            return ApiResponse<DefensePeriodPipelineOverviewDto>.SuccessResponse(dto);
         }
     }
 }

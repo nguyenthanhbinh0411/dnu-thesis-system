@@ -678,6 +678,15 @@ namespace ThesisManagement.Api.Data
                 b.Ignore(x => x.Role);
                 b.Property(x => x.Score).HasColumnType("NUMBER(5,2)");
                 b.Property(x => x.IsSubmitted).HasConversion<int>().HasDefaultValue(0);
+                b.Property(x => x.RevisionRequired)
+                    .HasColumnName("REVISION_REQUIRED")
+                    .HasConversion<int>()
+                    .HasDefaultValue(0);
+                b.Property(x => x.RevisionReason)
+                    .HasColumnName("REVISION_REASON")
+                    .HasMaxLength(1000);
+                b.Property(x => x.RevisionDeadlineDays)
+                    .HasColumnName("REVISION_DEADLINE_DAYS");
                 b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasDefaultValueSql("SYSTIMESTAMP");
             });
@@ -690,7 +699,11 @@ namespace ThesisManagement.Api.Data
                     tb.HasTrigger("TR_DEFENSETERMS_BI");
                 });
                 b.HasKey(x => x.DefenseTermId);
+                b.Property(x => x.TermCode).HasMaxLength(50);
                 b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+                b.Property(x => x.Description);
+                b.Property(x => x.AcademicYear).HasMaxLength(20);
+                b.Property(x => x.Semester).HasMaxLength(20);
                 b.Property(x => x.StartDate);
                 b.Property(x => x.EndDate);
                 b.Property(x => x.ConfigJson);
@@ -752,7 +765,6 @@ namespace ThesisManagement.Api.Data
                 b.Property(x => x.DefenseTermLecturerID).HasDefaultValueSql("DEFENSETERMLECTURERS_SEQ.NEXTVAL");
                 b.Property(x => x.LecturerCode).HasMaxLength(30).IsRequired();
                 b.Property(x => x.UserCode).HasMaxLength(40).IsRequired();
-                b.Property(x => x.Role).HasMaxLength(100);
                 b.Property(x => x.IsPrimary).HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasDefaultValueSql("SYSTIMESTAMP");
@@ -1017,6 +1029,7 @@ namespace ThesisManagement.Api.Data
                 b.Property(x => x.ScoreUvpb).HasColumnName("SCORE_UVPB").HasColumnType("NUMBER(5,2)");
                 b.Property(x => x.FinalScoreNumeric).HasColumnName("FINALSCORE_NUMERIC").HasColumnType("NUMBER(5,2)");
                 b.Property(x => x.FinalScoreText).HasColumnName("FINALSCORE_TEXT").HasMaxLength(100);
+                b.Property(x => x.IsPassed).HasColumnName("IS_PASSED").HasConversion<int?>();
                 b.Property(x => x.IsLocked).HasColumnName("ISLOCKED").HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.CreatedAt).HasColumnName("CREATEDAT").HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasColumnName("LASTUPDATED").HasDefaultValueSql("SYSTIMESTAMP");
@@ -1031,16 +1044,27 @@ namespace ThesisManagement.Api.Data
                 b.HasKey(x => x.Id);
                 b.Property(x => x.Id).HasColumnName("REVISIONID");
                 b.Property(x => x.AssignmentId).HasColumnName("ASSIGNMENTID");
-                b.Property(x => x.RevisedContent).HasColumnName("REVISEDCONTENT");
+                b.Property(x => x.RequiredRevisionContent).HasColumnName("REQUIRED_REVISION_CONTENT").HasColumnType("NCLOB");
+                b.Property(x => x.RevisionReason).HasColumnName("REVISION_REASON").HasMaxLength(500);
+                b.Property(x => x.SubmissionDeadline).HasColumnName("SUBMISSION_DEADLINE");
+                b.Property(x => x.RevisedContent).HasColumnName("REVISEDCONTENT").HasColumnType("NCLOB");
                 b.Property(x => x.RevisionFileUrl).HasColumnName("REVISIONFILEURL").HasMaxLength(500);
+                b.Property(x => x.SubmissionCount).HasColumnName("SUBMISSION_COUNT").HasDefaultValue(1);
+                b.Property(x => x.Status)
+                    .HasColumnName("REVISION_STATUS")
+                    .HasConversion<string>()
+                    .HasMaxLength(50)
+                    .HasDefaultValue(RevisionStatus.WaitingStudent);
+                b.Property(x => x.SecretaryComment).HasColumnName("SECRETARY_COMMENT").HasColumnType("NCLOB");
+                b.Property(x => x.SecretaryUserCode).HasColumnName("SECRETARY_USER_CODE").HasMaxLength(50);
+                b.Property(x => x.SecretaryApprovedAt).HasColumnName("SECRETARY_APPROVED_AT");
                 b.Property(x => x.IsGvhdApproved).HasColumnName("IS_GVHD_APPROVED").HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.IsUvtkApproved).HasColumnName("IS_UVTK_APPROVED").HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.IsCtApproved).HasColumnName("IS_CT_APPROVED").HasConversion<int>().HasDefaultValue(0);
                 b.Property(x => x.FinalStatus)
                     .HasColumnName("FINALSTATUS")
-                    .HasConversion<string>()
-                    .HasMaxLength(50)
-                    .HasDefaultValue(RevisionFinalStatus.Pending);
+                    .HasConversion<string?>()
+                    .HasMaxLength(50);
                 b.Property(x => x.CreatedAt).HasColumnName("CREATEDAT").HasDefaultValueSql("SYSTIMESTAMP");
                 b.Property(x => x.LastUpdated).HasColumnName("LASTUPDATED").HasDefaultValueSql("SYSTIMESTAMP");
                 b.HasIndex(x => x.AssignmentId).IsUnique();
@@ -1784,8 +1808,8 @@ namespace ThesisManagement.Api.Data
                 "ProgressSubmission" => "bài nộp",
                 "Committee" => "hội đồng",
                 "CommitteeMember" => "thành viên hội đồng",
-                "DefenseAssignment" => "phân công bảo vệ",
-                "DefenseScore" => "điểm bảo vệ",
+                "DefenseAssignment" => "phân công đồ án tốt nghiệp",
+                "DefenseScore" => "điểm đồ án tốt nghiệp",
                 "Conversation" => "cuộc trò chuyện",
                 "ConversationMember" => "thành viên cuộc trò chuyện",
                 "Message" => "tin nhắn",

@@ -151,6 +151,27 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string? Grade { get; set; }
         public bool CouncilListLocked { get; set; }
         public string CouncilLockStatus { get; set; } = "UNLOCKED";
+
+        // Scoring Details
+        public decimal? ScoreGvhd { get; set; }
+        public decimal? ScoreCt { get; set; }
+        public decimal? ScoreUvtk { get; set; }
+        public decimal? ScoreUvpb { get; set; }
+        public bool IsScoreLocked { get; set; }
+
+        // Revision info
+        public StudentRevisionInfoDto? Revision { get; set; }
+    }
+
+    public class StudentRevisionInfoDto
+    {
+        public int RevisionId { get; set; }
+        public int AssignmentId { get; set; }
+        public bool NeedsRevision { get; set; }
+        public string? RevisionReason { get; set; }
+        public string? RequiredContent { get; set; }
+        public DateTime? Deadline { get; set; }
+        public string? Status { get; set; }
     }
 
     public class StudentNotificationDto

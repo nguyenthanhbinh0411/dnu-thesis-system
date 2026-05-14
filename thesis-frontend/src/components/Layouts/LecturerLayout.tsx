@@ -10,7 +10,6 @@ import {
   Menu,
   X,
   KeyRound,
-  Sidebar,
 } from "lucide-react";
 import { fetchData, getAvatarUrl } from "../../api/fetchData";
 import type { ApiResponse } from "../../types/api";
@@ -32,6 +31,7 @@ const LecturerLayout: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [canViewDefenseMenus, setCanViewDefenseMenus] = useState(false);
+  const [canViewRevisionMenu, setCanViewRevisionMenu] = useState(false);
   const [headerPeriod, setHeaderPeriod] = useState<{
     label: string;
     tone: "normal" | "warning" | "error";
@@ -49,13 +49,15 @@ const LecturerLayout: React.FC = () => {
     return {
       label: "Đang xác định đợt",
       tone: "normal",
-      tooltip: "Hệ thống đang tự động xác định đợt bảo vệ hiện tại.",
+      tooltip: "Hệ thống đang tự động xác định đợt đồ án tốt nghiệp hiện tại.",
     };
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
   const collapseSidebarOnActivity = () => {
-    setIsSidebarCollapsed(true);
+    if (window.innerWidth > 768) {
+      setIsSidebarCollapsed(true);
+    }
   };
 
   useEffect(() => {
@@ -81,9 +83,13 @@ const LecturerLayout: React.FC = () => {
 
   // Update current time every minute
   useEffect(() => {
-    const timer = setInterval(() => {
+    const updateTime = () => {
       setCurrentTime(new Date());
-    }, 60000); // Update every minute
+    };
+
+    updateTime();
+
+    const timer = setInterval(updateTime, 60000); // Update every minute
 
     return () => clearInterval(timer);
   }, []);
@@ -110,13 +116,15 @@ const LecturerLayout: React.FC = () => {
     let cancelled = false;
 
     const bootstrapCurrentPeriod = async () => {
-      const result = await fetchCurrentLecturerDefenseAccess();
-      if (cancelled) {
-        return;
-      }
+      try {
+        const result = await fetchCurrentLecturerDefenseAccess();
+        if (cancelled) {
+          return;
+        }
 
-      if (result.ok) {
+        if (result.ok) {
         setCanViewDefenseMenus(result.hasCommitteeAccess);
+        setCanViewRevisionMenu(result.isSecretary && result.hasPendingRevisions);
         const periodName = result.period.name || `Đợt ${result.period.periodId}`;
         setActiveDefensePeriodId(result.period.periodId);
         setHeaderPeriod({
@@ -128,6 +136,7 @@ const LecturerLayout: React.FC = () => {
       }
 
       setCanViewDefenseMenus(false);
+      setCanViewRevisionMenu(false);
 
       if (result.code === "NOT_MAPPED") {
         setActiveDefensePeriodId(null);
@@ -164,6 +173,16 @@ const LecturerLayout: React.FC = () => {
         tone: "error",
         tooltip: result.message,
       });
+      } catch (error) {
+        if (cancelled) return;
+
+        setCanViewDefenseMenus(false);
+        setHeaderPeriod({
+          label: "Không xác định đợt",
+          tone: "error",
+          tooltip: "Không thể kết nối hệ thống.",
+        });
+      }
     };
 
     void bootstrapCurrentPeriod();
@@ -396,9 +415,8 @@ const LecturerLayout: React.FC = () => {
                 color: "#FFFFFF",
                 boxShadow: "0 6px 16px rgba(0, 0, 0, 0.18)",
                 cursor: "pointer",
-                zIndex: 99999,
-                transform: isSidebarCollapsed ? "translateX(-50%) translateZ(0)" : "translateX(-50%)",
-                willChange: "transform",
+                zIndex: 40,
+                transform: "translateX(-50%)",
                 flexShrink: 0,
                 backdropFilter: "blur(8px)",
               }}
@@ -516,6 +534,7 @@ const LecturerLayout: React.FC = () => {
             collapsed={isSidebarCollapsed}
             onNavigate={() => setIsMobileMenuOpen(false)}
             showDefenseMenus={canViewDefenseMenus}
+            showRevisionMenu={canViewRevisionMenu}
           />
         </div>
 
@@ -878,13 +897,7 @@ const LecturerLayout: React.FC = () => {
                       >
                         {profile?.degree} - {profile?.departmentCode}
                       </div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#e2e8f0",
-                          fontWeight: 500,
-                        }}
-                      ></div>
+
                     </div>
                   </div>
 
@@ -960,7 +973,10 @@ const LecturerLayout: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => auth.logout()}
+                      onClick={() => {
+                        setShowDropdown(false);
+                        auth.logout();
+                      }}
                       style={{
                         display: "flex",
                         alignItems: "center",

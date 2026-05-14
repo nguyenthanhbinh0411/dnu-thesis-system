@@ -7,7 +7,6 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Command
         int? LecturerProfileID,
         string? LecturerCode,
         string? UserCode,
-        string? Role,
         bool IsPrimary,
         DateTime? CreatedAt,
         DateTime? LastUpdated);
@@ -17,7 +16,6 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Command
         int? LecturerProfileID,
         string? LecturerCode,
         string? UserCode,
-        string? Role,
         bool? IsPrimary,
         DateTime? CreatedAt,
         DateTime? LastUpdated);

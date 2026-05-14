@@ -111,6 +111,12 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public string StudentCode { get; set; } = string.Empty;
         public string StudentName { get; set; } = string.Empty;
         public string FinalStatus { get; set; } = string.Empty;
+        public string RevisionReason { get; set; } = string.Empty;
+        public DateTime? SubmissionDeadline { get; set; }
+        public string SecretaryComment { get; set; } = string.Empty;
+        public string CommitteeCode { get; set; } = string.Empty;
+        public string SecretaryName { get; set; } = string.Empty;
+        public string ChairName { get; set; } = string.Empty;
         public bool IsGvhdApproved { get; set; }
         public bool IsUvtkApproved { get; set; }
         public bool IsCtApproved { get; set; }

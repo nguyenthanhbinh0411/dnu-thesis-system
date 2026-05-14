@@ -525,7 +525,7 @@ namespace ThesisManagement.Api.Services.DefenseDocuments
                     cancellationToken);
             if (assignment == null)
             {
-                return ContextBuildResult.Fail("Không tìm thấy assignment thuộc hội đồng/đợt bảo vệ đã chọn.", 404);
+                return ContextBuildResult.Fail("Không tìm thấy assignment thuộc hội đồng/đợt đồ án tốt nghiệp đã chọn.", 404);
             }
 
             var committee = await _uow.Committees.Query().AsNoTracking()

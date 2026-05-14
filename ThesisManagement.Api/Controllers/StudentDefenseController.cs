@@ -62,7 +62,7 @@ namespace ThesisManagement.Api.Controllers
             if (!info.Success)
             {
                 return StatusCode(infoStatusCode, ApiResponse<object>.Fail(
-                    info.Message ?? "Không lấy được thông tin bảo vệ.",
+                    info.Message ?? "Không lấy được thông tin đồ án tốt nghiệp.",
                     infoStatusCode,
                     info.Errors,
                     info.Code,
@@ -122,7 +122,7 @@ namespace ThesisManagement.Api.Controllers
             if (!resolved.Success || resolved.Period == null)
             {
                 return StatusCode(resolved.StatusCode, ApiResponse<object>.Fail(
-                    resolved.Message ?? "Không thể xác định đợt bảo vệ hiện tại.",
+                    resolved.Message ?? "Không thể xác định đợt đồ án tốt nghiệp hiện tại.",
                     resolved.StatusCode,
                     code: resolved.Code));
             }
@@ -193,7 +193,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (!await DefensePeriodExistsAsync(defenseTermId, HttpContext.RequestAborted))
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var safePage = Math.Max(page, 1);
@@ -293,8 +293,8 @@ namespace ThesisManagement.Api.Controllers
                     Success = createResult.Success,
                     Id = createResult.Data?.DefenseTermStudentID,
                     Message = createResult.Success
-                        ? "Thêm vào đợt bảo vệ thành công."
-                        : (createResult.ErrorMessage ?? "Thêm vào đợt bảo vệ thất bại.")
+                        ? "Thêm vào đợt đồ án tốt nghiệp thành công."
+                        : (createResult.ErrorMessage ?? "Thêm vào đợt đồ án tốt nghiệp thất bại.")
                 });
             }
 
@@ -325,7 +325,7 @@ namespace ThesisManagement.Api.Controllers
             if (!result.Success)
             {
                 return StatusCode(result.StatusCode, ApiResponse<object>.Fail(
-                    result.ErrorMessage ?? "Xóa sinh viên đợt bảo vệ thất bại.",
+                    result.ErrorMessage ?? "Xóa sinh viên đợt đồ án tốt nghiệp thất bại.",
                     result.StatusCode));
             }
 
@@ -580,7 +580,7 @@ namespace ThesisManagement.Api.Controllers
                         Source = sourceLabel,
                         Error = topic == null
                             ? "Chưa có đề tài trong đợt"
-                            : (isEligible ? null : "Đề tài chưa có trạng thái 'Đủ điều kiện bảo vệ'.")
+                            : (isEligible ? null : "Đề tài chưa có trạng thái 'Đủ điều kiện đồ án tốt nghiệp'.")
                     };
                 });
 
@@ -666,7 +666,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (periodIds.Count == 0)
             {
-                return (false, 404, "Sinh viên chưa được gán vào đợt bảo vệ nào.", "DEFENSE_PERIOD_MAPPING_NOT_FOUND", null);
+                return (false, 404, "Sinh viên chưa được gán vào đợt đồ án tốt nghiệp nào.", "DEFENSE_PERIOD_MAPPING_NOT_FOUND", null);
             }
 
             var periods = await _uow.DefenseTerms.Query().AsNoTracking()
@@ -689,13 +689,13 @@ namespace ThesisManagement.Api.Controllers
 
             if (activePeriods.Count == 0)
             {
-                return (false, 404, "Sinh viên chưa được gán vào đợt bảo vệ đang hoạt động.", "DEFENSE_PERIOD_ACTIVE_MAPPING_NOT_FOUND", null);
+                return (false, 404, "Sinh viên chưa được gán vào đợt đồ án tốt nghiệp đang hoạt động.", "DEFENSE_PERIOD_ACTIVE_MAPPING_NOT_FOUND", null);
             }
 
             if (activePeriods.Count > 1)
             {
                 var activePeriodIds = string.Join(", ", activePeriods.Select(x => x.DefenseTermId));
-                return (false, 409, $"Phát hiện nhiều đợt bảo vệ đang hoạt động cho sinh viên hiện tại ({activePeriodIds}).", "DEFENSE_PERIOD_AMBIGUOUS", null);
+                return (false, 409, $"Phát hiện nhiều đợt đồ án tốt nghiệp đang hoạt động cho sinh viên hiện tại ({activePeriodIds}).", "DEFENSE_PERIOD_AMBIGUOUS", null);
             }
 
             return (true, 200, null, null, activePeriods[0]);
@@ -763,7 +763,7 @@ namespace ThesisManagement.Api.Controllers
             var validPeriodAssignment = await IsAssignmentInPeriodAsync(periodId, request.AssignmentId);
             if (!validPeriodAssignment)
             {
-                var fail = ApiResponse<bool>.Fail("Assignment không thuộc đợt bảo vệ.", 404, code: DefenseUcErrorCodes.Revision.AssignmentNotInPeriod);
+                var fail = ApiResponse<bool>.Fail("Assignment không thuộc đợt đồ án tốt nghiệp.", 404, code: DefenseUcErrorCodes.Revision.AssignmentNotInPeriod);
                 return FromResult(fail);
             }
 

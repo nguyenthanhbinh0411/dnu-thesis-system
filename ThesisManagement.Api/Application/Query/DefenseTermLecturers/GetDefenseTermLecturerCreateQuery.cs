@@ -15,7 +15,6 @@ namespace ThesisManagement.Api.Application.Query.DefenseTermLecturers
                 LecturerProfileID: null,
                 LecturerCode: null,
                 UserCode: null,
-                Role: null,
                 IsPrimary: false,
                 CreatedAt: DateTime.UtcNow,
                 LastUpdated: DateTime.UtcNow);

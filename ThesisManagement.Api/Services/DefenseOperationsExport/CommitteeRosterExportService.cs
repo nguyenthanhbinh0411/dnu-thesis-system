@@ -103,7 +103,7 @@ public class CommitteeRosterExportService : ICommitteeRosterExportService
         sheet.Range("I7:I8").Merge().Value = "Nơi công tác";
         sheet.Range("J7:J8").Merge().Value = "Ủy viên phản biện";
         sheet.Range("K7:K8").Merge().Value = "Nơi công tác";
-        sheet.Range("L7:M7").Merge().Value = "Thời gian bảo vệ";
+        sheet.Range("L7:M7").Merge().Value = "Thời gian đồ án tốt nghiệp";
         sheet.Cell(8, 12).Value = "Buổi";
         sheet.Cell(8, 13).Value = "Ngày";
 
@@ -335,7 +335,7 @@ public class CommitteeRosterExportService : ICommitteeRosterExportService
         var culture = CultureInfo.InvariantCulture;
         var builder = new StringBuilder();
 
-        builder.AppendLine("TT,Mã SV,Họ tên,Người hướng dẫn,Hội đồng,Chủ tịch HĐ,Nơi công tác,Uỷ viên thư ký,Nơi công tác,Uỷ viên phản biện,Nơi công tác,Thời gian bảo vệ - Buổi,Thời gian bảo vệ - Ngày");
+        builder.AppendLine("TT,Mã SV,Họ tên,Người hướng dẫn,Hội đồng,Chủ tịch HĐ,Nơi công tác,Uỷ viên thư ký,Nơi công tác,Uỷ viên phản biện,Nơi công tác,Thời gian đồ án tốt nghiệp - Buổi,Thời gian đồ án tốt nghiệp - Ngày");
 
         foreach (var row in roster.Rows ?? Enumerable.Empty<CommitteeRosterRowDto>())
         {

@@ -101,7 +101,19 @@ namespace ThesisManagement.Api.Application.Query.LecturerProfiles
 
                 var lecturerIds = filteredLecturers.Select(fl => fl.LecturerProfileID).ToList();
                 var result = await _uow.LecturerProfiles.GetPagedWithFilterAsync(filter.Page, filter.PageSize, tempFilter,
-                    (query, f) => query.Where(lp => lecturerIds.Contains(lp.LecturerProfileID)).ApplyFilter(f));
+                    (query, f) => 
+                    {
+                        var filteredQuery = query.Where(lp => lecturerIds.Contains(lp.LecturerProfileID)).ApplyFilter(f);
+                        if (filter.ExcludeDefenseTermId.HasValue)
+                        {
+                             var excludedLecturerProfileIds = _uow.DefenseTermLecturers.Query().AsNoTracking()
+                                .Where(dtl => dtl.DefenseTermId == filter.ExcludeDefenseTermId.Value)
+                                .Select(dtl => dtl.LecturerProfileID);
+                            
+                            filteredQuery = filteredQuery.Where(lp => !excludedLecturerProfileIds.Contains(lp.LecturerProfileID));
+                        }
+                        return filteredQuery;
+                    });
 
                 items = result.Items;
                 totalCount = result.TotalCount;
@@ -109,7 +121,19 @@ namespace ThesisManagement.Api.Application.Query.LecturerProfiles
             else
             {
                 var result = await _uow.LecturerProfiles.GetPagedWithFilterAsync(filter.Page, filter.PageSize, filter,
-                    (query, f) => query.ApplyFilter(f));
+                    (query, f) =>
+                    {
+                        var filteredQuery = query.ApplyFilter(f);
+                        if (f.ExcludeDefenseTermId.HasValue)
+                        {
+                            var excludedLecturerProfileIds = _uow.DefenseTermLecturers.Query().AsNoTracking()
+                                .Where(dtl => dtl.DefenseTermId == f.ExcludeDefenseTermId.Value)
+                                .Select(dtl => dtl.LecturerProfileID);
+                            
+                            filteredQuery = filteredQuery.Where(lp => !excludedLecturerProfileIds.Contains(lp.LecturerProfileID));
+                        }
+                        return filteredQuery;
+                    });
 
                 items = result.Items;
                 totalCount = result.TotalCount;

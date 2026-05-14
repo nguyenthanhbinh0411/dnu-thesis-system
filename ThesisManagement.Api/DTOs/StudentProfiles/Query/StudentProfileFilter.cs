@@ -25,5 +25,6 @@ namespace ThesisManagement.Api.DTOs.StudentProfiles.Query
         public decimal? MinGPA { get; set; }
         public decimal? MaxGPA { get; set; }
         public string? AcademicStanding { get; set; }
+        public int? ExcludeDefenseTermId { get; set; }
     }
 }

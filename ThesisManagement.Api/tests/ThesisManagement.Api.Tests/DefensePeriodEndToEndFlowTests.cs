@@ -88,7 +88,7 @@ public class DefensePeriodEndToEndFlowTests
                 request.ActionType == "OPEN_DEFENSE_STUDENT"
                 && request.ActionUrl == "/defense/periods/1/student"
                 && request.TargetUserCodes.Any(code => string.Equals(code, "S001", StringComparison.OrdinalIgnoreCase))
-                && request.NotifBody.Contains("Lịch bảo vệ của bạn")
+                && request.NotifBody.Contains("Lịch đồ án tốt nghiệp của bạn")
                 && request.NotifBody.Contains(generatedCouncil.CommitteeCode)
                 && request.NotifBody.Contains(generatedCouncil.Room)
                 && request.NotifBody.Contains(expectedStudentWeekday)
@@ -277,11 +277,11 @@ public class DefensePeriodEndToEndFlowTests
             new LecturerProfile { LecturerProfileID = 5, LecturerCode = "SUP001", FullName = "Supervisor 1", UserCode = "SUP001" });
 
         db.DefenseTermLecturers.AddRange(
-            new DefenseTermLecturer { DefenseTermLecturerID = 1, DefenseTermId = 1, LecturerProfileID = 1, LecturerCode = "L001", UserCode = "L001", Role = "Chair", IsPrimary = true, CreatedAt = now, LastUpdated = now },
-            new DefenseTermLecturer { DefenseTermLecturerID = 2, DefenseTermId = 1, LecturerProfileID = 2, LecturerCode = "L002", UserCode = "L002", Role = "Secretary", IsPrimary = true, CreatedAt = now, LastUpdated = now },
-            new DefenseTermLecturer { DefenseTermLecturerID = 3, DefenseTermId = 1, LecturerProfileID = 3, LecturerCode = "L003", UserCode = "L003", Role = "Reviewer", IsPrimary = true, CreatedAt = now, LastUpdated = now },
-            new DefenseTermLecturer { DefenseTermLecturerID = 4, DefenseTermId = 1, LecturerProfileID = 4, LecturerCode = "L004", UserCode = "L004", Role = "Member", IsPrimary = true, CreatedAt = now, LastUpdated = now },
-            new DefenseTermLecturer { DefenseTermLecturerID = 5, DefenseTermId = 1, LecturerProfileID = 5, LecturerCode = "SUP001", UserCode = "SUP001", Role = "Supervisor", IsPrimary = false, CreatedAt = now, LastUpdated = now });
+            new DefenseTermLecturer { DefenseTermLecturerID = 1, DefenseTermId = 1, LecturerProfileID = 1, LecturerCode = "L001", UserCode = "L001", IsPrimary = true, CreatedAt = now, LastUpdated = now },
+            new DefenseTermLecturer { DefenseTermLecturerID = 2, DefenseTermId = 1, LecturerProfileID = 2, LecturerCode = "L002", UserCode = "L002", IsPrimary = true, CreatedAt = now, LastUpdated = now },
+            new DefenseTermLecturer { DefenseTermLecturerID = 3, DefenseTermId = 1, LecturerProfileID = 3, LecturerCode = "L003", UserCode = "L003", IsPrimary = true, CreatedAt = now, LastUpdated = now },
+            new DefenseTermLecturer { DefenseTermLecturerID = 4, DefenseTermId = 1, LecturerProfileID = 4, LecturerCode = "L004", UserCode = "L004", IsPrimary = true, CreatedAt = now, LastUpdated = now },
+            new DefenseTermLecturer { DefenseTermLecturerID = 5, DefenseTermId = 1, LecturerProfileID = 5, LecturerCode = "SUP001", UserCode = "SUP001", IsPrimary = false, CreatedAt = now, LastUpdated = now });
 
         db.Topics.AddRange(
             new Topic { TopicID = 1, TopicCode = "T001", Title = "Topic 1", Type = "Research", ProposerUserID = 1, ProposerStudentCode = "S001", SupervisorLecturerCode = "SUP001", DefenseTermId = 1, Status = "Eligible" },

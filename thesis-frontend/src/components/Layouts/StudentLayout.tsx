@@ -45,13 +45,15 @@ const StudentLayout: React.FC = () => {
     return {
       label: "Đang xác định đợt",
       tone: "normal",
-      tooltip: "Hệ thống đang tự động xác định đợt bảo vệ hiện tại.",
+      tooltip: "Hệ thống đang tự động xác định đợt đồ án tốt nghiệp hiện tại.",
     };
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
   const collapseSidebarOnActivity = () => {
-    setIsSidebarCollapsed(true);
+    if (window.innerWidth > 768) {
+      setIsSidebarCollapsed(true);
+    }
   };
 
   useEffect(() => {
@@ -96,12 +98,13 @@ const StudentLayout: React.FC = () => {
     let cancelled = false;
 
     const bootstrapCurrentPeriod = async () => {
-      const result = await fetchCurrentDefensePeriod("student");
-      if (cancelled) {
-        return;
-      }
+      try {
+        const result = await fetchCurrentDefensePeriod("student");
+        if (cancelled) {
+          return;
+        }
 
-      if (result.ok) {
+        if (result.ok) {
         const periodName = result.period.name || `Đợt ${result.period.periodId}`;
         setActiveDefensePeriodId(result.period.periodId);
         setHeaderPeriod({
@@ -147,6 +150,15 @@ const StudentLayout: React.FC = () => {
         tone: "error",
         tooltip: result.message,
       });
+      } catch (error) {
+        if (cancelled) return;
+
+        setHeaderPeriod({
+          label: "Không xác định đợt",
+          tone: "error",
+          tooltip: "Không thể kết nối hệ thống.",
+        });
+      }
     };
 
     void bootstrapCurrentPeriod();

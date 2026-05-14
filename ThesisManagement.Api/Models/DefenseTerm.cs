@@ -5,7 +5,11 @@ namespace ThesisManagement.Api.Models
     public class DefenseTerm
     {
         public int DefenseTermId { get; set; }
+        public string? TermCode { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? AcademicYear { get; set; }
+        public string? Semester { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public string? ConfigJson { get; set; }

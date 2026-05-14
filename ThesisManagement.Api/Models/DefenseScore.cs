@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ThesisManagement.Api.Models
 {
@@ -16,6 +17,20 @@ namespace ThesisManagement.Api.Models
         public decimal Score { get; set; }
         public string? Comment { get; set; }
         public bool IsSubmitted { get; set; }
+        
+        /// <summary>
+        /// Flag indicating that revision (hậu bảo vệ) is required for this assignment
+        /// Set by lecturer when submitting scores if "Yêu cầu nộp lại báo cáo" checkbox is marked
+        /// </summary>
+        [Column("REVISION_REQUIRED")]
+        public bool RevisionRequired { get; set; }
+
+        [Column("REVISION_REASON")]
+        public string? RevisionReason { get; set; }
+
+        [Column("REVISION_DEADLINE_DAYS")]
+        public int? RevisionDeadlineDays { get; set; }
+        
         public DateTime? CreatedAt { get; set; }
         public DateTime? LastUpdated { get; set; }
 

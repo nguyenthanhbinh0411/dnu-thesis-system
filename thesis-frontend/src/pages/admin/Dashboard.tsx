@@ -187,7 +187,7 @@ const Dashboard: React.FC = () => {
       <DefenseTermQuickInfo
         roleLabel="Quản trị viên"
         termCode="2026.1"
-        termName="Đợt bảo vệ HK2 năm học 2025-2026"
+        termName="Đợt đồ án tốt nghiệp HK2 năm học 2025-2026"
         roundIndex={1}
         status="Preparing"
       />

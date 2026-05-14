@@ -55,7 +55,6 @@ namespace ThesisManagement.Api.Application.Command.DefenseTermLecturers
                 LecturerProfileID = lecturer.LecturerProfileID,
                 LecturerCode = lecturer.LecturerCode,
                 UserCode = userCode.Trim(),
-                Role = dto.Role,
                 IsPrimary = dto.IsPrimary,
                 CreatedAt = createdAt,
                 LastUpdated = dto.LastUpdated ?? createdAt,

@@ -12,6 +12,10 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
 
         public string? RevisionKeyword { get; set; }
 
+        public bool? IsPassed { get; set; }
+        public string? Template { get; set; }
+        public List<string>? SelectedFields { get; set; }
+
         [Range(1, 200)]
         public int RevisionPage { get; set; } = 1;
 

@@ -31,7 +31,6 @@ type DefenseTermLecturerRow = {
   fullName: string;
   departmentCode: string;
   degree: string;
-  roles: string[];
   isPrimary: boolean;
   createdAt: string;
   updatedAt: string;
@@ -111,11 +110,10 @@ function normalizeLecturerRow(row: RecordData): DefenseTermLecturerRow {
     lecturerCode: asString(row.lecturerCode ?? row.LecturerCode),
     userCode: asString(row.userCode ?? row.UserCode),
     fullName: asString(
-      row.fullName ?? row.FullName ?? row.lecturerName ?? row.name,
+      row.fullName || row.FullName || row.lecturerName || row.LecturerName || row.name || row.Name || row.lecturerCode || row.LecturerCode
     ),
     departmentCode: asString(row.departmentCode ?? row.DepartmentCode),
     degree: asString(row.degree ?? row.Degree),
-    roles: toRoleList(row.role ?? row.roles ?? row.Role ?? row.Roles),
     isPrimary: asBoolean(row.isPrimary ?? row.IsPrimary),
     createdAt: asString(row.createdAt ?? row.CreatedAt),
     updatedAt: asString(
@@ -134,7 +132,6 @@ function toPayload(
     lecturerProfileID: row.lecturerProfileID,
     lecturerCode: row.lecturerCode,
     userCode: row.userCode,
-    role: row.roles.join(", "),
     isPrimary: row.isPrimary,
   };
 }
@@ -186,7 +183,6 @@ const DefenseTermLecturersSection = forwardRef<
       tags: filters.tags,
       lecturerCode: filters.lecturerCode,
       userCode: filters.userCode,
-      role: filters.role,
       isPrimary:
         filters.isPrimary === "" ? undefined : filters.isPrimary === "true",
       fromDate: filters.fromDate,
@@ -607,7 +603,6 @@ const DefenseTermLecturersSection = forwardRef<
                   departmentCode: editingRow.departmentCode,
                   degree: editingRow.degree,
                   profileImage: "",
-                  roles: editingRow.roles,
                   isPrimary: editingRow.isPrimary,
                   raw: editingRow.raw,
                 },
@@ -619,8 +614,8 @@ const DefenseTermLecturersSection = forwardRef<
         }
         subtitle={
           editingRow
-            ? "Chọn một giảng viên mới và cấu hình lại role/chính cho bản ghi hiện tại."
-            : "Chọn nhiều giảng viên, rồi gắn role cho từng giảng viên trước khi lưu."
+            ? "Chọn một giảng viên mới và cấu hình lại trạng thái chính cho bản ghi hiện tại."
+            : "Chọn nhiều giảng viên trước khi lưu."
         }
         onClose={() => {
           setPickerOpen(false);

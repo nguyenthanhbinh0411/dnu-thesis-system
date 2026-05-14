@@ -4,9 +4,15 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
 {
     public class DefensePeriodCreateDto
     {
+        public string? TermCode { get; set; }
+
         [Required]
         [MaxLength(200)]
         public string Name { get; set; } = string.Empty;
+
+        public string? Description { get; set; }
+        public string? AcademicYear { get; set; }
+        public string? Semester { get; set; }
 
         [Required]
         public DateTime StartDate { get; set; }
@@ -19,9 +25,15 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
 
     public class DefensePeriodUpdateDto
     {
+        public string? TermCode { get; set; }
+
         [Required]
         [MaxLength(200)]
         public string Name { get; set; } = string.Empty;
+
+        public string? Description { get; set; }
+        public string? AcademicYear { get; set; }
+        public string? Semester { get; set; }
 
         [Required]
         public DateTime StartDate { get; set; }
@@ -35,7 +47,11 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
     public class DefensePeriodListItemDto
     {
         public int DefenseTermId { get; set; }
+        public string? TermCode { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? AcademicYear { get; set; }
+        public string? Semester { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public string Status { get; set; } = string.Empty;
@@ -46,7 +62,11 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
     public class DefensePeriodDetailDto
     {
         public int DefenseTermId { get; set; }
+        public string? TermCode { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? AcademicYear { get; set; }
+        public string? Semester { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public string Status { get; set; } = string.Empty;
@@ -60,5 +80,13 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
 
         public DefensePeriodConfigDto? Config { get; set; }
         public DefensePeriodStateDto? State { get; set; }
+    }
+
+    public class DefensePeriodLifecycleRequestDto
+    {
+        [Required]
+        public string Action { get; set; } = string.Empty;
+
+        public string? IdempotencyKey { get; set; }
     }
 }

@@ -623,9 +623,6 @@ namespace ThesisManagement.Api.Helpers
             if (!string.IsNullOrWhiteSpace(filter.UserCode))
                 query = query.Where(x => x.UserCode == filter.UserCode);
 
-            if (!string.IsNullOrWhiteSpace(filter.Role))
-                query = query.Where(x => x.Role != null && x.Role.Contains(filter.Role));
-
             if (filter.IsPrimary.HasValue)
                 query = query.Where(x => x.IsPrimary == filter.IsPrimary.Value);
 

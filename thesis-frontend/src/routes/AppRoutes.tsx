@@ -35,6 +35,7 @@ import CommitteeManagement from "../pages/admin/CommitteeManagement";
 import CommitteeOperationsManagement from "../pages/admin/CommitteeOperationsManagement";
 import SystemActivityLogs from "../pages/admin/SystemActivityLogs";
 import LecturerTopicReviewPage from "../pages/lecturer/LecturerTopicReview";
+import LecturerRevisionDashboard from "../pages/lecturer/LecturerRevisionDashboard";
 import StudentServiceDashboard from "../pages/studentservices/StudentServiceDashboard";
 import StudentProfilesManagement from "../pages/studentservices/StudentProfilesManagement";
 import LecturerProfilesManagement from "../pages/studentservices/LecturerProfilesManagement";
@@ -96,6 +97,7 @@ const AppRoutes: React.FC = () => {
           <Route path="committees/grading" element={<LecturerCommitteeGradingRoom />} />
           <Route path="reports" element={<LecturerReports />} />
           <Route path="topic-review" element={<LecturerTopicReviewPage />} />
+          <Route path="post-defense" element={<LecturerRevisionDashboard />} />
           <Route
             path="topic-rename-requests"
             element={

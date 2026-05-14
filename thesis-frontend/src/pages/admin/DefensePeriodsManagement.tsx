@@ -1,3802 +1,1637 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
+  Activity,
   AlertCircle,
-  AlertTriangle,
-  CalendarDays,
+  Archive,
+  ArrowLeft,
+  Calendar,
   CheckCircle,
-  Clock3,
-  Columns3,
-  ChevronLeft,
   ChevronRight,
+  Clock,
   Download,
-  Eye,
+  Edit,
+  FileDown,
+  FileSpreadsheet,
   Filter,
-  Flag,
-  Grid,
-  History,
-  Pencil,
+  Info,
+  LayoutDashboard,
+  Lock,
+  MoreVertical,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
-  RotateCcw,
-  Save,
   Search,
-  Send,
-  Shield,
-  Tag,
+  Settings,
+  ShieldCheck,
   Trash2,
-  Rows3,
-  Workflow,
-  X,
+  UserCheck,
+  Users,
+  Zap,
 } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchData } from "../../api/fetchData";
 import { useToast } from "../../context/useToast";
 import type { ApiResponse } from "../../types/api";
-import { getRoleClaimFromAccessToken } from "../../services/auth-session.service";
-import { normalizeRole, ROLE_ADMIN, ROLE_LECTURER, ROLE_STUDENT } from "../../utils/role";
-import {
-  pickCaseInsensitiveValue,
-  readEnvelopeData,
-  readEnvelopeErrorMessages,
-  readEnvelopeMessage,
-  readEnvelopeSuccess,
-  readEnvelopeWarningMessages,
-} from "../../utils/api-envelope";
-import {
-  getActiveDefensePeriodId,
-  setActiveDefensePeriodId,
-} from "../../utils/defensePeriod";
-import DefenseTermLecturersSection, {
-  type DefenseTermLecturersSectionHandle,
-} from "../../components/admin/DefenseTermLecturersSection";
-import DefenseTermStudentsSection, {
-  type DefenseTermStudentsSectionHandle,
-} from "../../components/admin/DefenseTermStudentsSection";
-import DefenseTopicsSection from "../../components/admin/DefenseTopicsSection";
-import "./Dashboard.css";
+import { readEnvelopeData, readEnvelopeSuccess } from "../../utils/api-envelope";
+import { useAuth } from "../../hooks/useAuth";
+import DefenseTermStudentsSection, { type DefenseTermStudentsSectionHandle } from "../../components/admin/DefenseTermStudentsSection";
+import DefenseTermLecturersSection, { type DefenseTermLecturersSectionHandle } from "../../components/admin/DefenseTermLecturersSection";
+import ImportExportActions from "../../components/admin/ImportExportActions";
+import { Copy, PlusCircle, Search as SearchIcon, Filter as FilterIcon, MoreHorizontal, AlertTriangle, Eye, ChevronLeft, ChevronRight as ChevronRightIcon } from "lucide-react";
 
-type DefenseTermStatus =
-  | "Draft"
-  | "Preparing"
-  | "Finalized"
-  | "Published"
-  | "Archived";
+// --- Types & Constants ---
 
-type DetailTab = "overview" | "state" | "workflow" | "history";
+type DefenseTermStatus = "Draft" | "Registration" | "Assignment" | "ProgressTracking" | "CommitteePreparation" | "Running" | "Paused" | "ScoringLocked" | "Finalization" | "Finalized" | "Published" | "Closed" | "Archived";
 
-type MainTab = "overview" | "students" | "lecturers" | "topics" | "progress" | "reports";
-
-type UserRole = "SystemAdmin" | "FacultyCoordinator" | "Lecturer" | "Student" | "Unknown";
-
-type RoadmapLayout = "horizontal" | "vertical";
-
-type RoadmapStepStatus = "completed" | "in-progress" | "pending";
-
-type LifecycleAction =
-  | "SYNC"
-  | "FINALIZE"
-  | "PUBLISH"
-  | "ROLLBACK"
-  | "ARCHIVE"
-  | "REOPEN";
-
-interface DefensePeriodRow {
-  periodId: number;
-  code: string;
+interface DefensePeriod {
+  defenseTermId: number;
+  termCode?: string;
   name: string;
-  roundIndex: number;
-  startDate: string;
-  endDate: string;
+  academicYear?: string;
+  semester?: string;
   status: DefenseTermStatus;
+  startDate?: string;
+  endDate?: string;
+  description?: string;
   createdAt: string;
-  updatedAt: string;
+  lastUpdated: string;
 }
 
-interface DefensePeriodSnapshot {
-  detail: Record<string, unknown>;
-  dashboard: Record<string, unknown>;
-  config: Record<string, unknown>;
-  state: Record<string, unknown>;
-  workflow: Record<string, unknown>;
+type MainTab = "overview" | "management" | "students" | "lecturers" | "operations" | "statistics";
+
+const STATUS_CONFIG: Record<DefenseTermStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  Draft: { label: "Soạn thảo", color: "#64748b", bg: "#f1f5f9", icon: <Edit size={14} /> },
+  Registration: { label: "Đăng ký đề tài", color: "#0ea5e9", bg: "#f0f9ff", icon: <FileDown size={14} /> },
+  Assignment: { label: "Phân công", color: "#6366f1", bg: "#eef2ff", icon: <Users size={14} /> },
+  ProgressTracking: { label: "Theo dõi tiến độ", color: "#f59e0b", bg: "#fffbeb", icon: <Activity size={14} /> },
+  CommitteePreparation: { label: "Chuẩn bị hội đồng", color: "#8b5cf6", bg: "#f5f3ff", icon: <Settings size={14} /> },
+  Running: { label: "Đang bảo vệ", color: "#166534", bg: "#dcfce7", icon: <Play size={14} /> },
+  Paused: { label: "Tạm dừng", color: "#92400e", bg: "#fef3c7", icon: <Pause size={14} /> },
+  ScoringLocked: { label: "Khóa điểm", color: "#991b1b", bg: "#fee2e2", icon: <Lock size={14} /> },
+  Finalization: { label: "Tổng kết", color: "#3730a3", bg: "#e0e7ff", icon: <CheckCircle size={14} /> },
+  Finalized: { label: "Đã tổng kết", color: "#3730a3", bg: "#e0e7ff", icon: <CheckCircle size={14} /> },
+  Published: { label: "Công bố", color: "#15803d", bg: "#f0fdf4", icon: <Zap size={14} /> },
+  Closed: { label: "Đã đóng", color: "#1e293b", bg: "#f8fafc", icon: <Archive size={14} /> },
+  Archived: { label: "Lưu trữ", color: "#475569", bg: "#f1f5f9", icon: <Archive size={14} /> },
+};
+
+const DEEP_BLUE_PRIMARY = "#1e3a5f";
+const LIGHT_BLUE_SOFTEN = "#f0f4f8";
+
+// --- API Service Shorthand ---
+
+const defensePeriodApi = {
+  list: () => fetchData<ApiResponse<DefensePeriod[]>>("/defense-periods", { method: "GET" }),
+  get: (id: number) => fetchData<ApiResponse<DefensePeriod>>(`/defense-periods/${id}`, { method: "GET" }),
+  create: (data: Partial<DefensePeriod>) => fetchData<ApiResponse<DefensePeriod>>("/defense-periods", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<DefensePeriod>) => fetchData<ApiResponse<DefensePeriod>>(`/defense-periods/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: number) => fetchData<ApiResponse<boolean>>(`/defense-periods/${id}`, { method: "DELETE" }),
+  lifecycle: (id: number, action: string, idempotencyKey?: string) =>
+    fetchData<ApiResponse<boolean>>(`/defense-periods/${id}/lifecycle`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+      body: JSON.stringify({ action, idempotencyKey })
+    }),
+  snapshot: (id: number) => fetchData<ApiResponse<any>>(`/defense-periods/${id}/management/snapshot`, { method: "GET" }),
+  monitoring: (id: number) => fetchData<ApiResponse<any>>(`/defense-periods/${id}/monitoring/snapshot`, { method: "GET" }),
+  export: (id: number, reportType: string, format: string = "xlsx", councilId?: number) => {
+    const isSpecial = ["students", "lecturers", "assigned-topics"].includes(reportType);
+    if (isSpecial) {
+      return `${import.meta.env.VITE_API_BASE_URL}/api/defense-periods/${id}/exports/${reportType}?format=${format}`;
+    }
+    // For general reports, use the unified report/export endpoint
+    let url = `${import.meta.env.VITE_API_BASE_URL}/api/defense-periods/${id}/reports/export?reportType=${reportType}&format=${format}`;
+    if (councilId) {
+      url += `&councilId=${councilId}`;
+    }
+    return url;
+  },
+};
+
+const STATISTICS_REPORTS = [
+  { key: "students", label: "Danh sách sinh viên đủ điều kiện", desc: "Danh sách sinh viên đủ điều kiện tham gia thực hiện đồ án tốt nghiệp.", icon: <Users size={20} />, type: "excel" },
+  { key: "lecturers", label: "Danh sách giảng viên hướng dẫn", desc: "Danh sách giảng viên tham gia hướng dẫn và quản lý trong đợt.", icon: <UserCheck size={20} />, type: "excel" },
+  { key: "assigned-topics", label: "Danh sách đề tài đã phân công", desc: "Báo cáo chi tiết các đề tài đã được gán sinh viên và giảng viên.", icon: <CheckCircle size={20} />, type: "excel" },
+  { key: "committee-roster", label: "Danh sách Hội đồng & Phân công", desc: "Xuất file Excel tổng hợp hội đồng, thành viên và đề tài.", icon: <LayoutDashboard size={20} />, type: "excel" },
+  { key: "council-summary", label: "Tổng hợp kết quả theo Hội đồng", desc: "Báo cáo tổng kết điểm số theo từng đơn vị hội đồng.", icon: <FileSpreadsheet size={20} />, type: "excel" },
+  { key: "final-term", label: "Bảng điểm tổng kết đợt", desc: "Danh sách điểm số cuối cùng của toàn bộ sinh viên trong đợt.", icon: <ShieldCheck size={20} />, type: "pdf" },
+  { key: "form-1", label: "Phiếu chấm điểm (Mẫu 1)", desc: "Mẫu phiếu chấm điểm dành cho thành viên hội đồng.", icon: <FileDown size={20} />, type: "pdf" },
+];
+
+// --- Helper Functions ---
+
+function asNumber(val: any): number {
+  const n = Number(val);
+  return isNaN(n) ? 0 : n;
 }
 
-const statusOptions: DefenseTermStatus[] = [
-  "Draft",
-  "Preparing",
-  "Finalized",
-  "Published",
-  "Archived",
-];
-
-const badgeStyles: Record<DefenseTermStatus, { bg: string; text: string }> = {
-  Draft: { bg: "#f8fafc", text: "#64748b" },
-  Preparing: { bg: "#fffbeb", text: "#b45309" },
-  Finalized: { bg: "#fff7ed", text: "#c2410c" },
-  Published: { bg: "#f0fdf4", text: "#166534" },
-  Archived: { bg: "#f8fafc", text: "#64748b" },
-};
-
-const workflowBlueprint = [
-  {
-    key: "TOPIC_REGISTRATION",
-    title: "Đăng ký đề tài",
-    description: "Tiếp nhận và khóa danh sách đề tài cho đợt bảo vệ.",
-  },
-  {
-    key: "PROGRESS_MANAGEMENT",
-    title: "Quản lý tiến độ",
-    description: "Theo dõi milestone học thuật và hồ sơ trước bảo vệ.",
-  },
-  {
-    key: "ELIGIBILITY_GATE",
-    title: "Hoàn tất đủ điều kiện bảo vệ",
-    description: "Xác nhận danh sách sinh viên, giảng viên đủ điều kiện.",
-  },
-  {
-    key: "COUNCIL_SETUP",
-    title: "Thiết lập hội đồng",
-    description: "Thực hiện tại module Quản lý hội đồng.",
-  },
-  {
-    key: "DEFENSE_SCORING",
-    title: "Bảo vệ x Chấm điểm",
-    description: "Theo dõi tiến độ chấm điểm ở dashboard giám sát.",
-  },
-  {
-    key: "POST_DEFENSE",
-    title: "Hậu bảo vệ",
-    description: "Publish điểm, revision và báo cáo hậu kỳ.",
-  },
-];
-
-const pageStyles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    padding: 20,
-    background: "#ffffff",
-    overflowX: "hidden",
-    fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
-    color: "#0f172a",
-  },
-  shell: {
-    maxWidth: 1360,
-    width: "100%",
-    margin: "0 auto",
-  },
-  hero: {
-    position: "relative",
-    overflow: "hidden",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    padding: "16px 18px",
-    marginBottom: 16,
-    background: "#ffffff",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-  },
-  heroGlow: {
-    display: "none",
-  },
-  sectionCard: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    background: "#ffffff",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
-  },
-  statCard: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    padding: 14,
-    background: "#ffffff",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
-    minHeight: 96,
-  },
-  chip: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 999,
-    padding: "6px 12px",
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  toolbar: {
-    display: "grid",
-    gridTemplateColumns:
-      "minmax(0, 2fr) minmax(0, 1.05fr) minmax(150px, 1fr) minmax(150px, 1fr)",
-    gap: 12,
-    alignItems: "center",
-    padding: 14,
-  },
-  contentGrid: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.8fr) minmax(340px, 1fr)",
-    gap: 16,
-  },
-  panel: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    background: "#ffffff",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-    overflow: "hidden",
-  },
-  detailPanel: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    background: "#ffffff",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-    padding: 16,
-    position: "sticky",
-    top: 14,
-    height: "fit-content",
-  },
-  primaryButton: {
-    border: "none",
-    borderRadius: 10,
-    padding: "0 16px",
-    minHeight: 44,
-    fontWeight: 600,
-    fontSize: 14,
-    color: "#ffffff",
-    cursor: "pointer",
-    background: "#f37021",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    whiteSpace: "nowrap",
-    lineHeight: 1.2,
-    flexShrink: 0,
-  },
-  ghostButton: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 10,
-    padding: "8px 12px",
-    minHeight: 40,
-    fontWeight: 600,
-    fontSize: 13,
-    color: "#0f172a",
-    cursor: "pointer",
-    background: "#ffffff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    whiteSpace: "nowrap",
-    lineHeight: 1.2,
-    flexShrink: 0,
-  },
-  dangerButton: {
-    border: "1px solid #fecaca",
-    borderRadius: 10,
-    padding: "8px 12px",
-    minHeight: 40,
-    fontWeight: 600,
-    fontSize: 13,
-    color: "#b91c1c",
-    cursor: "pointer",
-    background: "#ffffff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    whiteSpace: "nowrap",
-    lineHeight: 1.2,
-    flexShrink: 0,
-  },
-  iconActionButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#0f172a",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-  },
-  iconDangerButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    border: "1px solid #fecaca",
-    background: "#ffffff",
-    color: "#ef4444",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-  },
-};
-
-const selectControlStyle: React.CSSProperties = {
-  appearance: "none",
-  WebkitAppearance: "none",
-  MozAppearance: "none",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  minHeight: 42,
-  padding: "0 34px 0 12px",
-  backgroundColor: "#ffffff",
-  backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23f37021' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
-  backgroundRepeat: "no-repeat",
-  backgroundPosition: "right 12px center",
-  backgroundSize: "14px",
-  color: "#0f172a",
-  fontSize: 14,
-  lineHeight: 1.2,
-};
-
-const tableHeadCellStyle: React.CSSProperties = {
-  borderBottom: "1px solid #e2e8f0",
-  padding: "10px 12px",
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#0f172a",
-  textTransform: "uppercase",
-  letterSpacing: "0.02em",
-  background: "#ffffff",
-};
-
-const tableCellStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#0f172a",
-  fontSize: 13,
-};
-
-const roadmapStatusTheme: Record<
-  RoadmapStepStatus,
-  {
-    dotBorder: string;
-    dotBg: string;
-    cardBorder: string;
-    cardBg: string;
-    text: string;
-    line: string;
+function safeRandomUUID(): string {
+  try {
+    return crypto.randomUUID();
+  } catch (e) {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
-> = {
-  completed: {
-    dotBorder: "#bbf7d0",
-    dotBg: "#f0fdf4",
-    cardBorder: "#bbf7d0",
-    cardBg: "#ffffff",
-    text: "#166534",
-    line: "#bbf7d0",
-  },
-  "in-progress": {
-    dotBorder: "#f37021",
-    dotBg: "#fff7ed",
-    cardBorder: "#f37021",
-    cardBg: "#ffffff",
-    text: "#f37021",
-    line: "#f37021",
-  },
-  pending: {
-    dotBorder: "#cbd5e1",
-    dotBg: "#ffffff",
-    cardBorder: "#cbd5e1",
-    cardBg: "#ffffff",
-    text: "#475569",
-    line: "#cbd5e1",
-  },
+}
+
+const mapStatus = (status: any): DefenseTermStatus => {
+  if (status === null || status === undefined) return "Draft";
+  const s = String(status).trim().toLowerCase();
+
+  // Numeric mapping (based on backend enum)
+  if (s === "0") return "Draft";
+  if (s === "1") return "Registration";
+  if (s === "2") return "Assignment";
+  if (s === "3") return "ProgressTracking";
+  if (s === "4") return "CommitteePreparation";
+  if (s === "5") return "Running";
+  if (s === "6") return "Finalization";
+  if (s === "7") return "Closed";
+
+  // Vietnamese Label Mapping
+  if (s === "soạn thảo") return "Draft";
+  if (s === "đăng ký đề tài" || s === "đăng ký") return "Registration";
+  if (s === "phân công") return "Assignment";
+  if (s === "theo dõi tiến độ") return "ProgressTracking";
+  if (s === "chuẩn bị hội đồng") return "CommitteePreparation";
+  if (s === "đang bảo vệ" || s === "đang diễn ra" || s === "bảo vệ") return "Running";
+  if (s === "tạm dừng") return "Paused";
+  if (s === "khóa điểm") return "ScoringLocked";
+  if (s === "tổng kết") return "Finalization";
+  if (s === "đã tổng kết") return "Finalized";
+  if (s === "công bố") return "Published";
+  if (s === "đã đóng" || s === "kết thúc") return "Closed";
+  if (s === "lưu trữ") return "Archived";
+
+  // String mapping
+  if (s === "draft") return "Draft";
+  if (s === "registration") return "Registration";
+  if (s === "assignment") return "Assignment";
+  if (s === "progresstracking") return "ProgressTracking";
+  if (s === "committeepreparation") return "CommitteePreparation";
+  if (s === "preparing") return "Registration";
+  if (s === "running") return "Running";
+  if (s === "paused") return "Paused";
+  if (s === "scoringlocked") return "ScoringLocked";
+  if (s === "finalization") return "Finalization";
+  if (s === "finalized") return "Finalized";
+  if (s === "published") return "Published";
+  if (s === "closed") return "Closed";
+  if (s === "archived") return "Archived";
+
+  return "Draft";
 };
 
-const roadmapStatusLabel: Record<RoadmapStepStatus, string> = {
-  completed: "Hoàn thành",
-  "in-progress": "Đang thực hiện",
-  pending: "Chờ xử lý",
+const getStatusPresentation = (status: unknown) => {
+  const normalized = mapStatus(String(status ?? "Draft"));
+  return STATUS_CONFIG[normalized] ?? STATUS_CONFIG.Draft;
 };
 
-const asString = (value: unknown, fallback = ""): string => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed || fallback;
+const getNextActionLabel = (status?: DefenseTermStatus): string => {
+  if (!status) return "Tiếp tục quy trình";
+  switch (status) {
+    case "Draft": return "Mở đăng ký đề tài";
+    case "Registration": return "Chuyển sang Phân công";
+    case "Assignment": return "Theo dõi tiến độ";
+    case "ProgressTracking": return "Chuẩn bị hội đồng";
+    case "CommitteePreparation": return "Bắt đầu bảo vệ";
+    case "Running": return "Khóa điểm bảo vệ";
+    case "ScoringLocked": return "Tổng kết đợt";
+    case "Finalization": return "Công bố điểm";
+    case "Finalized": return "Công bố điểm";
+    case "Published": return "Đóng đợt";
+    case "Closed": return "Lưu trữ";
+    default: return "Tiếp tục quy trình";
   }
-  if (typeof value === "number") {
-    return String(value);
-  }
-  return fallback;
 };
 
-const asNumber = (value: unknown, fallback = 0): number => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+const readCount = (source: unknown, candidates: string[], fallback = 0): number => {
+  if (!source || typeof source !== "object") {
+    return fallback;
   }
-  if (typeof value === "string") {
-    const parsed = Number(value);
+
+  const record = source as Record<string, unknown>;
+  for (const key of candidates) {
+    const parsed = Number(record[key]);
     if (Number.isFinite(parsed)) {
       return parsed;
     }
   }
+
   return fallback;
 };
 
-const asBoolean = (value: unknown, fallback = false): boolean => {
-  if (typeof value === "boolean") {
-    return value;
+const readArrayCount = (source: unknown, candidates: string[], fallback = 0): number => {
+  if (!source || typeof source !== "object") {
+    return fallback;
   }
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (["true", "1", "yes", "y"].includes(normalized)) {
-      return true;
+
+  const record = source as Record<string, unknown>;
+  for (const key of candidates) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value.length;
     }
-    if (["false", "0", "no", "n"].includes(normalized)) {
-      return false;
-    }
   }
-  if (typeof value === "number") {
-    return value !== 0;
-  }
+
   return fallback;
 };
 
-const toIsoDate = (value: unknown): string => {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-  return parsed.toISOString().slice(0, 10);
-};
+// --- Reusable Components ---
 
-const toLocalDateTime = (value: unknown): string => {
-  if (typeof value !== "string") {
-    return "-";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return asString(value, "-");
-  }
-  return parsed.toLocaleString("vi-VN");
-};
-
-const pickValue = pickCaseInsensitiveValue;
-
-const readEnvelopeWarnings = readEnvelopeWarningMessages;
-
-const readEnvelopeErrors = readEnvelopeErrorMessages;
-
-const normalizeStatus = (value: unknown): DefenseTermStatus => {
-  const normalized = asString(value).toUpperCase();
-  if (normalized.includes("ARCHIVE")) return "Archived";
-  if (normalized.includes("PUBLISH")) return "Published";
-  if (normalized.includes("FINAL")) return "Finalized";
-  if (normalized.includes("PREPAR") || normalized.includes("ACTIVE")) {
-    return "Preparing";
-  }
-  return "Draft";
-};
-
-const getUserRole = (): UserRole => {
-  const roleClaim = getRoleClaimFromAccessToken();
-  const normalized = normalizeRole(roleClaim || "");
-  if (normalized === "ADMIN") return "SystemAdmin";
-  if (normalized === "LECTURER") return "Lecturer";
-  if (normalized === "STUDENT") return "Student";
-  if (normalized === "STUDENTSERVICE") return "FacultyCoordinator";
-  return "Unknown";
-};
-
-const parseRoundIndex = (code: string, fallback: number): number => {
-  const parts = code.split(".");
-  if (parts.length >= 2) {
-    const round = Number(parts[1]);
-    if (Number.isFinite(round) && round > 0) {
-      return round;
-    }
-  }
-  return fallback;
-};
-
-const makeIdempotencyKey = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
-
-const isNoDataMessage = (value: string): boolean => {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized.includes("không có dữ liệu") ||
-    normalized.includes("khong co du lieu") ||
-    normalized.includes("no data") ||
-    normalized.includes("empty") ||
-    normalized.includes("not found")
-  );
-};
-
-const isNoDataEnvelope = (
-  response: ApiResponse<unknown> | null | undefined,
-): boolean => {
-  if (!response) {
-    return false;
-  }
-
-  const message = asString(readEnvelopeMessage(response));
-  if (message && isNoDataMessage(message)) {
-    return true;
-  }
-
-  const errors = readEnvelopeErrors(response);
-  return errors.some((error) => isNoDataMessage(error));
-};
-
-const defensePeriodApi = {
-  list: () =>
-    fetchData<ApiResponse<unknown>>("/defense-periods", {
-      method: "GET",
-    }),
-  create: (payload: {
-    name: string;
-    startDate: string;
-    endDate?: string | null;
-    status: DefenseTermStatus;
-  }) =>
-    fetchData<ApiResponse<unknown>>("/defense-periods", {
-      method: "POST",
-      body: payload,
-    }),
-  update: (
-    periodId: number,
-    payload: {
-      name: string;
-      startDate: string;
-      endDate?: string | null;
-      status: DefenseTermStatus;
-    },
-  ) =>
-    fetchData<ApiResponse<unknown>>(`/defense-periods/${periodId}`, {
-      method: "PATCH",
-      body: payload,
-    }),
-  remove: (periodId: number) =>
-    fetchData<ApiResponse<unknown>>(`/defense-periods/${periodId}`, {
-      method: "DELETE",
-    }),
-  snapshot: (periodId: number) =>
-    fetchData<ApiResponse<Record<string, unknown>>>(
-      `/defense-periods/${periodId}/snapshot`,
-      {
-        method: "GET",
-      },
-    ),
-  lifecycle: (
-    periodId: number,
-    action: LifecycleAction,
-    payload?: Record<string, unknown>,
-    idempotencyKey?: string,
-  ) =>
-    fetchData<ApiResponse<unknown>>(`/defense-periods/${periodId}/lifecycle`, {
-      method: "POST",
-      body: {
-        action,
-        ...(payload ?? {}),
-        ...(idempotencyKey ? { idempotencyKey } : {}),
-      },
-      headers: idempotencyKey
-        ? { "Idempotency-Key": idempotencyKey }
-        : undefined,
-    }),
-};
-
-const DefensePeriodsManagement: React.FC = () => {
-  const navigate = useNavigate();
-  const { addToast } = useToast();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const userRole = getUserRole();
-
-  const notifyError = useCallback(
-    (message: string) => addToast(message, "error"),
-    [addToast],
-  );
-  const notifySuccess = useCallback(
-    (message: string) => addToast(message, "success"),
-    [addToast],
-  );
-  const notifyWarning = useCallback(
-    (message: string) => addToast(message, "warning"),
-    [addToast],
-  );
-  const notifyInfo = useCallback(
-    (message: string) => addToast(message, "info"),
-    [addToast],
-  );
-
-  const [rows, setRows] = useState<DefensePeriodRow[]>([]);
-  const [loadingRows, setLoadingRows] = useState(false);
-  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [activeAction, setActiveAction] = useState<string | null>(null);
-
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-
-  const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(() =>
-    getActiveDefensePeriodId(),
-  );
-  const [snapshotMap, setSnapshotMap] = useState<
-    Record<number, DefensePeriodSnapshot>
-  >({});
-  const studentsSectionRef = useRef<DefenseTermStudentsSectionHandle | null>(
-    null,
-  );
-  const lecturersSectionRef = useRef<DefenseTermLecturersSectionHandle | null>(
-    null,
-  );
-
-  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
-  const [showForm, setShowForm] = useState(false);
-  const [editingPeriodId, setEditingPeriodId] = useState<number | null>(null);
-  const [allowFinalizeAfterWarning, setAllowFinalizeAfterWarning] =
-    useState(false);
-  const [roadmapLayout, setRoadmapLayout] = useState<RoadmapLayout>("vertical");
-  const [roadmapAnimated, setRoadmapAnimated] = useState(false);
-  const roadmapTrackRef = useRef<HTMLDivElement | null>(null);
-  
-  // Main tab system state
-  const initialMainTab = (searchParams.get("tab") || "overview") as MainTab;
-  const [activeMainTab, setActiveMainTab] = useState<MainTab>(initialMainTab);
-
-  const updateMainTab = (tab: MainTab) => {
-    setActiveMainTab(tab);
-    setSearchParams({ ...Object.fromEntries(searchParams), tab });
+const ConfirmModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  type?: "danger" | "warning" | "info";
+  isLoading?: boolean;
+}> = ({ isOpen, onClose, onConfirm, title, message, confirmLabel = "Xác nhận", type = "info", isLoading }) => {
+  if (!isOpen) return null;
+  const colors = {
+    danger: { bg: "#fee2e2", text: "#991b1b", btn: "#b91c1c" },
+    warning: { bg: "#fef3c7", text: "#92400e", btn: "#d97706" },
+    info: { bg: "#e0f2fe", text: "#0369a1", btn: "#0284c7" },
   };
+  const theme = colors[type];
 
-  const [formState, setFormState] = useState({
-    name: "",
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}>
+      <div style={{ background: "white", width: "100%", maxWidth: "420px", borderRadius: "16px", padding: "24px", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+          <div style={{ background: theme.bg, color: theme.text, padding: "10px", borderRadius: "12px" }}>
+            {type === "danger" ? <Trash2 size={24} /> : (type === "warning" ? <AlertTriangle size={24} /> : <Info size={24} />)}
+          </div>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "800", color: "#1e293b" }}>{title}</h3>
+        </div>
+        <p style={{ margin: "0 0 24px 0", fontSize: "14px", color: "#64748b", lineHeight: "1.6" }}>{message}</p>
+        <div style={{ display: "flex", gap: "12px" }}>
+          <button onClick={onClose} disabled={isLoading} style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", background: "white", fontWeight: "600", cursor: "pointer" }}>Hủy</button>
+          <button onClick={onConfirm} disabled={isLoading} style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "none", background: theme.btn, color: "white", fontWeight: "600", cursor: "pointer" }}>{isLoading ? "Đang xử lý..." : confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DefensePeriodModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (data: any) => void;
+  initialData?: any;
+  isLoading?: boolean;
+}> = ({ isOpen, onClose, onSave, initialData, isLoading }) => {
+  const [formData, setFormData] = useState({
+    termCode: "",
+    termName: "",
     startDate: "",
     endDate: "",
-    status: "Draft" as DefenseTermStatus,
+    semester: "Học kỳ 1",
+    academicYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1),
+    description: "",
   });
 
-  const normalizePeriodRow = useCallback(
-    (item: Record<string, unknown>, index: number): DefensePeriodRow => {
-      const periodId = asNumber(
-        pickValue(item, ["defenseTermId", "DefenseTermId", "id", "Id"], 0),
-        0,
-      );
-
-      const rawCode = asString(
-        pickValue(
-          item,
-          ["defenseTermCode", "DefenseTermCode", "code", "Code"],
-          "",
-        ),
-      );
-
-      const startDate = toIsoDate(
-        pickValue(item, ["startDate", "StartDate"], ""),
-      );
-      const endDate = toIsoDate(pickValue(item, ["endDate", "EndDate"], ""));
-
-      const code =
-        rawCode ||
-        (startDate
-          ? `${startDate.slice(0, 4)}.${index + 1}`
-          : `PERIOD-${periodId || index + 1}`);
-
-      return {
-        periodId,
-        code,
-        name: asString(pickValue(item, ["name", "Name"], "Đợt bảo vệ")),
-        roundIndex: parseRoundIndex(code, index + 1),
-        startDate,
-        endDate,
-        status: normalizeStatus(pickValue(item, ["status", "Status"], "Draft")),
-        createdAt: toLocalDateTime(
-          pickValue(item, ["createdAt", "CreatedAt"], ""),
-        ),
-        updatedAt: toLocalDateTime(
-          pickValue(
-            item,
-            ["lastUpdated", "LastUpdated", "updatedAt", "UpdatedAt"],
-            "",
-          ),
-        ),
-      };
-    },
-    [],
-  );
-
-  const notifyApiFailures = useCallback(
-    (response: ApiResponse<unknown> | null | undefined, fallback: string) => {
-      const warnings = readEnvelopeWarnings(response);
-      if (warnings.length > 0) {
-        notifyWarning(warnings.join(" | "));
-      }
-
-      if (!readEnvelopeSuccess(response)) {
-        const errors = readEnvelopeErrors(response);
-        const message = asString(readEnvelopeMessage(response), fallback);
-        notifyError(errors[0] || message || fallback);
-        return true;
-      }
-
-      const message = asString(readEnvelopeMessage(response));
-      if (message) {
-        notifyInfo(message);
-      }
-      return false;
-    },
-    [notifyError, notifyInfo, notifyWarning],
-  );
-
-  const loadRows = useCallback(async () => {
-    setLoadingRows(true);
-    try {
-      const response = await defensePeriodApi.list();
-
-      if (!readEnvelopeSuccess(response) && isNoDataEnvelope(response)) {
-        setRows([]);
-        setSelectedPeriodId(null);
-        return;
-      }
-
-      if (notifyApiFailures(response, "Không tải được danh sách đợt bảo vệ.")) {
-        return;
-      }
-
-      const payload = readEnvelopeData<unknown>(response);
-      const list = Array.isArray(payload)
-        ? payload
-        : payload && typeof payload === "object"
-          ? ((payload as { items?: unknown[]; Items?: unknown[] }).items ??
-            (payload as { Items?: unknown[] }).Items ??
-            [])
-          : [];
-
-      const mapped = list
-        .filter((item) => item && typeof item === "object")
-        .map((item, index) =>
-          normalizePeriodRow(item as Record<string, unknown>, index),
-        )
-        .filter((item) => item.periodId > 0)
-        .sort((a, b) => b.startDate.localeCompare(a.startDate));
-
-      setRows(mapped);
-      setSelectedPeriodId((prev) => {
-        if (prev && mapped.some((item) => item.periodId === prev)) {
-          return prev;
-        }
-        return mapped[0]?.periodId ?? null;
-      });
-    } catch {
-      notifyError("Không thể kết nối API danh sách đợt.");
-    } finally {
-      setLoadingRows(false);
-    }
-  }, [normalizePeriodRow, notifyApiFailures, notifyError]);
-
-  const loadSnapshot = useCallback(
-    async (periodId: number, force = false) => {
-      if (!force && snapshotMap[periodId]) {
-        return;
-      }
-
-      setLoadingSnapshot(true);
-      try {
-        const response = await defensePeriodApi.snapshot(periodId);
-
-        if (!readEnvelopeSuccess(response) && isNoDataEnvelope(response)) {
-          setSnapshotMap((prev) => ({
-            ...prev,
-            [periodId]: {
-              detail: {},
-              dashboard: {},
-              config: {},
-              state: {},
-              workflow: {},
-            },
-          }));
-          return;
-        }
-
-        if (notifyApiFailures(response, "Không tải được snapshot đợt.")) {
-          return;
-        }
-
-        const payload =
-          readEnvelopeData<Record<string, unknown>>(response) ?? {};
-        const snapshot: DefensePeriodSnapshot = {
-          detail: pickValue(payload, ["detail", "Detail"], {}),
-          dashboard: pickValue(payload, ["dashboard", "Dashboard"], {}),
-          config: pickValue(payload, ["config", "Config"], {}),
-          state: pickValue(payload, ["state", "State"], {}),
-          workflow: pickValue(payload, ["workflow", "Workflow"], {}),
-        };
-
-        setSnapshotMap((prev) => ({
-          ...prev,
-          [periodId]: snapshot,
-        }));
-      } catch {
-        notifyError("Lỗi kết nối khi tải snapshot đợt bảo vệ.");
-      } finally {
-        setLoadingSnapshot(false);
-      }
-    },
-    [notifyApiFailures, notifyError, snapshotMap],
-  );
-
   useEffect(() => {
-    void loadRows();
-  }, [loadRows]);
-
-  useEffect(() => {
-    if (selectedPeriodId == null) {
-      return;
-    }
-    void loadSnapshot(selectedPeriodId);
-  }, [selectedPeriodId, loadSnapshot]);
-
-  useEffect(() => {
-    setActiveDefensePeriodId(selectedPeriodId);
-  }, [selectedPeriodId]);
-
-  const filteredRows = useMemo(() => {
-    return rows.filter((item) => {
-      const normalizedKeyword = keyword.trim().toLowerCase();
-      const hitKeyword =
-        normalizedKeyword.length === 0 ||
-        item.code.toLowerCase().includes(normalizedKeyword) ||
-        item.name.toLowerCase().includes(normalizedKeyword);
-      const hitStatus = statusFilter === "all" || item.status === statusFilter;
-      const hitFrom =
-        !dateFrom || !item.startDate || item.startDate >= dateFrom;
-      const hitTo = !dateTo || !item.endDate || item.endDate <= dateTo;
-      return hitKeyword && hitStatus && hitFrom && hitTo;
-    });
-  }, [rows, keyword, statusFilter, dateFrom, dateTo]);
-
-  const selectedRow = useMemo(
-    () => rows.find((item) => item.periodId === selectedPeriodId) ?? null,
-    [rows, selectedPeriodId],
-  );
-
-  const selectedSnapshot =
-    selectedPeriodId != null ? snapshotMap[selectedPeriodId] : undefined;
-
-  const statePayload = useMemo(
-    () => selectedSnapshot?.state ?? {},
-    [selectedSnapshot],
-  );
-  const dashboardPayload = useMemo(
-    () => selectedSnapshot?.dashboard ?? {},
-    [selectedSnapshot],
-  );
-  const configPayload = useMemo(
-    () => selectedSnapshot?.config ?? {},
-    [selectedSnapshot],
-  );
-  const workflowPayload = useMemo(
-    () => selectedSnapshot?.workflow ?? {},
-    [selectedSnapshot],
-  );
-
-  const configRooms = useMemo(() => {
-    const rooms = pickValue(configPayload, ["rooms", "Rooms"], [] as unknown[]);
-    if (!Array.isArray(rooms)) {
-      return [] as string[];
-    }
-    return rooms.map((item) => asString(item)).filter(Boolean);
-  }, [configPayload]);
-
-  const allowedActions = useMemo(() => {
-    const raw = pickValue(
-      statePayload,
-      ["allowedActions", "AllowedActions"],
-      [] as unknown[],
-    );
-    if (!Array.isArray(raw)) {
-      return [] as string[];
-    }
-    return raw.map((item) => asString(item).toUpperCase()).filter(Boolean);
-  }, [statePayload]);
-
-  const canRunAction = useCallback(
-    (action: string) => {
-      if (allowedActions.length === 0) {
-        return true;
-      }
-      return allowedActions.includes(action.toUpperCase());
-    },
-    [allowedActions],
-  );
-
-  const openCommitteeManagement = useCallback(() => {
-    if (selectedPeriodId == null) {
-      notifyWarning("Vui long chon mot dot truoc khi mo module hoi dong.");
-      return;
-    }
-
-    setActiveDefensePeriodId(selectedPeriodId);
-    navigate(`/admin/committees/management?periodId=${selectedPeriodId}`);
-  }, [navigate, notifyWarning, selectedPeriodId]);
-
-  const openCreate = () => {
-    setEditingPeriodId(null);
-    setFormState({
-      name: "",
-      startDate: "",
-      endDate: "",
-      status: "Draft",
-    });
-    setShowForm(true);
-  };
-
-  const openEdit = (row: DefensePeriodRow) => {
-    setEditingPeriodId(row.periodId);
-    setFormState({
-      name: row.name,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      status: row.status,
-    });
-    setShowForm(true);
-  };
-
-  const resetFilters = () => {
-    setKeyword("");
-    setStatusFilter("all");
-    setDateFrom("");
-    setDateTo("");
-  };
-
-  const saveForm = async () => {
-    const name = formState.name.trim();
-    if (!name || !formState.startDate) {
-      notifyError("Tên đợt và ngày bắt đầu là bắt buộc.");
-      return;
-    }
-
-    const payload = {
-      name,
-      startDate: formState.startDate,
-      endDate: formState.endDate || null,
-      status: formState.status,
-    };
-
-    setActiveAction(editingPeriodId ? "Cập nhật đợt" : "Tạo đợt");
-    try {
-      const response = editingPeriodId
-        ? await defensePeriodApi.update(editingPeriodId, payload)
-        : await defensePeriodApi.create(payload);
-
-      if (notifyApiFailures(response, "Không lưu được đợt bảo vệ.")) {
-        return;
-      }
-
-      const data = readEnvelopeData<Record<string, unknown>>(response);
-      const periodIdFromResponse = asNumber(
-        pickValue(data, ["defenseTermId", "DefenseTermId", "id", "Id"], 0),
-      );
-
-      notifySuccess(
-        editingPeriodId ? "Đã cập nhật đợt bảo vệ." : "Đã tạo đợt bảo vệ.",
-      );
-      setShowForm(false);
-      await loadRows();
-
-      if (periodIdFromResponse > 0) {
-        setSelectedPeriodId(periodIdFromResponse);
-        await loadSnapshot(periodIdFromResponse, true);
-      }
-    } catch {
-      notifyError("Lỗi kết nối khi lưu đợt bảo vệ.");
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const removePeriod = async (row: DefensePeriodRow) => {
-    if (!window.confirm(`Xóa đợt ${row.code}?`)) {
-      return;
-    }
-
-    setActiveAction("Xóa đợt");
-    try {
-      const response = await defensePeriodApi.remove(row.periodId);
-      if (notifyApiFailures(response, "Không xóa được đợt bảo vệ.")) {
-        return;
-      }
-
-      notifySuccess("Đã xóa đợt bảo vệ.");
-      await loadRows();
-      setSnapshotMap((prev) => {
-        const next = { ...prev };
-        delete next[row.periodId];
-        return next;
+    if (initialData) {
+      setFormData({
+        termCode: initialData.termCode || "",
+        termName: initialData.name || "",
+        startDate: initialData.startDate ? initialData.startDate.split('T')[0] : "",
+        endDate: initialData.endDate ? initialData.endDate.split('T')[0] : "",
+        semester: initialData.semester || "Học kỳ 1",
+        academicYear: initialData.academicYear || (new Date().getFullYear() + "-" + (new Date().getFullYear() + 1)),
+        description: initialData.description || "",
       });
-    } catch {
-      notifyError("Lỗi kết nối khi xóa đợt bảo vệ.");
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const executeLifecycle = async (
-    action: LifecycleAction,
-    payload: Record<string, unknown> = {},
-  ) => {
-    if (selectedPeriodId == null) {
-      notifyWarning("Vui lòng chọn một đợt trước khi thao tác.");
-      return;
-    }
-
-    setActiveAction(action);
-    const idempotencyKey = makeIdempotencyKey(action);
-
-    try {
-      const response = await defensePeriodApi.lifecycle(
-        selectedPeriodId,
-        action,
-        payload,
-        idempotencyKey,
-      );
-
-      if (notifyApiFailures(response, `Thao tác ${action} thất bại.`)) {
-        return;
-      }
-
-      const replay = asBoolean(
-        (response?.idempotencyReplay ?? response?.IdempotencyReplay) as unknown,
-      );
-
-      if (replay) {
-        notifyInfo(`Yêu cầu ${action} đã xử lý trước đó (idempotency replay).`);
-      } else {
-        notifySuccess(`Thao tác ${action} thành công.`);
-      }
-
-      await loadRows();
-      await loadSnapshot(selectedPeriodId, true);
-    } catch {
-      notifyError(`Lỗi kết nối khi thực hiện ${action}.`);
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleSync = () =>
-    void executeLifecycle("SYNC", {
-      retryOnFailure: true,
-    });
-
-  const handleFinalize = () => {
-    if (!window.confirm("Xác nhận finalize đợt bảo vệ?")) {
-      return;
-    }
-    void executeLifecycle("FINALIZE", {
-      allowFinalizeAfterWarning,
-    });
-  };
-
-  const handlePublish = () => {
-    if (!window.confirm("Xác nhận publish kết quả toàn đợt?")) {
-      return;
-    }
-    void executeLifecycle("PUBLISH");
-  };
-
-  const handleRollback = () => {
-    const target = window.prompt(
-      "Nhập target rollback: PUBLISH | FINALIZE | ALL",
-      "PUBLISH",
-    );
-    if (!target) {
-      return;
-    }
-
-    const normalizedTarget = target.trim().toUpperCase();
-    if (!["PUBLISH", "FINALIZE", "ALL"].includes(normalizedTarget)) {
-      notifyWarning("Target rollback không hợp lệ.");
-      return;
-    }
-
-    const reason = window.prompt("Nhập lý do rollback", "Điều chỉnh nghiệp vụ");
-    if (!reason || !reason.trim()) {
-      notifyWarning("Rollback yêu cầu lý do.");
-      return;
-    }
-
-    if (!window.confirm(`Xác nhận rollback ${normalizedTarget}?`)) {
-      return;
-    }
-
-    void executeLifecycle("ROLLBACK", {
-      target: normalizedTarget,
-      reason: reason.trim(),
-      forceUnlockScores: true,
-    });
-  };
-
-  const handleArchive = () => {
-    if (!window.confirm("Xác nhận kết thúc đợt bảo vệ này?")) {
-      return;
-    }
-    void executeLifecycle("ARCHIVE", {
-      reason: "Kết thúc đợt từ module Quản lý đợt",
-    });
-  };
-
-  const handleReopen = () => {
-    if (!window.confirm("Xác nhận mở lại đợt bảo vệ?")) {
-      return;
-    }
-    void executeLifecycle("REOPEN", {
-      reason: "Reopen từ module Quản lý đợt",
-    });
-  };
-
-  const dashboardNumbers = useMemo(() => {
-    return {
-      councilCount: asNumber(
-        pickValue(dashboardPayload, ["councilCount", "CouncilCount"], 0),
-      ),
-      assignmentCount: asNumber(
-        pickValue(dashboardPayload, ["assignmentCount", "AssignmentCount"], 0),
-      ),
-      resultCount: asNumber(
-        pickValue(dashboardPayload, ["resultCount", "ResultCount"], 0),
-      ),
-      revisionCount: asNumber(
-        pickValue(dashboardPayload, ["revisionCount", "RevisionCount"], 0),
-      ),
-      topicCount: asNumber(
-        pickValue(dashboardPayload, ["topicCount", "TopicCount"], 0),
-      ),
-      eligibleStudentCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["eligibleStudentCount", "EligibleStudentCount"],
-          0,
-        ),
-      ),
-      assignedStudentCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["assignedStudentCount", "AssignedStudentCount"],
-          0,
-        ),
-      ),
-      eligibleSupervisorCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["eligibleSupervisorCount", "EligibleSupervisorCount"],
-          0,
-        ),
-      ),
-      assignedSupervisorCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["assignedSupervisorCount", "AssignedSupervisorCount"],
-          0,
-        ),
-      ),
-      capabilityLecturerCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["capabilityLecturerCount", "CapabilityLecturerCount"],
-          0,
-        ),
-      ),
-      committeeLecturerCount: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["committeeLecturerCount", "CommitteeLecturerCount"],
-          0,
-        ),
-      ),
-      assignmentCoveragePercent: asNumber(
-        pickValue(
-          dashboardPayload,
-          ["assignmentCoveragePercent", "AssignmentCoveragePercent"],
-          0,
-        ),
-      ),
-    };
-  }, [dashboardPayload]);
-
-  const heroStats = useMemo(() => {
-    const stats = [
-      {
-        label: "Sinh viên tham gia",
-        value: dashboardNumbers.eligibleStudentCount,
-      },
-      {
-        label: "Giảng viên tham gia",
-        value: dashboardNumbers.capabilityLecturerCount,
-      },
-      {
-        label: "Tổng số đề tài",
-        value: dashboardNumbers.topicCount,
-      },
-      {
-        label: "Đã đăng ký",
-        value: dashboardNumbers.assignmentCount,
-      },
-      {
-        label: "Chờ xử lý",
-        value: dashboardNumbers.resultCount,
-      },
-      {
-        label: "Lỗi dữ liệu",
-        value: dashboardNumbers.revisionCount,
-      },
-      {
-        label: "Tag chuyên môn",
-        value: asNumber(pickValue(dashboardPayload, ["tagCount", "TagCount"], 0)),
-      },
-      {
-        label: "Tiến độ hoàn thành",
-        value: `${dashboardNumbers.assignmentCoveragePercent.toFixed(1)}%`,
-      },
-    ];
-
-    // Filter based on role
-    if (userRole === "Lecturer") {
-      return stats.filter((s) => 
-        ["Tổng số đề tài", "Sinh viên tham gia", "Tiến độ hoàn thành"].includes(s.label)
-      );
-    }
-    if (userRole === "Student") {
-      return stats.filter((s) => 
-        ["Tiến độ hoàn thành", "Trạng thái đề tài"].includes(s.label)
-      );
-    }
-
-    return stats;
-  }, [dashboardNumbers, dashboardPayload, userRole]);
-
-  const stateFlags = useMemo(() => {
-    return {
-      lecturerCapabilitiesLocked: asBoolean(
-        pickValue(
-          statePayload,
-          ["lecturerCapabilitiesLocked", "LecturerCapabilitiesLocked"],
-          false,
-        ),
-      ),
-      councilConfigConfirmed: asBoolean(
-        pickValue(
-          statePayload,
-          ["councilConfigConfirmed", "CouncilConfigConfirmed"],
-          false,
-        ),
-      ),
-      finalized: asBoolean(
-        pickValue(statePayload, ["finalized", "Finalized"], false),
-      ),
-      scoresPublished: asBoolean(
-        pickValue(statePayload, ["scoresPublished", "ScoresPublished"], false),
-      ),
-      warnings: pickValue(
-        statePayload,
-        ["warnings", "Warnings"],
-        [] as unknown[],
-      )
-        .map((item) => asString(item))
-        .filter(Boolean),
-    };
-  }, [statePayload]);
-
-  // Alert Center items
-  const alertCenterItems = useMemo(() => {
-    const alerts: Array<{ icon: string; count: number; message: string; filterId: string }> = [];
-    
-    const unregisteredStudents = asNumber(
-      pickValue(dashboardPayload, ["unregisteredStudentCount", "UnregisteredStudentCount"], 0)
-    );
-    if (unregisteredStudents > 0) {
-      alerts.push({
-        icon: "warning",
-        count: unregisteredStudents,
-        message: `${unregisteredStudents} sinh viên chưa đăng ký`,
-        filterId: "unregistered",
+    } else {
+      setFormData({
+        termCode: "",
+        termName: "",
+        startDate: "",
+        endDate: "",
+        semester: "Học kỳ 1",
+        academicYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1),
+        description: "",
       });
     }
+  }, [initialData, isOpen]);
 
-    const topicsWithoutLecturer = asNumber(
-      pickValue(dashboardPayload, ["topicsWithoutLecturerCount", "TopicsWithoutLecturerCount"], 0)
-    );
-    if (topicsWithoutLecturer > 0) {
-      alerts.push({
-        icon: "warning",
-        count: topicsWithoutLecturer,
-        message: `${topicsWithoutLecturer} đề tài chưa có GVHD`,
-        filterId: "no-lecturer",
-      });
-    }
-
-    const overdueMillestones = asNumber(
-      pickValue(dashboardPayload, ["overdueMillestoneCount", "OverdueMillestoneCount"], 0)
-    );
-    if (overdueMillestones > 0) {
-      alerts.push({
-        icon: "warning",
-        count: overdueMillestones,
-        message: `${overdueMillestones} milestone quá hạn`,
-        filterId: "overdue",
-      });
-    }
-
-    const tagConflicts = asNumber(
-      pickValue(dashboardPayload, ["tagConflictCount", "TagConflictCount"], 0)
-    );
-    if (tagConflicts > 0) {
-      alerts.push({
-        icon: "warning",
-        count: tagConflicts,
-        message: `${tagConflicts} tag bị conflict`,
-        filterId: "conflict",
-      });
-    }
-
-    return alerts;
-  }, [dashboardPayload]);
-
-  const workflowSteps = useMemo(() => {
-    const raw = pickValue(workflowPayload, ["steps", "Steps"], [] as unknown[]);
-    if (!Array.isArray(raw) || raw.length === 0) {
-      const fallbackIndex = selectedRow
-        ? selectedRow.status === "Archived"
-          ? workflowBlueprint.length - 1
-          : selectedRow.status === "Published"
-            ? workflowBlueprint.length - 1
-            : selectedRow.status === "Finalized"
-              ? 4
-              : selectedRow.status === "Preparing"
-                ? 2
-                : 0
-        : 0;
-
-      return workflowBlueprint.map((step, index) => {
-        const completed = index < fallbackIndex;
-        const inProgress = index === fallbackIndex;
-        return {
-          key: step.key,
-          title: step.title,
-          description: step.description,
-          status: completed
-            ? "completed"
-            : inProgress
-              ? "in-progress"
-              : "pending",
-          blockedReason: "",
-        };
-      });
-    }
-
-    return raw
-      .filter((item) => item && typeof item === "object")
-      .map((item) => {
-        const row = item as Record<string, unknown>;
-        const completed = asBoolean(
-          pickValue(row, ["completed", "Completed"], false),
-        );
-        const enabled = asBoolean(
-          pickValue(row, ["enabled", "Enabled"], false),
-        );
-
-        return {
-          key: asString(pickValue(row, ["stepKey", "StepKey"], "")),
-          title: asString(pickValue(row, ["stepName", "StepName"], "Bước")),
-          description: "",
-          status: completed ? "completed" : enabled ? "in-progress" : "pending",
-          blockedReason: asString(
-            pickValue(row, ["blockedReason", "BlockedReason"], ""),
-          ),
-        };
-      });
-  }, [selectedRow, workflowPayload]);
-
-  const workflowCompletionPercent = useMemo(() => {
-    const fromSnapshot = asNumber(
-      pickValue(
-        workflowPayload,
-        ["completionPercent", "CompletionPercent"],
-        -1,
-      ),
-      -1,
-    );
-
-    if (fromSnapshot >= 0) {
-      return Math.min(100, fromSnapshot);
-    }
-
-    const completed = workflowSteps.filter(
-      (step) => step.status === "completed",
-    ).length;
-    const hasInProgress = workflowSteps.some(
-      (step) => step.status === "in-progress",
-    );
-    const fallback =
-      ((completed + (hasInProgress ? 0.5 : 0)) /
-        Math.max(1, workflowBlueprint.length)) *
-      100;
-    return Math.round(fallback * 10) / 10;
-  }, [workflowPayload, workflowSteps]);
-
-  const roadmapSteps = useMemo(() => {
-    const statusIndex = selectedRow
-      ? selectedRow.status === "Archived" || selectedRow.status === "Published"
-        ? workflowBlueprint.length - 1
-        : selectedRow.status === "Finalized"
-          ? 4
-          : selectedRow.status === "Preparing"
-            ? 2
-            : 0
-      : 0;
-
-    const workflowIndex = Math.min(
-      workflowBlueprint.length - 1,
-      workflowSteps.filter((step) => step.status === "completed").length,
-    );
-
-    const percentIndex = Math.min(
-      workflowBlueprint.length - 1,
-      Math.floor((workflowCompletionPercent / 100) * workflowBlueprint.length),
-    );
-
-    const activeIndex = Math.max(statusIndex, workflowIndex, percentIndex);
-    const closeAll =
-      selectedRow?.status === "Published" || selectedRow?.status === "Archived";
-
-    return workflowBlueprint.map((step, index) => {
-      let status: RoadmapStepStatus = "pending";
-      if (closeAll || index < activeIndex) {
-        status = "completed";
-      } else if (index === activeIndex) {
-        status = "in-progress";
-      }
-
-      return {
-        ...step,
-        status,
-      };
-    });
-  }, [selectedRow, workflowCompletionPercent, workflowSteps]);
-
-  const roadmapCompletionPercent = useMemo(() => {
-    if (roadmapSteps.length === 0) {
-      return 0;
-    }
-
-    const completed = roadmapSteps.filter(
-      (step) => step.status === "completed",
-    ).length;
-    const hasInProgress = roadmapSteps.some(
-      (step) => step.status === "in-progress",
-    );
-    const rawPercent =
-      ((completed + (hasInProgress ? 0.5 : 0)) / roadmapSteps.length) * 100;
-    return Math.min(100, Math.round(rawPercent * 10) / 10);
-  }, [roadmapSteps]);
-
-  const activeRoadmapStep = useMemo(
-    () =>
-      roadmapSteps.find((step) => step.status === "in-progress") ??
-      roadmapSteps[roadmapSteps.length - 1] ??
-      null,
-    [roadmapSteps],
-  );
-
-  useEffect(() => {
-    setRoadmapAnimated(false);
-    const timer = window.setTimeout(() => setRoadmapAnimated(true), 120);
-    return () => window.clearTimeout(timer);
-  }, [selectedPeriodId, roadmapLayout, selectedRow?.status]);
-
-  const selectedBadge = selectedRow
-    ? badgeStyles[selectedRow.status]
-    : badgeStyles.Draft;
-
-  const isActionBusy = activeAction != null;
-
-  const scrollRoadmap = useCallback((direction: number) => {
-    roadmapTrackRef.current?.scrollBy({
-      left: direction * 320,
-      behavior: "smooth",
-    });
-  }, []);
+  if (!isOpen) return null;
 
   return (
-    <div style={pageStyles.page}>
-      <style>
-        {`
-          @keyframes dpRoadmapFadeInUp {
-            from {
-              opacity: 0;
-              transform: translateY(16px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-
-          @keyframes dpRoadmapPulse {
-            0%, 100% {
-              transform: scale(1);
-              box-shadow: 0 0 0 0 rgba(243, 112, 33, 0.28);
-            }
-            50% {
-              transform: scale(1.06);
-              box-shadow: 0 0 0 10px rgba(243, 112, 33, 0);
-            }
-          }
-
-          @keyframes dpRoadmapProgressFill {
-            from {
-              width: 0%;
-            }
-            to {
-              width: var(--dp-progress-width);
-            }
-          }
-
-          .dp-roadmap-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: #0f172a #ffffff;
-          }
-
-          .dp-roadmap-track {
-            scroll-snap-type: x mandatory;
-            scroll-behavior: smooth;
-          }
-
-          .dp-roadmap-track > div {
-            scroll-snap-align: start;
-          }
-
-          .dp-roadmap-scroll::-webkit-scrollbar {
-            height: 8px;
-          }
-
-          .dp-roadmap-scroll::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 999px;
-          }
-
-          .dp-roadmap-scroll::-webkit-scrollbar-track {
-            background: #ffffff;
-            border-radius: 999px;
-          }
-
-          .dp-roadmap-pulse {
-            animation: dpRoadmapPulse 2s infinite;
-          }
-
-          .dp-roadmap-progress-fill {
-            animation: dpRoadmapProgressFill 1.4s ease-out both;
-          }
-
-          .dp-period-table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-          }
-
-          .dp-period-table th,
-          .dp-period-table td {
-            word-break: break-word;
-            vertical-align: top;
-          }
-
-          @media (max-width: 1480px) {
-            .dp-layout-grid {
-              grid-template-columns: 1fr !important;
-            }
-
-            .dp-toolbar-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            }
-          }
-
-          @media (max-width: 1280px) {
-            .dp-toolbar-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            }
-
-            .dp-toolbar-actions {
-              grid-column: 1 / -1;
-              justify-content: flex-start !important;
-            }
-
-            .dp-roadmap-header {
-              align-items: flex-start !important;
-            }
-
-            .dp-period-table th:nth-child(6),
-            .dp-period-table td:nth-child(6),
-            .dp-period-table th:nth-child(7),
-            .dp-period-table td:nth-child(7) {
-              display: none;
-            }
-
-            .dp-stats-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            }
-          }
-
-          @media (max-width: 980px) {
-            .dp-period-table th:nth-child(4),
-            .dp-period-table td:nth-child(4) {
-              display: none;
-            }
-          }
-
-          @media (max-width: 760px) {
-            .dp-page {
-              padding: 14px;
-            }
-
-            .dp-toolbar-grid {
-              grid-template-columns: 1fr !important;
-            }
-
-            .dp-stats-grid {
-              grid-template-columns: 1fr !important;
-            }
-          }
-        `}
-      </style>
-      <div className="dp-page" style={pageStyles.shell}>
-        <section style={pageStyles.hero}>
-          <div style={pageStyles.heroGlow} />
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-start",
-              alignItems: "flex-start",
-              gap: 18,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ flex: "1 1 720px", maxWidth: 980, minWidth: 0 }}>
-              <div
+    <div style={{ position: "fixed", inset: 0, zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }}>
+      <div style={{ background: "white", width: "100%", maxWidth: "500px", borderRadius: "20px", padding: "32px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+        <h3 style={{ margin: "0 0 24px 0", fontSize: "20px", fontWeight: "800", color: "#1e293b" }}>{initialData ? "Cập nhật đợt đồ án tốt nghiệp" : "Tạo đợt đồ án tốt nghiệp mới"}</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "16px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Mã đợt</label>
+              <input
+                value={formData.termCode}
+                onChange={e => setFormData({ ...formData, termCode: e.target.value })}
+                disabled={!!initialData}
+                placeholder="VD: DT-2024-01"
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  color: "#f37021",
-                  fontWeight: 800,
-                  fontSize: 12,
-                  marginBottom: 12,
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #cbd5e1",
+                  background: initialData ? "#f1f5f9" : "white",
+                  cursor: initialData ? "not-allowed" : "text"
                 }}
-              >
-                <Workflow size={14} /> FIT DNU · Quản lý đợt
-              </div>
-              <h1
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  color: "#0f172a",
-                  fontSize: "clamp(26px, 2.6vw, 32px)",
-                  lineHeight: 1.25,
-                  fontWeight: 700,
-                  margin: 0,
-                }}
-              >
-                <span
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    color: "#f37021",
-                  }}
-                >
-                  <Workflow size={20} />
-                </span>
-                Quản lý đợt bảo vệ
-              </h1>
-              <p
-                style={{
-                  margin: "12px 0 0",
-                  color: "#0f172a",
-                  fontSize: 14,
-                  maxWidth: 900,
-                  lineHeight: 1.6,
-                }}
-              >
-                Quản lý thông tin cơ bản của các đợt bảo vệ, bao gồm CRUD và quản lý vòng đời.
-              </p>
+              />
             </div>
-
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                width: "100%",
-                maxWidth: 320,
-                marginLeft: "auto",
-              }}
-            >
-              <div style={{ ...pageStyles.sectionCard, padding: 14 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#0f172a",
-                    fontWeight: 800,
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  ĐỢT ĐANG CHỌN
-                </div>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    marginTop: 4,
-                  }}
-                >
-                  {selectedRow?.name ?? "Chưa có đợt"}
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      ...pageStyles.chip,
-                      background: selectedBadge.bg,
-                      color: selectedBadge.text,
-                    }}
-                  >
-                    {selectedRow?.status ?? "Draft"}
-                  </span>
-                  <span
-                    style={{
-                      ...pageStyles.chip,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                    }}
-                  >
-                    Mã: {selectedRow?.code ?? "--"}
-                  </span>
-                </div>
-                <div style={{ marginTop: 10, fontSize: 12, color: "#0f172a" }}>
-                  Đợt thứ {selectedRow?.roundIndex ?? 0} -{" "}
-                  {selectedRow?.startDate ?? "--"} đến{" "}
-                  {selectedRow?.endDate ?? "--"}
-                </div>
-              </div>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Tên đợt đồ án tốt nghiệp</label>
+              <input value={formData.termName} onChange={e => setFormData({ ...formData, termName: e.target.value })} placeholder="VD: Đồ án tốt nghiệp 2024" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
             </div>
           </div>
-        </section>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Năm học</label>
+              <input value={formData.academicYear} onChange={e => setFormData({ ...formData, academicYear: e.target.value })} placeholder="2023-2024" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Học kỳ</label>
+              <select value={formData.semester} onChange={e => setFormData({ ...formData, semester: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
+                <option>Học kỳ 1</option>
+                <option>Học kỳ 2</option>
+                <option>Học kỳ 3</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Ngày bắt đầu</label>
+              <input type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Ngày kết thúc</label>
+              <input type="date" value={formData.endDate} onChange={e => setFormData({ ...formData, endDate: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "6px" }}>Mô tả chi tiết</label>
+            <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={3} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", resize: "none" }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "12px", marginTop: "32px" }}>
+          <button onClick={onClose} disabled={isLoading} style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1px solid #e2e8f0", background: "white", fontWeight: "700", cursor: "pointer" }}>Hủy</button>
+          <button onClick={() => onSave(formData)} disabled={isLoading} style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "none", background: DEEP_BLUE_PRIMARY, color: "white", fontWeight: "700", cursor: "pointer" }}>{isLoading ? "Đang lưu..." : "Lưu dữ liệu"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-        <section
-          className="dp-stats-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 14,
-            marginBottom: 16,
-          }}
-        >
-          {heroStats.map((item, index) => (
-            <div
-              key={item.label}
-              style={{
-                ...pageStyles.statCard,
-                borderTop:
-                  index === 0 ? "3px solid #f37021" : "3px solid #e2e8f0",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "#0f172a",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {item.label}
+// --- Main Component ---
+
+const DefensePeriodsManagement: React.FC = () => {
+  const auth = useAuth();
+  const { addToast } = useToast();
+  const [activeTab, setActiveTab] = useState<MainTab>("overview");
+  const [rows, setRows] = useState<DefensePeriod[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(18);
+  const [refreshing, setRefreshing] = useState(false);
+  const [snapshot, setSnapshot] = useState<any>(null);
+  const [monitoring, setMonitoring] = useState<any>(null);
+  const [periodSearch, setPeriodSearch] = useState("");
+
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; action: string; title: string; message: string; type: "info" | "warning" | "danger" } | null>(null);
+  const [periodModal, setPeriodModal] = useState<{ isOpen: boolean; mode: "create" | "edit" | "clone"; row?: DefensePeriod } | null>(null);
+  const [downloadModal, setDownloadModal] = useState<{ isOpen: boolean; report: any | null; councilId?: number }>({ isOpen: false, report: null });
+
+  const studentSectionRef = useRef<DefenseTermStudentsSectionHandle>(null);
+  const lecturerSectionRef = useRef<DefenseTermLecturersSectionHandle>(null);
+
+  const userRole = (auth.user?.role || "").toUpperCase();
+  const canManage = userRole === "ADMIN" || userRole === "STUDENTSERVICE" || userRole === "HEAD";
+
+  const selectedRow = useMemo(() => rows.find(r => r.defenseTermId === selectedId), [rows, selectedId]);
+
+  const loadData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const res = await defensePeriodApi.list();
+      const rawData = readEnvelopeData<any[]>(res) || [];
+      const data: DefensePeriod[] = rawData.map(r => ({
+        ...r,
+        status: mapStatus(r.status)
+      }));
+      setRows(data);
+      if (data.length > 0 && (!selectedId || !data.find(r => r.defenseTermId === selectedId))) {
+        // Auto select running period if exists, otherwise first one
+        const running = data.find((r: DefensePeriod) => r.status === "Running");
+        setSelectedId(running?.defenseTermId || data[0].defenseTermId);
+      }
+    } catch (err) {
+      addToast("Không thể tải danh sách đợt đồ án tốt nghiệp.", "error");
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
+  }, [addToast, selectedId]);
+
+  const loadSnapshots = useCallback(async () => {
+    if (!selectedId) return;
+    setRefreshing(true);
+    try {
+      const results = await Promise.allSettled([
+        defensePeriodApi.snapshot(selectedId),
+        defensePeriodApi.monitoring(selectedId)
+      ]);
+
+      if (results[0].status === "fulfilled") {
+        setSnapshot(readEnvelopeData(results[0].value));
+      }
+      if (results[1].status === "fulfilled") {
+        setMonitoring(readEnvelopeData(results[1].value));
+      }
+    } catch (err) {
+      console.error("Snapshot error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (selectedId) loadSnapshots();
+  }, [selectedId, loadSnapshots]);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingProgress(100);
+      return;
+    }
+
+    setLoadingProgress(18);
+
+    const timer = window.setInterval(() => {
+      setLoadingProgress((prev) => {
+        if (prev >= 92) {
+          return 92;
+        }
+
+        return Math.min(92, prev + Math.max(2, Math.round((100 - prev) * 0.16)));
+      });
+    }, 140);
+
+    return () => window.clearInterval(timer);
+  }, [loading]);
+
+  const handleAction = async (action: string) => {
+    if (!selectedId) return;
+
+    // Business Logic Validations
+    if (action === "START") {
+      const runningExists = rows.find(r => r.status === "Running" && r.defenseTermId !== selectedId);
+      if (runningExists) {
+        addToast(`Đã có đợt "${runningExists.name}" đang chạy. Hệ thống chỉ cho phép 1 đợt đồ án tốt nghiệp hoạt động tại một thời điểm.`, "warning");
+        return;
+      }
+    }
+
+    if (action === "FINALIZE") {
+      const scoringPercent = asNumber(monitoring?.pipeline?.overallCompletionPercent);
+      if (scoringPercent < 100) {
+        if (!window.confirm(`Tiến độ chấm điểm hiện mới đạt ${scoringPercent}%. Việc tổng kết đợt khi chưa chấm đủ có thể dẫn đến sai lệch kết quả. Bạn vẫn muốn tiếp tục?`)) return;
+      }
+    }
+
+    if (action === "CLOSE") {
+      if (selectedRow?.status !== "Finalized" && selectedRow?.status !== "Published") {
+        addToast("Đợt đồ án tốt nghiệp phải được Tổng kết (Finalized) hoặc Công bố (Published) trước khi Đóng.", "warning");
+        return;
+      }
+    }
+
+    setConfirmState({
+      isOpen: true,
+      action,
+      title: `Xác nhận: ${action}`,
+      message: `Hệ thống sẽ thực hiện lệnh ${action} cho đợt đồ án tốt nghiệp này. Hành động này có thể thay đổi trạng thái và quyền hạn của các bên liên quan.`,
+      type: action === "FINALIZE" || action === "CLOSE" ? "warning" : "info"
+    });
+  };
+
+  const executeAction = async () => {
+    if (!selectedId || !confirmState) return;
+    const { action } = confirmState;
+
+    setRefreshing(true);
+    try {
+      const idempotencyKey = safeRandomUUID();
+      const res = await defensePeriodApi.lifecycle(selectedId, action, idempotencyKey);
+      if (readEnvelopeSuccess(res)) {
+        addToast(`Thực hiện ${action} thành công.`, "success");
+        await loadData(true);
+        await loadSnapshots();
+      } else {
+        addToast(readEnvelopeData<string>(res) || "Thao tác thất bại.", "error");
+      }
+    } catch (err: any) {
+      addToast(err.message || "Lỗi hệ thống khi thực hiện lệnh.", "error");
+    } finally {
+      setRefreshing(false);
+      setConfirmState(null);
+    }
+  };
+
+  const handleDownloadReport = async (item: any, format?: string) => {
+    if (!selectedId) return;
+
+    // If no format is provided, open the selection modal
+    if (!format) {
+      setDownloadModal({ isOpen: true, report: item });
+      return;
+    }
+
+    const url = defensePeriodApi.export(selectedId, item.key, format, downloadModal.councilId);
+    const token = localStorage.getItem("accessToken") || (auth as any).accessToken;
+
+    setRefreshing(true);
+    setDownloadModal({ isOpen: false, report: null });
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Lỗi máy chủ khi tạo file.";
+        try {
+          const errorData = await response.json();
+          errorMessage = readEnvelopeData<string>(errorData) || errorMessage;
+        } catch (e) {
+          // Response is not JSON
+        }
+        
+        if (response.status === 401 || response.status === 403) {
+          addToast("Phiên làm việc hết hạn hoặc không có quyền tải file.", "error");
+        } else {
+          addToast(errorMessage, "error");
+        }
+        return;
+      }
+
+      // Important: Check content type to prevent downloading JSON error envelopes as corrupted files
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json") || contentType.includes("text/html")) {
+        const text = await response.text();
+        let errorMessage = "Yêu cầu không hợp lệ từ máy chủ.";
+        try {
+          const errorData = JSON.parse(text);
+          errorMessage = readEnvelopeData<string>(errorData) || errorMessage;
+        } catch (e) {
+          if (contentType.includes("text/html")) {
+            errorMessage = "Lỗi hệ thống: Máy chủ trả về HTML thay vì file. Có thể sai đường dẫn API.";
+          }
+        }
+        addToast(errorMessage, "error");
+        return;
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+
+      const fileName = `${item.key}_${selectedRow?.termCode || 'period'}_${new Date().toISOString().split('T')[0]}.${format}`;
+      link.download = fileName;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      addToast(`Đã tải xuống: ${item.label} (${format.toUpperCase()})`, "success");
+    } catch (err: any) {
+      addToast(err.message || "Không thể tải báo cáo. Vui lòng thử lại sau.", "error");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleManagementCRUD = async (mode: "create" | "update" | "delete" | "clone", data?: any) => {
+    if (!canManage) {
+      addToast("Bạn không có quyền thực hiện thao tác này.", "error");
+      return;
+    }
+
+    setRefreshing(true);
+    try {
+      const payload = {
+        name: data.termName,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        semester: data.semester,
+        academicYear: data.academicYear,
+        description: data.description,
+        termCode: data.termCode || `DT-${new Date().getFullYear()}${Math.floor(Math.random() * 1000)}`
+      };
+
+      if (mode === "create" || mode === "clone") {
+        const res = await defensePeriodApi.create(payload);
+        if (readEnvelopeSuccess(res)) {
+          const newPeriod = readEnvelopeData<DefensePeriod>(res);
+          addToast(mode === "create" ? "Khởi tạo đợt đồ án tốt nghiệp mới thành công." : "Nhân bản đợt đồ án tốt nghiệp thành công.", "success");
+          await loadData(true);
+          if (newPeriod) setSelectedId(newPeriod.defenseTermId);
+          setPeriodModal(null);
+        } else {
+          addToast("Không thể tạo đợt đồ án tốt nghiệp.", "error");
+        }
+      } else if (mode === "update" && selectedId) {
+        const res = await defensePeriodApi.update(selectedId, payload);
+        if (readEnvelopeSuccess(res)) {
+          addToast("Cập nhật thông tin đợt đồ án tốt nghiệp thành công.", "success");
+          await loadData(true);
+          setPeriodModal(null);
+        }
+      } else if (mode === "delete" && data) {
+        const res = await defensePeriodApi.delete(data);
+        if (readEnvelopeSuccess(res)) {
+          addToast("Đã xóa đợt đồ án tốt nghiệp.", "success");
+          await loadData(true);
+          if (selectedId === data) setSelectedId(null);
+          setConfirmState(null);
+        }
+      }
+    } catch (err: any) {
+      addToast(err.message || "Thao tác thất bại.", "error");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // --- Sub-sections ---
+
+  // --- Render Helpers ---
+
+  const renderPipeline = () => {
+    const pipeline = monitoring?.pipeline || { stages: [] };
+    const stages = pipeline.stages || [];
+
+    return (
+      <div style={{ marginTop: "24px" }}>
+        <h4 style={{ fontSize: "14px", fontWeight: "700", color: "#475569", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <Activity size={16} color={DEEP_BLUE_PRIMARY} /> Topic Lifecycle Pipeline
+        </h4>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
+          {stages.length > 0 ? stages.map((stage: any) => (
+            <div key={stage.stageKey} style={{ background: "#f8fafc", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: "700", color: "#64748b" }}>{stage.stageName}</span>
+                <span style={{ fontSize: "11px", fontWeight: "800", color: DEEP_BLUE_PRIMARY }}>{stage.completedCount}/{stage.totalCount}</span>
               </div>
-              <div
-                style={{
-                  marginTop: 10,
-                  fontSize: 24,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                {item.value}
+              <div style={{ height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden", marginBottom: "8px" }}>
+                <div style={{ height: "100%", width: `${stage.completionPercent}%`, background: DEEP_BLUE_PRIMARY, borderRadius: "3px" }} />
+              </div>
+              <div style={{ fontSize: "10px", color: "#94a3b8" }}>{stage.status}</div>
+            </div>
+          )) : (
+            <div style={{ gridColumn: "1/-1", padding: "32px", textAlign: "center", color: "#94a3b8", background: "#f1f5f9", borderRadius: "12px", border: "2px dashed #cbd5e1" }}>
+              Không có dữ liệu tiến độ pipeline cho đợt này.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTimeline = () => {
+    const steps = [
+      { key: "Draft", label: "Soạn thảo", desc: "Khởi tạo" },
+      { key: "Registration", label: "Đăng ký", desc: "Đề tài & SV" },
+      { key: "Assignment", label: "Phân công", desc: "Gán hội đồng" },
+      { key: "ProgressTracking", label: "Tiến độ", desc: "Theo dõi nộp" },
+      { key: "CommitteePreparation", label: "Chuẩn bị", desc: "Lịch bảo vệ" },
+      { key: "Running", label: "Bảo vệ", desc: "Đang diễn ra" },
+      { key: "ScoringLocked", label: "Hậu bảo vệ", desc: "Phê duyệt hậu" },
+      { key: "Finalization", label: "Tổng kết", desc: "Điểm & Báo cáo" },
+      { key: "Closed", label: "Kết thúc", desc: "Đóng đợt" },
+    ];
+
+    const currentStatus = selectedRow?.status || "Draft";
+    const statusOrder: Record<string | number, number> = { 
+      draft: 0, 0: 0, "soạn thảo": 0, "khoi tao": 0, "khởi tạo": 0,
+      registration: 1, 1: 1, "đăng ký": 1, "đang đăng ký": 1, "dang ky": 1,
+      assignment: 2, 2: 2, "phân công": 2, "phan cong": 2, "thiết lập hội đồng": 2,
+      progresstracking: 3, 3: 3, "tiến độ": 3, "theo dõi tiến độ": 3, "tien do": 3,
+      committeepreparation: 4, 4: 4, "chuẩn bị": 4, "chuẩn bị bảo vệ": 4, "chuan bi": 4,
+      running: 5, 5: 5, "bảo vệ": 5, "đang bảo vệ": 5, "đang diễn ra": 5, "bao ve": 5,
+      paused: 5,
+      scoringlocked: 6, "hậu bảo vệ": 6, "hau bao ve": 6, "phê duyệt hậu bảo vệ": 6, "scoring_locked": 6,
+      finalization: 7, 6: 7, "tổng kết": 7, "tong ket": 7, "tong ket diem": 7,
+      finalized: 7,
+      published: 8, "công bố": 8, "cong bo": 8,
+      closed: 8, 7: 8, "kết thúc": 8, "ket thuc": 8, "dong dot": 8,
+      archived: 8
+    };
+
+    // Use a normalized lookup for the status
+    const rawStatus = selectedRow?.status || "Draft";
+    const normalizedKey = String(rawStatus).toLowerCase().trim();
+    let currentIndex = 0;
+
+    // Build a clean map for lookup
+    const lookup: Record<string, number> = {};
+    Object.entries(statusOrder).forEach(([k, v]) => {
+      lookup[String(k).toLowerCase().trim()] = v;
+    });
+
+    if (lookup[normalizedKey] !== undefined) {
+      currentIndex = lookup[normalizedKey];
+    } else {
+      // Fallback: search for partial matches if exact match fails
+      const foundKey = Object.keys(lookup).find(key => normalizedKey.includes(key) || key.includes(normalizedKey));
+      if (foundKey) {
+        currentIndex = lookup[foundKey];
+      }
+    }
+
+    // Smart Fallback: If status is Draft (index 0) but we have monitoring data showing progress, use the pipeline data
+    if (currentIndex === 0 && monitoring?.pipeline?.stages) {
+      const stages = monitoring.pipeline.stages;
+      if (stages[4]?.completionPercent === 100 || stages[4]?.completedCount > 0) currentIndex = 7;
+      else if (stages[3]?.completionPercent === 100 || stages[3]?.completedCount > 0) currentIndex = 6;
+      else if (stages[2]?.completionPercent === 100 || stages[2]?.completedCount > 0) currentIndex = 5;
+      else if (stages[1]?.completionPercent === 100 || stages[1]?.completedCount > 0) currentIndex = 3;
+      else if (stages[0]?.completionPercent === 100 || stages[0]?.completedCount > 0) currentIndex = 1;
+    }
+
+    return (
+      <div style={{ background: "#fff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", marginBottom: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+          <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: DEEP_BLUE_PRIMARY }}>Lộ trình đợt đồ án tốt nghiệp</h3>
+          <div style={{ fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "6px" }}>
+            <Clock size={14} /> Cập nhật lần cuối: {selectedRow?.lastUpdated ? new Date(selectedRow.lastUpdated).toLocaleString() : "--"}
+          </div>
+        </div>
+        <div style={{ display: "flex", position: "relative", padding: "0 10px" }}>
+          {steps.map((step, idx) => {
+            const isCompleted = idx < currentIndex || (idx === steps.length - 1 && (normalizedKey === "closed" || normalizedKey === "archived"));
+            const isActive = idx === currentIndex && !isCompleted;
+            const color = isCompleted ? "#10b981" : (isActive ? DEEP_BLUE_PRIMARY : "#cbd5e1");
+
+            // Dynamic description based on state - AS REQUESTED BY USER
+            let displayDesc = step.desc;
+            let descColor = "#64748b";
+            let descWeight = "normal";
+
+            if (isCompleted) {
+              displayDesc = "Đã hoàn thành";
+              descColor = "#10b981";
+              descWeight = "600";
+            } else if (isActive) {
+              displayDesc = step.desc; // Keep original description for active step
+              descColor = DEEP_BLUE_PRIMARY;
+              descWeight = "700";
+            } else {
+              displayDesc = "Chờ thực hiện";
+              descColor = "#94a3b8";
+            }
+
+            return (
+              <React.Fragment key={step.key}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 2 }}>
+                  <div style={{
+                    width: "36px", height: "36px", borderRadius: "50%", background: "#fff",
+                    border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: isActive ? `0 0 0 4px ${color}20` : "none", transition: "all 0.3s ease"
+                  }}>
+                    {isCompleted ? <CheckCircle size={20} color="#10b981" /> : (isActive ? <Activity size={20} color={DEEP_BLUE_PRIMARY} /> : <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#cbd5e1" }} />)}
+                  </div>
+                  <div style={{ marginTop: "12px", textAlign: "center" }}>
+                    <div style={{ fontSize: "13px", fontWeight: "700", color: isActive || isCompleted ? "#1e293b" : "#94a3b8" }}>{step.label}</div>
+                    <div style={{ fontSize: "11px", color: descColor, marginTop: "2px", fontWeight: descWeight }}>{displayDesc}</div>
+                  </div>
+                </div>
+                {idx < steps.length - 1 && (
+                  <div style={{
+                    position: "absolute", 
+                    left: `${((idx + 0.5) * (100 / steps.length))}%`, 
+                    top: "18px", 
+                    width: `${100 / steps.length}%`, 
+                    height: "2px",
+                    background: idx < currentIndex ? "#10b981" : "#e2e8f0", 
+                    zIndex: 1
+                  }} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+        {renderPipeline()}
+      </div>
+    );
+  };
+
+  const renderOverview = () => {
+    const stats = monitoring?.analytics?.overview || {};
+    const pipeline = monitoring?.pipeline || {};
+    const overviewSnapshot = snapshot?.analytics?.overview ?? snapshot?.overview ?? snapshot ?? {};
+    const totalStudents = readCount(stats, ["totalStudents", "studentCount", "totalStudentCount"], readCount(overviewSnapshot, ["totalStudents", "studentCount", "totalStudentCount"], readArrayCount(snapshot, ["students", "studentList", "studentRows", "studentItems", "members", "items"])));
+    const totalLecturers = readCount(stats, ["totalLecturers", "lecturerCount", "totalLecturerCount"], readCount(overviewSnapshot, ["totalLecturers", "lecturerCount", "totalLecturerCount"], readArrayCount(snapshot, ["lecturers", "lecturerList", "lecturerRows", "lecturerItems", "members", "items"])));
+    const assignedTopics = readCount(stats, ["totalTopics", "topicCount", "assignmentCount", "assignedTopics"], readCount(pipeline, ["totalTopics", "topicCount", "assignmentCount", "assignedTopics"], readCount(overviewSnapshot, ["totalTopics", "topicCount", "assignmentCount", "assignedTopics"])));
+    const committeeCount = readCount(stats, ["totalCommittees", "committeeCount", "committeeTotal", "councilCount"], readCount(overviewSnapshot, ["totalCommittees", "committeeCount", "committeeTotal", "councilCount"], readArrayCount(snapshot, ["committees", "committeeList", "committeeRows", "committeeItems", "councils"])));
+
+    return (
+      <div style={{ display: "grid", gap: "24px" }}>
+        {renderTimeline()}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+          {[
+            { label: "Sinh viên trong đợt", value: totalStudents || 0, sub: "Đã được đưa vào đợt", icon: <Users size={20} />, color: "#3b82f6" },
+            { label: "Giảng viên tham gia", value: totalLecturers || 0, sub: "Tham gia điều hành đợt", icon: <UserCheck size={20} />, color: "#f59e0b" },
+            { label: "Đề tài đã được phân", value: assignedTopics || 0, sub: "Đã phân công cho sinh viên", icon: <LayoutDashboard size={20} />, color: "#8b5cf6" },
+            { label: "Hội đồng đã phân", value: committeeCount || 0, sub: "Số hội đồng đã được tạo trong đợt", icon: <CheckCircle size={20} />, color: "#10b981" },
+          ].map((stat, i) => (
+            <div key={i} style={{ background: "#fff", padding: "20px", borderRadius: "16px", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+              <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: `${stat.color}15`, display: "flex", alignItems: "center", justifyContent: "center", color: stat.color }}>
+                {stat.icon}
+              </div>
+              <div>
+                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>{stat.label}</div>
+                <div style={{ fontSize: "24px", fontWeight: "800", color: "#1e293b", margin: "2px 0" }}>{stat.value}</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8" }}>{stat.sub}</div>
               </div>
             </div>
           ))}
-        </section>
+        </div>
 
-        {alertCenterItems.length > 0 && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
-          <section
-            style={{
-              ...pageStyles.sectionCard,
-              marginBottom: 18,
-              padding: 18,
-              borderRadius: 14,
-              background: "#ffffff",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 14,
-                color: "#0f172a",
-                fontWeight: 800,
-                fontSize: 16,
-              }}
-            >
-              <AlertTriangle size={18} color="#f37021" /> Trung tâm cảnh báo
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                gap: 12,
-              }}
-            >
-              {alertCenterItems.map((alert) => (
-                <div
-                  key={alert.filterId}
-                  onClick={() => updateMainTab("topics")}
-                  style={{
-                    border: "1px solid #fecaca",
-                    borderRadius: 10,
-                    padding: 12,
-                    background: "#ffffff",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = "#fffbeb";
-                    (e.currentTarget as HTMLDivElement).style.borderColor = "#f37021";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = "#ffffff";
-                    (e.currentTarget as HTMLDivElement).style.borderColor = "#fecaca";
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 40,
-                      height: 40,
-                      borderRadius: 8,
-                      background: "#fef3c7",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <AlertTriangle size={20} color="#f37021" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#0f172a",
-                        marginBottom: 2,
-                      }}
-                    >
-                      {alert.message}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#64748b",
-                      }}
-                    >
-                      Nhấn để xem chi tiết
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      minWidth: 32,
-                      height: 32,
-                      borderRadius: 6,
-                      background: "#f37021",
-                      color: "#ffffff",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {alert.count}
-                  </div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px" }}>
+          <div style={{ background: "#fff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0" }}>
+            <h3 style={{ margin: "0 0 20px 0", fontSize: "16px", fontWeight: "800", color: DEEP_BLUE_PRIMARY }}>Thông tin chi tiết đợt</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <div style={{ padding: "12px", background: LIGHT_BLUE_SOFTEN, borderRadius: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Mã đợt</div>
+                <div style={{ fontSize: "15px", fontWeight: "700", color: DEEP_BLUE_PRIMARY, marginTop: "4px" }}>{selectedRow?.termCode || `DT-${selectedRow?.defenseTermId}`}</div>
+              </div>
+              <div style={{ padding: "12px", background: LIGHT_BLUE_SOFTEN, borderRadius: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Tên đợt</div>
+                <div style={{ fontSize: "15px", fontWeight: "700", color: DEEP_BLUE_PRIMARY, marginTop: "4px" }}>{selectedRow?.name}</div>
+              </div>
+              <div style={{ padding: "12px", background: LIGHT_BLUE_SOFTEN, borderRadius: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Năm học / Học kỳ</div>
+                <div style={{ fontSize: "15px", fontWeight: "700", color: DEEP_BLUE_PRIMARY, marginTop: "4px" }}>{selectedRow?.academicYear || "--"} - {selectedRow?.semester || "--"}</div>
+              </div>
+              <div style={{ padding: "12px", background: LIGHT_BLUE_SOFTEN, borderRadius: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700" }}>Trạng thái</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: getStatusPresentation(selectedRow?.status).color }} />
+                  <span style={{ fontSize: "15px", fontWeight: "700", color: getStatusPresentation(selectedRow?.status).color }}>{getStatusPresentation(selectedRow?.status).label}</span>
                 </div>
-              ))}
+              </div>
             </div>
-          </section>
-        )}
+            <div style={{ marginTop: "24px" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700", marginBottom: "8px" }}>Mô tả đợt</div>
+              <p style={{ margin: 0, fontSize: "14px", color: "#475569", lineHeight: "1.6" }}>{selectedRow?.description || "Chưa có mô tả cho đợt đồ án tốt nghiệp này."}</p>
+            </div>
+          </div>
 
-        <section
-          style={{
-            ...pageStyles.sectionCard,
-            marginBottom: 18,
-            padding: 18,
-            borderRadius: 14,
-            background: "#ffffff",
-          }}
-        >
-          <div
-            className="dp-roadmap-header"
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-              marginBottom: 10,
-            }}
-          >
+          <div style={{ background: DEEP_BLUE_PRIMARY, padding: "24px", borderRadius: "16px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                <Workflow size={16} /> Timeline quá trình đợt bảo vệ
-              </div>
+              <h3 style={{ margin: "0 0 8px 0", fontSize: "18px", fontWeight: "800" }}>Hành động nhanh</h3>
+              <p style={{ margin: 0, fontSize: "13px", color: "#cbd5e1" }}>Các thao tác điều hành quan trọng cho trạng thái hiện tại.</p>
             </div>
+            <div style={{ display: "grid", gap: "10px", marginTop: "24px" }}>
+              {selectedRow && (
+                <button
+                  onClick={() => handleAction(selectedRow.status === "Closed" ? "ARCHIVE" : "NEXT")}
+                  style={{ background: "#10b981", color: "#fff", border: "none", borderRadius: "10px", padding: "12px", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                  disabled={selectedRow.status === "Archived"}
+                >
+                  <Play size={18} /> {getNextActionLabel(selectedRow.status)}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
+  const renderOperations = () => {
+    return (
+      <div style={{ display: "grid", gap: "24px" }}>
+        {/* Period Context Info */}
+        <div style={{ background: LIGHT_BLUE_SOFTEN, padding: "20px", borderRadius: "16px", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: "12px", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>Đang điều hành đợt</div>
+            <div style={{ fontSize: "18px", fontWeight: "800", color: DEEP_BLUE_PRIMARY, marginTop: "4px" }}>{selectedRow?.name} ({selectedRow?.termCode || `DT-${selectedRow?.defenseTermId}`})</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", background: "#fff", borderRadius: "12px", border: "1px solid #cbd5e1" }}>
+            <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: getStatusPresentation(selectedRow?.status).color }} />
+            <span style={{ fontSize: "14px", fontWeight: "700", color: getStatusPresentation(selectedRow?.status).color }}>{getStatusPresentation(selectedRow?.status).label}</span>
+          </div>
+        </div>
+
+        <div style={{ background: "#fff", padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <Zap size={20} color={DEEP_BLUE_PRIMARY} />
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: DEEP_BLUE_PRIMARY }}>Điều hành vòng đời (Lifecycle)</h3>
+          </div>
+          <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "24px" }}>
+            Thực hiện các chuyển đổi trạng thái cho đợt đồ án tốt nghiệp. Lưu ý các ràng buộc nghiệp vụ: Chỉ có 1 đợt đồ án tốt nghiệp được phép ở trạng thái <b>Running</b>.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px" }}>
+            {[
+              { action: "SYNC", label: "Đồng bộ dữ liệu", desc: "Cập nhật danh sách sinh viên & đề tài mới nhất từ hệ thống đào tạo.", icon: <RefreshCw size={20} />, color: "#0ea5e9" },
+              { action: "NEXT", label: getNextActionLabel(selectedRow?.status), desc: "Thực hiện bước tiếp theo trong quy trình quản lý đợt.", icon: <Play size={20} />, color: "#10b981", disabled: !selectedRow || selectedRow.status === "Archived" },
+              { action: "PAUSE", label: "Tạm dừng", desc: "Tạm ngắt các hoạt động ghi nhận điểm của hội đồng.", icon: <Pause size={20} />, color: "#f59e0b", disabled: selectedRow?.status !== "Running" },
+              { action: "RESUME", label: "Tiếp tục", desc: "Khôi phục trạng thái Running từ trạng thái Tạm dừng.", icon: <Play size={20} />, color: "#10b981", disabled: selectedRow?.status !== "Paused" },
+              { action: "LOCK_SCORING", label: "Khóa chấm điểm", desc: "Không cho phép hội đồng chỉnh sửa điểm nữa.", icon: <Lock size={20} />, color: "#ef4444", disabled: selectedRow?.status !== "Running" },
+              { action: "FINALIZE", label: "Tổng kết điểm", desc: "Tính toán điểm tổng kết cuối cùng cho toàn bộ sinh viên.", icon: <CheckCircle size={20} />, color: "#6366f1", disabled: selectedRow?.status !== "ScoringLocked" },
+              { action: "CLOSE", label: "Đóng đợt", desc: "Kết thúc mọi hoạt động và lưu trữ dữ liệu.", icon: <Archive size={20} />, color: "#1e293b", disabled: selectedRow?.status !== "Finalized" && selectedRow?.status !== "Published" },
+            ].map((op) => (
               <button
-                type="button"
+                key={op.action}
+                disabled={op.disabled || refreshing}
+                onClick={() => handleAction(op.action)}
                 style={{
-                  ...pageStyles.ghostButton,
-                  width: 42,
-                  height: 42,
-                  padding: 0,
-                  background:
-                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
-                  borderColor:
-                    roadmapLayout === "horizontal" ? "#f37021" : "#cbd5e1",
-                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                onClick={() =>
-                  setRoadmapLayout((prev) =>
-                    prev === "horizontal" ? "vertical" : "horizontal",
-                  )
-                }
-                title={
-                  roadmapLayout === "horizontal"
-                    ? "Chuyển sang chế độ dọc"
-                    : "Chuyển sang chế độ slide"
-                }
-                aria-label={
-                  roadmapLayout === "horizontal"
-                    ? "Chuyển sang chế độ dọc"
-                    : "Chuyển sang chế độ slide"
-                }
-              >
-                {roadmapLayout === "horizontal" ? (
-                  <Columns3 size={16} />
-                ) : (
-                  <Rows3 size={16} />
-                )}
-              </button>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background:
-                    roadmapLayout === "horizontal" ? "#ffffff" : "#ffffff",
-                  color: roadmapLayout === "horizontal" ? "#f37021" : "#0f172a",
-                  border: "1px solid #cbd5e1",
-                }}
-              >
-                {roadmapLayout === "horizontal" ? "Chế độ slide" : "Chế độ dọc"}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                Hoàn thành: {roadmapCompletionPercent.toFixed(1)}%
-              </span>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                  fontWeight: 800,
-                }}
-              >
-                {activeRoadmapStep
-                  ? `Đang xử lý: ${activeRoadmapStep.title}`
-                  : "Chưa có dữ liệu bước"}
-              </span>
-              <span
-                style={{
-                  ...pageStyles.chip,
-                  background: "#ffffff",
-                  color: "#0f172a",
-                }}
-              >
-                API rút gọn: /api/defense-periods
-              </span>
-            </div>
-
-            <div
-              style={{
-                width: "100%",
-                height: 8,
-                borderRadius: 999,
-                background: "#f8fafc",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${roadmapCompletionPercent}%`,
-                  height: "100%",
-                  background: "#f37021",
-                  transition: "width 0.8s ease",
-                }}
-              />
-            </div>
-          </div>
-
-          {roadmapLayout === "horizontal" ? (
-            <div style={{ display: "grid", gap: 10 }}>
-              <div
-                style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}
-              >
-                <button
-                  type="button"
-                  style={{ ...pageStyles.ghostButton, padding: "8px 12px" }}
-                  onClick={() => scrollRoadmap(-1)}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  type="button"
-                  style={{ ...pageStyles.ghostButton, padding: "8px 12px" }}
-                  onClick={() => scrollRoadmap(1)}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-
-              <div
-                ref={roadmapTrackRef}
-                className="dp-roadmap-scroll dp-roadmap-track"
-                style={{
+                  background: op.disabled ? "#f8fafc" : "#fff",
+                  border: `1px solid ${op.disabled ? "#e2e8f0" : "#cbd5e1"}`,
+                  borderRadius: "14px",
+                  padding: "16px",
+                  textAlign: "left",
+                  cursor: op.disabled ? "not-allowed" : "pointer",
                   display: "flex",
-                  gap: 14,
-                  alignItems: "stretch",
-                  overflowX: "auto",
-                  paddingBottom: 8,
+                  gap: "16px",
+                  transition: "all 0.2s ease",
+                  opacity: op.disabled ? 0.6 : 1,
+                  boxShadow: op.disabled ? "none" : "0 1px 2px rgba(0,0,0,0.05)"
                 }}
+                onMouseEnter={(e) => { if (!op.disabled) e.currentTarget.style.borderColor = op.color; }}
+                onMouseLeave={(e) => { if (!op.disabled) e.currentTarget.style.borderColor = "#cbd5e1"; }}
               >
-                {roadmapSteps.map((step, index) => {
-                  const theme = roadmapStatusTheme[step.status];
-                  return (
-                    <div
-                      key={step.key}
-                      style={{
-                        flex: "0 0 260px",
-                        opacity: roadmapAnimated ? undefined : 0,
-                        animation: roadmapAnimated
-                          ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
-                          : undefined,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 8,
-                        }}
-                      >
-                        <span
-                          className={
-                            step.status === "in-progress"
-                              ? "dp-roadmap-pulse"
-                              : undefined
-                          }
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: "50%",
-                            border: `2px solid ${theme.dotBorder}`,
-                            background: theme.dotBg,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {step.status === "completed" ? (
-                            <CheckCircle size={14} color="#0f172a" />
-                          ) : step.status === "in-progress" ? (
-                            <Clock3 size={14} color="#f37021" />
-                          ) : (
-                            <AlertCircle size={14} color="#0f172a" />
-                          )}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            color: "#0f172a",
-                          }}
-                        >
-                          Bước {String(index + 1).padStart(2, "0")}
-                        </span>
-                      </div>
+                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: op.disabled ? "#f1f5f9" : `${op.color}10`, display: "flex", alignItems: "center", justifyContent: "center", color: op.disabled ? "#94a3b8" : op.color, flexShrink: 0 }}>
+                  {op.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: op.disabled ? "#94a3b8" : "#1e293b" }}>{op.label}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", lineHeight: "1.4" }}>{op.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
 
-                      <div
-                        style={{
-                          border: `1px solid ${theme.cardBorder}`,
-                          borderRadius: 12,
-                          background: theme.cardBg,
-                          padding: 12,
-                          minHeight: 130,
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {step.title}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 6,
-                            fontSize: 12,
-                            color: "#0f172a",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {step.description}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: 11,
-                            color: theme.text,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {roadmapStatusLabel[step.status]}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {roadmapSteps.map((step, index) => {
-                const theme = roadmapStatusTheme[step.status];
-                const isLast = index === roadmapSteps.length - 1;
-                return (
-                  <div
-                    key={step.key}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "34px minmax(0, 1fr)",
-                      gap: 10,
-                      opacity: roadmapAnimated ? undefined : 0,
-                      animation: roadmapAnimated
-                        ? `dpRoadmapFadeInUp 0.45s ease ${index * 0.08}s forwards`
-                        : undefined,
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: "relative",
-                        display: "flex",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <span
-                        className={
-                          step.status === "in-progress"
-                            ? "dp-roadmap-pulse"
-                            : undefined
-                        }
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: "50%",
-                          border: `2px solid ${theme.dotBorder}`,
-                          background: theme.dotBg,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          zIndex: 1,
-                        }}
-                      >
-                        {step.status === "completed" ? (
-                          <CheckCircle size={14} color="#0f172a" />
-                        ) : step.status === "in-progress" ? (
-                          <Clock3 size={14} color="#0f172a" />
-                        ) : (
-                          <AlertCircle size={14} color="#0f172a" />
-                        )}
-                      </span>
+        <div style={{ background: "#fef2f2", padding: "20px", borderRadius: "16px", border: "1px solid #fee2e2", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+          <AlertCircle color="#ef4444" size={24} style={{ flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "#b91c1c" }}>Cảnh báo hệ thống</div>
+            <div style={{ fontSize: "13px", color: "#991b1b", marginTop: "4px" }}>Các hành động như Xóa hoặc Tổng kết đợt là vĩnh viễn. Hãy đảm bảo dữ liệu đã được sao lưu trước khi thực hiện.</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
-                      {!isLast && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: 28,
-                            bottom: -12,
-                            width: 2,
-                            background: theme.line,
-                          }}
-                        />
-                      )}
-                    </div>
+  const renderStatistics = () => {
+    return (
+      <div style={{ display: "grid", gap: "24px" }}>
+        {renderTimeline()}
 
-                    <div
-                      style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 12,
-                        background: theme.cardBg,
-                        padding: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                          {step.title}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#0f172a",
-                            fontWeight: 700,
-                          }}
-                        >
-                          Bước {String(index + 1).padStart(2, "0")}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 12,
-                          color: "#0f172a",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {step.description}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 8,
-                          fontSize: 11,
-                          color: theme.text,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {roadmapStatusLabel[step.status]}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+        <div style={{ background: "#f8fafc", padding: "24px", borderRadius: "20px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+            <Download size={18} color={DEEP_BLUE_PRIMARY} />
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "800", color: DEEP_BLUE_PRIMARY }}>Xuất báo cáo & Dữ liệu</h3>
+          </div>
 
-        <section style={{ ...pageStyles.sectionCard, marginBottom: 18 }}>
-          <div className="dp-toolbar-grid" style={pageStyles.toolbar}>
-            <div style={{ position: "relative" }}>
-              <Search
-                size={16}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>
+            {STATISTICS_REPORTS.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => handleDownloadReport(item)}
+                disabled={!selectedId || refreshing}
                 style={{
-                  position: "absolute",
-                  left: 14,
-                  top: 14,
-                  color: "#f37021",
-                }}
-              />
-              <input
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Từ khóa: mã đợt, tên đợt"
-                style={{
+                  background: "#fff",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "14px",
+                  padding: "16px",
+                  display: "flex",
+                  alignItems: "center",
                   width: "100%",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 10,
-                  padding: "0 12px 0 38px",
-                  minHeight: 42,
-                  fontSize: 14,
-                  background: "#ffffff",
-                  outline: "none",
+                  textAlign: "left",
+                  gap: "16px",
+                  cursor: (!selectedId || refreshing) ? "not-allowed" : "pointer",
+                  transition: "all 0.2s ease",
+                  opacity: (!selectedId || refreshing) ? 0.7 : 1
                 }}
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              style={selectControlStyle}
-            >
-              <option value="all">Tất cả trạng thái</option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              style={{
-                border: "1px solid #cbd5e1",
-                borderRadius: 10,
-                padding: "0 12px",
-                minHeight: 42,
-                fontSize: 14,
-                background: "#ffffff",
-              }}
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              style={{
-                border: "1px solid #cbd5e1",
-                borderRadius: 10,
-                padding: "0 12px",
-                minHeight: 42,
-                fontSize: 14,
-                background: "#ffffff",
-              }}
-            />
-            <div
-              className="dp-toolbar-actions"
-              style={{
-                gridColumn: "1 / -1",
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                justifyContent: "flex-start",
-              }}
-            >
-              <button
-                type="button"
-                style={pageStyles.ghostButton}
-                onClick={() => studentsSectionRef.current?.openAdd()}
+                onMouseEnter={(e) => { if (selectedId && !refreshing) e.currentTarget.style.borderColor = DEEP_BLUE_PRIMARY; }}
+                onMouseLeave={(e) => { if (selectedId && !refreshing) e.currentTarget.style.borderColor = "#cbd5e1"; }}
               >
-                <Plus size={15} /> Thêm sinh viên vào đợt
+                <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: LIGHT_BLUE_SOFTEN, display: "flex", alignItems: "center", justifyContent: "center", color: DEEP_BLUE_PRIMARY }}>
+                  {item.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#1e293b" }}>{item.label}</div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{item.desc}</div>
+                </div>
+                <div style={{ color: "#94a3b8" }}>
+                  <Download size={16} />
+                </div>
               </button>
-              <button
-                type="button"
-                style={pageStyles.ghostButton}
-                onClick={() => lecturersSectionRef.current?.openAdd()}
-              >
-                <Plus size={15} /> Thêm giảng viên vào đợt
-              </button>
-              <button
-                type="button"
-                style={pageStyles.primaryButton}
-                onClick={() => void loadRows()}
-                disabled={loadingRows}
-              >
-                <Filter size={15} /> {loadingRows ? "Đang tải" : "Tải dữ liệu"}
-              </button>
-              <button
-                type="button"
-                style={pageStyles.ghostButton}
-                onClick={resetFilters}
-              >
-                <RefreshCw size={15} /> Làm mới bộ lọc
-              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderEmptyState = () => {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        padding: "80px 40px", textAlign: "center", background: "#fff", borderRadius: "24px",
+        border: "1px dashed #cbd5e1", margin: "40px 0"
+      }}>
+        <div style={{
+          width: "100px", height: "100px", borderRadius: "50%", background: "#f1f5f9",
+          display: "flex", alignItems: "center", justifyContent: "center", color: DEEP_BLUE_PRIMARY,
+          marginBottom: "32px"
+        }}>
+          <Calendar size={48} />
+        </div>
+        <h2 style={{ fontSize: "28px", fontWeight: "900", color: "#1e293b", margin: "0 0 12px 0", letterSpacing: "-0.02em" }}>Sẵn sàng khởi tạo đợt đồ án tốt nghiệp?</h2>
+        <p style={{ maxWidth: "520px", color: "#64748b", fontSize: "16px", lineHeight: "1.7", margin: "0 0 40px 0" }}>
+          Hệ thống hiện chưa ghi nhận đợt đồ án tốt nghiệp nào. Hãy khởi tạo đợt đầu tiên để thiết lập lộ trình, quản lý danh sách sinh viên, giảng viên và bắt đầu điều hành hội đồng.
+        </p>
+        <div style={{ display: "flex", gap: "16px" }}>
+          <button
+            onClick={() => setPeriodModal({ isOpen: true, mode: "create" })}
+            style={{
+              display: "flex", alignItems: "center", gap: "12px", padding: "16px 36px",
+              borderRadius: "16px", border: "none", background: `linear-gradient(135deg, ${DEEP_BLUE_PRIMARY}, #2c5282)`,
+              color: "white", fontSize: "16px", fontWeight: "800", cursor: "pointer",
+              boxShadow: "0 10px 25px -5px rgba(30, 58, 95, 0.4)", transform: "translateY(0)", transition: "all 0.2s ease"
+            }}
+          >
+            <PlusCircle size={22} /> Khởi tạo ngay
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderManagement = () => {
+    const filteredPeriods = rows.filter(r =>
+      r.name.toLowerCase().includes(periodSearch.toLowerCase()) ||
+      (r.termCode || "").toLowerCase().includes(periodSearch.toLowerCase())
+    );
+
+    return (
+      <div style={{ display: "grid", gap: "20px" }}>
+        <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)", padding: "20px", borderRadius: "20px", border: "1px solid #dbeafe", display: "grid", gap: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: "800", color: DEEP_BLUE_PRIMARY, textTransform: "uppercase", letterSpacing: "0.08em" }}>Cấu hình đợt</div>
+              <div style={{ fontSize: "18px", fontWeight: "900", color: "#0f172a", marginTop: "4px" }}>Quản lý thông tin, trạng thái và vòng đời đợt đồ án tốt nghiệp</div>
             </div>
           </div>
-        </section>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", color: "#475569", fontSize: "13px", lineHeight: 1.6 }}>
+            <span style={{ padding: "6px 10px", borderRadius: "999px", background: "#fff", border: "1px solid #dbeafe" }}>Tìm kiếm đợt theo mã, tên hoặc học kỳ</span>
+            <span style={{ padding: "6px 10px", borderRadius: "999px", background: "#fff", border: "1px solid #dbeafe" }}>Chọn đợt đang xử lý ở góc trên bên phải</span>
+            <span style={{ padding: "6px 10px", borderRadius: "999px", background: "#fff", border: "1px solid #dbeafe" }}>Thao tác sinh viên và giảng viên nằm ở các tab con</span>
+          </div>
+        </div>
 
-        <section className="dp-layout-grid" style={pageStyles.contentGrid}>
-          <div style={pageStyles.panel}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: 18,
-                borderBottom: "1px solid #e2e8f0",
-                background: "#ffffff",
-              }}
-            >
-              <div>
-                <div
-                  style={{ fontSize: 18, fontWeight: 900, color: "#0f172a" }}
-                >
-                  Danh sách đợt
-                </div>
+        <div style={{ background: "white", padding: "24px", borderRadius: "20px", border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ position: "relative" }}>
+                <SearchIcon size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+                <input value={periodSearch} onChange={e => setPeriodSearch(e.target.value)} placeholder="Tìm đợt đồ án tốt nghiệp..." style={{ padding: "10px 12px 10px 36px", borderRadius: "12px", border: "1px solid #e2e8f0", width: "300px", fontSize: "14px" }} />
               </div>
-              <button
-                type="button"
-                style={pageStyles.primaryButton}
-                onClick={openCreate}
-              >
-                <Plus size={15} /> Tạo đợt mới
+              <button style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 16px", borderRadius: "12px", border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontSize: "14px", fontWeight: "600" }}>
+                <FilterIcon size={16} /> Lọc trạng thái
               </button>
             </div>
+            <button onClick={() => setPeriodModal({ isOpen: true, mode: "create" })} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 20px", borderRadius: "14px", border: "none", background: DEEP_BLUE_PRIMARY, color: "white", fontSize: "14px", fontWeight: "700", cursor: "pointer", boxShadow: "0 4px 6px -1px rgba(30, 58, 95, 0.2)" }}>
+              <PlusCircle size={18} /> Tạo đợt đồ án tốt nghiệp
+            </button>
+          </div>
 
-            <div style={{ width: "100%", overflowX: "hidden" }}>
-              <table className="dp-period-table">
-                <thead>
-                  <tr style={{ textAlign: "left" }}>
-                    {[
-                      "Mã đợt",
-                      "Tên đợt",
-                      "Bắt đầu",
-                      "Kết thúc",
-                      "Trạng thái",
-                      "Tạo lúc",
-                      "Cập nhật",
-                      "Hành động",
-                    ].map((label) => (
-                      <th key={label} style={tableHeadCellStyle}>
-                        {label}
-                      </th>
-                    ))}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 8px" }}>
+              <thead>
+                <tr style={{ color: "#64748b", fontSize: "12px", fontWeight: "700", textTransform: "uppercase", textAlign: "left" }}>
+                  <th style={{ padding: "12px 16px" }}>Mã đợt</th>
+                  <th style={{ padding: "12px 16px" }}>Tên đợt đồ án tốt nghiệp</th>
+                  <th style={{ padding: "12px 16px" }}>Năm học / Kỳ</th>
+                  <th style={{ padding: "12px 16px" }}>Thời gian</th>
+                  <th style={{ padding: "12px 16px" }}>Trạng thái</th>
+                  <th style={{ padding: "12px 16px", textAlign: "right" }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPeriods.map(row => (
+                  <tr key={row.defenseTermId} style={{ background: selectedId === row.defenseTermId ? "#f1f5f9" : "white", transition: "all 0.2s" }}>
+                    <td style={{ padding: "16px", fontSize: "14px", fontWeight: "600", color: DEEP_BLUE_PRIMARY }}>{row.termCode || `DT-${row.defenseTermId}`}</td>
+                    <td style={{ padding: "16px", fontSize: "14px", fontWeight: "700", color: "#1e293b" }}>{row.name}</td>
+                    <td style={{ padding: "16px", fontSize: "13px", color: "#64748b" }}>{row.academicYear || "--"} - {row.semester || "--"}</td>
+                    <td style={{ padding: "16px", fontSize: "13px", color: "#64748b" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><Calendar size={12} /> {row.startDate ? new Date(row.startDate).toLocaleDateString() : "--"}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "4px" }}><Clock size={12} /> {row.endDate ? new Date(row.endDate).toLocaleDateString() : "--"}</div>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", background: getStatusPresentation(row.status).bg, color: getStatusPresentation(row.status).color, fontSize: "12px", fontWeight: "700" }}>
+                        {getStatusPresentation(row.status).icon} {getStatusPresentation(row.status).label}
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px", textAlign: "right" }}>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                        <button onClick={() => {
+                          setSelectedId(row.defenseTermId);
+                          setActiveTab("overview");
+                        }} title="Xem chi tiết" style={{ padding: "8px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "white", color: "#64748b" }}><Eye size={16} /></button>
+                        <button onClick={() => setPeriodModal({ isOpen: true, mode: "edit", row })} title="Sửa thông tin" style={{ padding: "8px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "white", color: "#64748b" }}><Edit size={16} /></button>
+                        <button onClick={() => setPeriodModal({ isOpen: true, mode: "clone", row })} title="Nhân bản" style={{ padding: "8px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "white", color: "#64748b" }}><Copy size={16} /></button>
+                        <button onClick={() => {
+                          setSelectedId(row.defenseTermId);
+                          setConfirmState({
+                            isOpen: true,
+                            action: "DELETE_PERIOD",
+                            title: "Xóa đợt đồ án tốt nghiệp",
+                            message: `Bạn có chắc chắn muốn xóa đợt đồ án tốt nghiệp "${row.name}"? Lưu ý: Hệ thống chỉ cho phép xóa đợt khi chưa phát sinh dữ liệu (sinh viên, giảng viên, hội đồng).`,
+                            type: "danger"
+                          });
+                        }} title="Xóa" style={{ padding: "8px", borderRadius: "8px", border: "1px solid #fee2e2", background: "white", color: "#ef4444" }}><Trash2 size={16} /></button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((item) => {
-                    const badge = badgeStyles[item.status];
-                    return (
-                      <tr
-                        key={item.periodId}
-                        style={{
-                          background:
-                            selectedPeriodId === item.periodId
-                              ? "#ffffff"
-                              : "#ffffff",
-                        }}
-                      >
-                        <td
-                          style={{
-                            ...tableCellStyle,
-                            fontWeight: 900,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {item.code}
-                        </td>
-                        <td style={{ ...tableCellStyle, minWidth: 170 }}>
-                          <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                            {item.name}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#0f172a",
-                              marginTop: 4,
-                            }}
-                          >
-                            Đợt thứ {item.roundIndex}
-                          </div>
-                        </td>
-                        <td style={tableCellStyle}>{item.startDate || "-"}</td>
-                        <td style={tableCellStyle}>{item.endDate || "-"}</td>
-                        <td style={tableCellStyle}>
-                          <span
-                            style={{
-                              ...pageStyles.chip,
-                              background: badge.bg,
-                              color: badge.text,
-                            }}
-                          >
-                            {item.status}
-                          </span>
-                        </td>
-                        <td
-                          style={{
-                            ...tableCellStyle,
-                            fontSize: 12,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {item.createdAt}
-                        </td>
-                        <td
-                          style={{
-                            ...tableCellStyle,
-                            fontSize: 12,
-                            color: "#0f172a",
-                          }}
-                        >
-                          {item.updatedAt}
-                        </td>
-                        <td style={tableCellStyle}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 8,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              style={pageStyles.iconActionButton}
-                              onClick={() => setSelectedPeriodId(item.periodId)}
-                              title="Xem chi tiết"
-                              aria-label="Xem chi tiết"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              style={pageStyles.iconActionButton}
-                              onClick={() => openEdit(item)}
-                              title="Sửa đợt"
-                              aria-label="Sửa đợt"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              style={pageStyles.iconDangerButton}
-                              onClick={() => void removePeriod(item)}
-                              title="Xóa đợt"
-                              aria-label="Xóa đợt"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredRows.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        style={{
-                          padding: "24px 14px",
-                          textAlign: "center",
-                          color: "#0f172a",
-                        }}
-                      >
-                        Chưa có dữ liệu để hiển thị.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // --- Main Render ---
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "32px",
+        background: "#0f172a",
+        position: "relative",
+        overflow: "hidden",
+        fontFamily: "'Inter', sans-serif"
+      }}>
+        {/* Animated Background Elements */}
+        <div style={{
+          position: "absolute",
+          top: "-10%",
+          left: "-5%",
+          width: "40%",
+          height: "40%",
+          background: "radial-gradient(circle, rgba(30, 58, 95, 0.4) 0%, transparent 70%)",
+          filter: "blur(60px)",
+          animation: "float 15s infinite ease-in-out"
+        }} />
+        <div style={{
+          position: "absolute",
+          bottom: "-10%",
+          right: "-5%",
+          width: "50%",
+          height: "50%",
+          background: "radial-gradient(circle, rgba(243, 112, 33, 0.15) 0%, transparent 70%)",
+          filter: "blur(80px)",
+          animation: "float 20s infinite ease-in-out reverse"
+        }} />
+
+        <div style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 480,
+          animation: "slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)"
+        }}>
+          {/* Glass Card */}
+          <div style={{
+            position: "relative",
+            background: "rgba(255, 255, 255, 0.85)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(255, 255, 255, 0.4)",
+            borderRadius: 32,
+            padding: "48px 40px",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+            textAlign: "center"
+          }}>
+            {/* Logo Section */}
+            <div style={{
+              display: "inline-flex",
+              padding: 20,
+              background: "white",
+              borderRadius: 24,
+              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+              marginBottom: 32,
+              animation: "pulse 3s infinite ease-in-out"
+            }}>
+              <img src="/dnu_logo.png" alt="DNU" style={{ width: 64, height: 64, objectFit: "contain" }} />
+            </div>
+
+            <div style={{ marginBottom: 32 }}>
+              <div style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#f37021",
+                textTransform: "uppercase",
+                letterSpacing: "0.2em",
+                marginBottom: 8
+              }}>
+                Đang khởi tạo hệ thống
+              </div>
+              <h2 style={{
+                fontSize: 28,
+                fontWeight: 800,
+                color: "#1e293b",
+                margin: 0,
+                letterSpacing: "-0.02em"
+              }}>
+                Defense Management
+              </h2>
+            </div>
+
+            <div style={{
+              fontSize: 15,
+              color: "#64748b",
+              lineHeight: 1.6,
+              marginBottom: 40,
+              padding: "0 10px"
+            }}>
+              Vui lòng đợi trong giây lát, chúng tôi đang chuẩn bị không gian làm việc tối ưu cho bạn.
+            </div>
+
+            {/* Premium Progress Bar */}
+            <div style={{ position: "relative", marginBottom: 20 }}>
+              <div style={{
+                width: "100%",
+                height: 10,
+                background: "rgba(0, 0, 0, 0.05)",
+                borderRadius: 99,
+                overflow: "hidden"
+              }}>
+                <div style={{
+                  width: `${loadingProgress}%`,
+                  height: "100%",
+                  borderRadius: 99,
+                  background: "linear-gradient(90deg, #1e3a5f 0%, #3b82f6 50%, #f37021 100%)",
+                  backgroundSize: "200% 100%",
+                  transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                  position: "relative"
+                }}>
+                  {/* Shimmer Effect */}
+                  <div style={{
+                    position: "absolute",
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)",
+                    animation: "shimmer 2s infinite"
+                  }} />
+                </div>
+              </div>
+
+              {/* Floating Percentage */}
+              <div style={{
+                position: "absolute",
+                top: -28,
+                left: `${loadingProgress}%`,
+                transform: "translateX(-50%)",
+                background: "#1e293b",
+                color: "white",
+                padding: "4px 8px",
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                transition: "left 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+              }}>
+                {Math.round(loadingProgress)}%
+                <div style={{
+                  position: "absolute",
+                  bottom: -4,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 0, height: 0,
+                  borderLeft: "4px solid transparent",
+                  borderRight: "4px solid transparent",
+                  borderTop: "4px solid #1e293b"
+                }} />
+              </div>
+            </div>
+
+            <div style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#475569",
+              minHeight: 20
+            }}>
+              {loadingProgress < 30
+                ? "Đang kết nối API..."
+                : loadingProgress < 60
+                  ? "Tải cấu hình hệ thống..."
+                  : loadingProgress < 85
+                    ? "Đồng bộ hóa dữ liệu..."
+                    : "Sắp hoàn tất..."}
+            </div>
+
+            <div style={{
+              marginTop: 48,
+              fontSize: 11,
+              color: "#94a3b8",
+              fontWeight: 500,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase"
+            }}>
+              Powered by DNU FIT • 2025
             </div>
           </div>
+        </div>
 
-          <div style={pageStyles.detailPanel}>
-            {!selectedRow ? (
-              <div style={{ color: "#0f172a" }}>
-                {rows.length === 0
-                  ? "Chưa có dữ liệu để hiển thị."
-                  : "Vui lòng chọn một đợt để xem chi tiết."}
+        <style>{`
+          @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+          }
+          @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+          }
+          @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(20px, 20px); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: "32px", background: "#f8fafc", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ marginBottom: "32px" }}>
+          <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "900", color: "#0f172a", letterSpacing: "-0.02em" }}>Quản lý đợt đồ án tốt nghiệp</h1>
+          <p style={{ margin: "8px 0 0 0", color: "#64748b", fontSize: "14px" }}>Điều hành vòng đời, theo dõi tiến độ và quản lý thành viên đợt đồ án tốt nghiệp.</p>
+        </div>
+        {renderEmptyState()}
+        <DefensePeriodModal
+          isOpen={!!periodModal}
+          onClose={() => setPeriodModal(null)}
+          initialData={periodModal?.row}
+          isLoading={refreshing}
+          onSave={(data) => handleManagementCRUD(periodModal?.mode === "edit" ? "update" : periodModal?.mode as any, data)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "32px", background: "#f8fafc", minHeight: "100vh" }}>
+      {/* Header Section */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "32px" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: "900", color: "#0f172a", letterSpacing: "-0.02em" }}>Quản lý đợt đồ án tốt nghiệp</h1>
+            {selectedRow && (
+              <div style={{
+                padding: "4px 12px", borderRadius: "20px", background: "#fff", border: "1px solid #cbd5e1",
+                fontSize: "13px", fontWeight: "700", color: "#1e293b", display: "flex", alignItems: "center", gap: "6px"
+              }}>
+                <Calendar size={14} color={DEEP_BLUE_PRIMARY} /> {selectedRow.academicYear || "--"} - {selectedRow.semester || "--"}
               </div>
-            ) : (
-              <>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 10,
-                    marginBottom: 14,
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 8,
-                        padding: "6px 10px",
-                        borderRadius: 999,
-                        background: "#ffffff",
-                        color: "#0f172a",
-                        fontSize: 12,
-                        fontWeight: 800,
-                      }}
-                    >
-                      <CalendarDays size={14} /> {selectedRow.code}
-                    </div>
-                    <div
-                      style={{
-                        fontWeight: 900,
-                        color: "#0f172a",
-                        fontSize: 20,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {selectedRow.name}
-                    </div>
-                    <div
-                      style={{ color: "#0f172a", fontSize: 13, marginTop: 6 }}
-                    >
-                      Đợt thứ {selectedRow.roundIndex} -{" "}
-                      {selectedRow.startDate || "-"} đến{" "}
-                      {selectedRow.endDate || "-"}
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      ...pageStyles.chip,
-                      background: selectedBadge.bg,
-                      color: selectedBadge.text,
-                    }}
-                  >
-                    {selectedRow.status}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 10,
-                    marginBottom: 14,
-                  }}
-                >
-                  {[
-                    { label: "Hội đồng", value: dashboardNumbers.councilCount },
-                    {
-                      label: "Assignment",
-                      value: dashboardNumbers.assignmentCount,
-                    },
-                    { label: "Kết quả", value: dashboardNumbers.resultCount },
-                    {
-                      label: "Revision",
-                      value: dashboardNumbers.revisionCount,
-                    },
-                    {
-                      label: "SV đủ điều kiện",
-                      value: dashboardNumbers.eligibleStudentCount,
-                    },
-                    {
-                      label: "GV pool",
-                      value: dashboardNumbers.capabilityLecturerCount,
-                    },
-                  ].map((card) => (
-                    <div
-                      key={card.label}
-                      style={{
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 12,
-                        padding: 12,
-                        background:
-                          "linear-gradient(180deg, #ffffff 0%, #ffffff 100%)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#0f172a",
-                          fontWeight: 800,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {card.label}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontWeight: 900,
-                          color: "#0f172a",
-                          fontSize: 22,
-                        }}
-                      >
-                        {card.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    border: "1px solid #cbd5e1",
-                    borderRadius: 16,
-                    padding: 14,
-                    marginBottom: 14,
-                    background: "#ffffff",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 900,
-                      color: "#0f172a",
-                      marginBottom: 10,
-                    }}
-                  >
-                    Thao tác vòng đời (module Quản lý đợt)
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 10,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      style={pageStyles.primaryButton}
-                      onClick={handleSync}
-                      disabled={isActionBusy || !canRunAction("SYNC")}
-                    >
-                      <RefreshCw size={14} /> Đồng bộ
-                    </button>
-                    <button
-                      type="button"
-                      style={pageStyles.ghostButton}
-                      onClick={handleFinalize}
-                      disabled={isActionBusy || !canRunAction("FINALIZE")}
-                    >
-                      <Shield size={14} /> Chốt đợt
-                    </button>
-                    <button
-                      type="button"
-                      style={pageStyles.ghostButton}
-                      onClick={handlePublish}
-                      disabled={isActionBusy || !canRunAction("PUBLISH")}
-                    >
-                      <Send size={14} /> Công bố
-                    </button>
-                    <button
-                      type="button"
-                      style={pageStyles.ghostButton}
-                      onClick={handleRollback}
-                      disabled={isActionBusy || !canRunAction("ROLLBACK")}
-                    >
-                      <RotateCcw size={14} /> Hoàn tác
-                    </button>
-                    <button
-                      type="button"
-                      style={pageStyles.dangerButton}
-                      onClick={handleArchive}
-                      disabled={isActionBusy || !canRunAction("ARCHIVE")}
-                    >
-                      Kết thúc đợt
-                    </button>
-                    <button
-                      type="button"
-                      style={pageStyles.ghostButton}
-                      onClick={handleReopen}
-                      disabled={isActionBusy || !canRunAction("REOPEN")}
-                    >
-                      Mở lại
-                    </button>
-                  </div>
-
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: 12,
-                      color: "#0f172a",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={allowFinalizeAfterWarning}
-                      onChange={(event) =>
-                        setAllowFinalizeAfterWarning(event.target.checked)
-                      }
-                    />
-                    Cho phép chốt đợt khi có cảnh báo
-                  </label>
-
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#0f172a" }}>
-                    {activeAction
-                      ? `Đang thực hiện: ${activeAction}`
-                      : "Sẵn sàng thao tác"}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    marginBottom: 12,
-                  }}
-                >
-                  {[
-                    { key: "overview", label: "Tổng quan" },
-                    { key: "state", label: "Trạng thái" },
-                    { key: "workflow", label: "Quy trình" },
-                    { key: "history", label: "Lịch sử" },
-                  ].map((item) => {
-                    const active = activeTab === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => setActiveTab(item.key as DetailTab)}
-                        style={{
-                          ...pageStyles.ghostButton,
-                          padding: "8px 12px",
-                          background: active ? "#f37021" : "#ffffff",
-                          color: active ? "#ffffff" : "#0f172a",
-                          borderColor: active ? "#f37021" : "#cbd5e1",
-                          fontSize: 13,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div
-                  style={{
-                    border: "1px solid #cbd5e1",
-                    borderRadius: 16,
-                    padding: 14,
-                    background: "#ffffff",
-                  }}
-                >
-                  {activeTab === "overview" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          color: "#0f172a",
-                        }}
-                      >
-                        <CalendarDays size={14} color="#0f172a" />
-                        {selectedRow.startDate || "-"} -{" "}
-                        {selectedRow.endDate || "-"}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          color: "#0f172a",
-                        }}
-                      >
-                        <Clock3 size={14} color="#0f172a" />
-                        Tạo lúc {selectedRow.createdAt}, cập nhật{" "}
-                        {selectedRow.updatedAt}
-                      </div>
-                      <div style={{ color: "#0f172a" }}>
-                        Tỷ lệ phân công:{" "}
-                        <strong>
-                          {dashboardNumbers.assignmentCoveragePercent.toFixed(
-                            2,
-                          )}
-                          %
-                        </strong>
-                      </div>
-                      <div style={{ color: "#0f172a" }}>
-                        Số phòng cấu hình: <strong>{configRooms.length}</strong>
-                      </div>
-                      <div style={{ color: "#0f172a", fontSize: 12 }}>
-                        Snapshot:{" "}
-                        <strong>
-                          /api/defense-periods/{"{"}periodId{"}"}/snapshot
-                        </strong>
-                      </div>
-                      <div style={{ color: "#0f172a" }}>
-                        Lưu ý: Setup và chỉnh sửa hội đồng thực hiện tại module
-                        Quản lý hội đồng.
-                      </div>
-                    </div>
-                  )}
-
-                  {activeTab === "state" && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 8,
-                        color: "#0f172a",
-                        fontSize: 13,
-                      }}
-                    >
-                      <div>
-                        Trạng thái khóa giảng viên:{" "}
-                        <strong>
-                          {stateFlags.lecturerCapabilitiesLocked
-                            ? "Đã khóa"
-                            : "Chưa khóa"}
-                        </strong>
-                      </div>
-                      <div>
-                        Trạng thái xác nhận cấu hình:{" "}
-                        <strong>
-                          {stateFlags.councilConfigConfirmed
-                            ? "Đã xác nhận"
-                            : "Chưa xác nhận"}
-                        </strong>
-                      </div>
-                      <div>
-                        Trạng thái chốt đợt:{" "}
-                        <strong>
-                          {stateFlags.finalized ? "Đã chốt" : "Chưa chốt"}
-                        </strong>
-                      </div>
-                      <div>
-                        Trạng thái công bố:{" "}
-                        <strong>
-                          {stateFlags.scoresPublished
-                            ? "Đã công bố"
-                            : "Chưa công bố"}
-                        </strong>
-                      </div>
-                      <div>
-                        Hành động cho phép:{" "}
-                        <strong>
-                          {allowedActions.length
-                            ? allowedActions.join(", ")
-                            : "Không giới hạn"}
-                        </strong>
-                      </div>
-                      {stateFlags.warnings.length > 0 && (
-                        <div style={{ color: "#0f172a" }}>
-                          Cảnh báo: {stateFlags.warnings.join(" | ")}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === "workflow" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {workflowSteps.map((step, index) => (
-                        <div
-                          key={`${step.key}-${index}`}
-                          style={{
-                            border: "1px solid #cbd5e1",
-                            borderRadius: 12,
-                            padding: 10,
-                            background:
-                              step.status === "completed"
-                                ? "#ffffff"
-                                : step.status === "in-progress"
-                                  ? "#ffffff"
-                                  : "#ffffff",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                            }}
-                          >
-                            {step.status === "completed" ? (
-                              <CheckCircle size={16} color="#0f172a" />
-                            ) : step.status === "in-progress" ? (
-                              <Clock3 size={16} color="#0f172a" />
-                            ) : (
-                              <AlertCircle size={16} color="#0f172a" />
-                            )}
-                            <strong style={{ color: "#0f172a" }}>
-                              {step.title}
-                            </strong>
-                          </div>
-                          {step.description && (
-                            <div
-                              style={{
-                                marginTop: 6,
-                                fontSize: 12,
-                                color: "#0f172a",
-                              }}
-                            >
-                              {step.description}
-                            </div>
-                          )}
-                          {step.blockedReason && (
-                            <div
-                              style={{
-                                marginTop: 6,
-                                fontSize: 12,
-                                color: "#f37021",
-                              }}
-                            >
-                              Đang chặn: {step.blockedReason}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {activeTab === "history" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          color: "#0f172a",
-                        }}
-                      >
-                        <History size={14} color="#0f172a" />
-                        Bản ghi dành cho module Quản lý đợt tập trung vào vòng
-                        đời đợt.
-                      </div>
-                      <div style={{ color: "#0f172a", fontSize: 13 }}>
-                        Nếu cần thao tác danh sách hội đồng, hãy chuyển sang
-                        module Quản lý hội đồng.
-                      </div>
-                      <button
-                        type="button"
-                        style={pageStyles.ghostButton}
-                        onClick={openCommitteeManagement}
-                      >
-                        <Workflow size={14} /> Mở module Quản lý hội đồng
-                      </button>
-                    </div>
-                  )}
-
-                  {loadingSnapshot && (
-                    <div
-                      style={{ marginTop: 12, fontSize: 12, color: "#0f172a" }}
-                    >
-                      Đang đồng bộ snapshot mới nhất...
-                    </div>
-                  )}
-                </div>
-              </>
             )}
           </div>
-        </section>
+          <p style={{ margin: "8px 0 0 0", color: "#64748b", fontSize: "14px" }}>
+            {selectedRow ? `Điều hành: ${selectedRow.name}` : "Điều hành vòng đời, theo dõi tiến độ và quản lý thành viên đợt đồ án tốt nghiệp."}
+          </p>
+        </div>
+      {downloadModal.isOpen && downloadModal.report && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "white", borderRadius: "24px", width: "100%", maxWidth: "420px", padding: "32px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h3 style={{ margin: 0, fontSize: "20px", fontWeight: "800", color: "#1e293b" }}>Chọn định dạng tải</h3>
+              <button onClick={() => setDownloadModal({ isOpen: false, report: null })} style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer" }}><Plus style={{ transform: "rotate(45deg)" }} size={24} /></button>
+            </div>
+            
+            <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "24px", lineHeight: "1.6" }}>
+              Bạn đang chuẩn bị tải xuống: <strong>{downloadModal.report.label}</strong>. Vui lòng chọn định dạng tệp phù hợp với nhu cầu của bạn.
+            </p>
 
-        <section
-          style={{
-            ...pageStyles.sectionCard,
-            marginTop: 16,
-            padding: 18,
-            borderRadius: 14,
-            background: "#ffffff",
-          }}
-        >
-          {/* Main Tab Navigation */}
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              marginBottom: 16,
-              borderBottom: "1px solid #e2e8f0",
-              paddingBottom: 12,
-            }}
-          >
-            {(
-              [
-                { key: "overview", label: "Tổng quan", icon: <Grid size={14} /> },
-                { 
-                  key: "students", 
-                  label: "Sinh viên đợt", 
-                  icon: <Flag size={14} />,
-                  visible: userRole === "SystemAdmin" || userRole === "FacultyCoordinator",
-                },
-                { 
-                  key: "lecturers", 
-                  label: "Giảng viên đợt", 
-                  icon: <Flag size={14} />,
-                  visible: userRole !== "Student" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator"),
-                },
-                { 
-                  key: "topics", 
-                  label: "Đề tài", 
-                  icon: <Grid size={14} />,
-                  visible: userRole !== "Student" || userRole === "Student",
-                },
-                { 
-                  key: "progress", 
-                  label: "Theo dõi tiến độ", 
-                  icon: <Flag size={14} />,
-                },
-                { 
-                  key: "reports", 
-                  label: "Báo cáo", 
-                  icon: <Download size={14} />,
-                  visible: userRole === "SystemAdmin" || userRole === "FacultyCoordinator",
-                },
-              ] as Array<{
-                key: MainTab;
-                label: string;
-                icon: React.ReactNode;
-                visible?: boolean;
-              }>
-            )
-              .filter((tab) => tab.visible !== false)
-              .map((tab) => {
-                const active = activeMainTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => updateMainTab(tab.key)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "8px 14px",
-                      borderRadius: 10,
-                      border: "none",
-                      background: active ? "#f37021" : "#ffffff",
-                      color: active ? "#ffffff" : "#0f172a",
-                      cursor: "pointer",
-                      fontWeight: active ? 600 : 500,
-                      fontSize: 13,
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    {tab.icon}
-                    {tab.label}
-                  </button>
-                );
-              })}
+            {(downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && (
+              <div style={{ marginBottom: "24px", padding: "16px", background: "#f8fafc", borderRadius: "16px", border: "1px solid #e2e8f0" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#475569", marginBottom: "8px" }}>Chọn Hội đồng (Bắt buộc)</label>
+                <select 
+                  value={downloadModal.councilId || ""} 
+                  onChange={e => setDownloadModal({ ...downloadModal, councilId: e.target.value ? Number(e.target.value) : undefined })}
+                  style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #cbd5e1", background: "white", fontSize: "14px" }}
+                >
+                  <option value="">-- Chọn hội đồng --</option>
+                  {(snapshot?.committees || snapshot?.councils || []).map((c: any) => (
+                    <option key={c.committeeID || c.id} value={c.committeeID || c.id}>
+                      {c.committeeCode || c.code} - {c.name}
+                    </option>
+                  ))}
+                </select>
+                {!downloadModal.councilId && <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "4px", fontWeight: "600" }}>Vui lòng chọn một hội đồng để tiếp tục.</div>}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <button 
+                onClick={() => {
+                  if ((downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId) {
+                    addToast("Vui lòng chọn hội đồng.", "warning");
+                    return;
+                  }
+                  handleDownloadReport(downloadModal.report, "xlsx");
+                }}
+                disabled={(downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId}
+                style={{
+                  padding: "20px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#fff",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", cursor: "pointer", transition: "all 0.2s ease",
+                  opacity: ((downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId) ? 0.5 : 1
+                }}
+                onMouseEnter={e => { if (!e.currentTarget.disabled) { e.currentTarget.style.borderColor = "#10b981"; e.currentTarget.style.background = "#f0fdf4"; } }}
+                onMouseLeave={e => { if (!e.currentTarget.disabled) { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#fff"; } }}
+              >
+                <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }}>
+                  <FileSpreadsheet size={24} />
+                </div>
+                <span style={{ fontWeight: "700", color: "#1e293b" }}>Excel (.xlsx)</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  if ((downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId) {
+                    addToast("Vui lòng chọn hội đồng.", "warning");
+                    return;
+                  }
+                  handleDownloadReport(downloadModal.report, "pdf");
+                }}
+                disabled={(downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId}
+                style={{
+                  padding: "20px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#fff",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", cursor: "pointer", transition: "all 0.2s ease",
+                  opacity: ((downloadModal.report.key === "form-1" || downloadModal.report.key === "scoreboard") && !downloadModal.councilId) ? 0.5 : 1
+                }}
+                onMouseEnter={e => { if (!e.currentTarget.disabled) { e.currentTarget.style.borderColor = "#ef4444"; e.currentTarget.style.background = "#fef2f2"; } }}
+                onMouseLeave={e => { if (!e.currentTarget.disabled) { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#fff"; } }}
+              >
+                <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                  <FileDown size={24} />
+                </div>
+                <span style={{ fontWeight: "700", color: "#1e293b" }}>PDF (.pdf)</span>
+              </button>
+            </div>
+            
+            <button 
+              onClick={() => setDownloadModal({ isOpen: false, report: null })}
+              style={{ width: "100%", marginTop: "24px", padding: "12px", borderRadius: "12px", border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontWeight: "700", cursor: "pointer" }}
+            >
+              Hủy bỏ
+            </button>
           </div>
+        </div>
+      )}
 
-          {/* Tab Contents */}
-          {selectedRow && activeMainTab === "overview" && (
-            <div style={{ display: "grid", gap: 24, animation: "fadeIn 0.3s ease-out" }}>
-              {/* Key Metrics Row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 16,
-                }}
-              >
-                {[
-                  { 
-                    label: "Hội đồng bảo vệ", 
-                    value: dashboardNumbers.councilCount, 
-                    sub: "Hội đồng đã lập", 
-                    icon: <Shield size={20} color="#f37021" />,
-                    color: "#fff7ed"
-                  },
-                  { 
-                    label: "Tổng số đề tài", 
-                    value: dashboardNumbers.topicCount, 
-                    sub: "Trong kho đề tài", 
-                    icon: <Grid size={20} color="#0ea5e9" />,
-                    color: "#f0f9ff"
-                  },
-                  { 
-                    label: "Sinh viên", 
-                    value: dashboardNumbers.eligibleStudentCount, 
-                    sub: "Đủ điều kiện", 
-                    icon: <Flag size={20} color="#10b981" />,
-                    color: "#ecfdf5"
-                  },
-                  { 
-                    label: "Giảng viên", 
-                    value: dashboardNumbers.capabilityLecturerCount, 
-                    sub: "Trong pool năng lực", 
-                    icon: <Tag size={20} color="#8b5cf6" />,
-                    color: "#f5f3ff"
-                  },
-                ].map((stat, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      ...pageStyles.statCard,
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "space-between",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>{stat.label}</div>
-                        <div style={{ fontSize: 28, fontWeight: 900, color: "#0f172a" }}>{stat.value}</div>
-                      </div>
-                      <div style={{ padding: 10, borderRadius: 12, background: stat.color }}>
-                        {stat.icon}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                      <CheckCircle size={10} /> {stat.sub}
-                    </div>
-                  </div>
-                ))}
-              </div>
+        <div style={{ display: "flex", gap: "12px" }}>
 
-              {/* Progress & Breakdown Section */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))", gap: 20 }}>
-                {/* Topic Assignment Progress */}
-                <div style={{ ...pageStyles.panel, padding: 20 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Phân bổ đề tài vào hội đồng</h3>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#f37021", background: "#fff7ed", padding: "4px 10px", borderRadius: 8 }}>
-                      {dashboardNumbers.assignmentCoveragePercent}%
-                    </div>
-                  </div>
-                  
-                  <div style={{ height: 12, width: "100%", background: "#f1f5f9", borderRadius: 6, marginBottom: 20, overflow: "hidden" }}>
-                    <div 
-                      style={{ 
-                        height: "100%", 
-                        width: `${dashboardNumbers.assignmentCoveragePercent}%`, 
-                        background: "linear-gradient(90deg, #f37021, #fb923c)",
-                        borderRadius: 6,
-                        transition: "width 1s ease-in-out"
-                      }} 
-                    />
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div style={{ padding: 16, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 }}>Đề tài đã phân</div>
-                      <div style={{ fontSize: 20, fontWeight: 900 }}>{dashboardNumbers.assignmentCount}</div>
-                    </div>
-                    <div style={{ padding: 16, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, textTransform: "uppercase", fontWeight: 700 }}>Đề tài chờ phân</div>
-                      <div style={{ fontSize: 20, fontWeight: 900 }}>{Math.max(0, dashboardNumbers.eligibleStudentCount - dashboardNumbers.assignmentCount)}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Resource Pool Utilization */}
-                <div style={{ ...pageStyles.panel, padding: 20 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 20 }}>Sử dụng nguồn lực giảng viên</h3>
-                  
-                  <div style={{ display: "grid", gap: 16 }}>
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>Giảng viên tham gia hội đồng</span>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{dashboardNumbers.committeeLecturerCount} / {dashboardNumbers.capabilityLecturerCount}</span>
-                      </div>
-                      <div style={{ height: 8, width: "100%", background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                        <div 
-                          style={{ 
-                            height: "100%", 
-                            width: `${dashboardNumbers.capabilityLecturerCount > 0 ? (dashboardNumbers.committeeLecturerCount * 100 / dashboardNumbers.capabilityLecturerCount) : 0}%`, 
-                            background: "#8b5cf6",
-                            borderRadius: 4
-                          }} 
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>Giảng viên hướng dẫn</span>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{dashboardNumbers.assignedSupervisorCount} / {dashboardNumbers.eligibleSupervisorCount}</span>
-                      </div>
-                      <div style={{ height: 8, width: "100%", background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                        <div 
-                          style={{ 
-                            height: "100%", 
-                            width: `${dashboardNumbers.eligibleSupervisorCount > 0 ? (dashboardNumbers.assignedSupervisorCount * 100 / dashboardNumbers.eligibleSupervisorCount) : 0}%`, 
-                            background: "#0ea5e9",
-                            borderRadius: 4
-                          }} 
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 24, padding: 12, borderRadius: 10, background: "#fef9c3", border: "1px solid #fde047", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <AlertTriangle size={16} color="#854d0e" style={{ marginTop: 2 }} />
-                    <div style={{ fontSize: 12, color: "#854d0e", lineHeight: 1.5 }}>
-                      <strong>Lưu ý:</strong> Nguồn lực giảng viên được tính dựa trên pool năng lực đã chốt. Nếu số lượng hội đồng tăng, hãy kiểm tra lại định mức của từng giảng viên.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status Summary & Quick Actions */}
-              <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 20 }}>
-                 <div style={{ ...pageStyles.panel, padding: 20 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 20 }}>Kết quả bảo vệ hiện tại</h3>
-                    <div style={{ display: "flex", gap: 40 }}>
-                       <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 32, fontWeight: 900, color: "#10b981" }}>{dashboardNumbers.resultCount}</div>
-                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Đề tài đã có điểm</div>
-                       </div>
-                       <div style={{ width: 1, background: "#e2e8f0" }} />
-                       <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 32, fontWeight: 900, color: "#f59e0b" }}>{dashboardNumbers.revisionCount}</div>
-                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Yêu cầu chỉnh sửa</div>
-                       </div>
-                       <div style={{ width: 1, background: "#e2e8f0" }} />
-                       <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 32, fontWeight: 900, color: "#64748b" }}>{dashboardNumbers.assignmentCount - dashboardNumbers.resultCount}</div>
-                          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Chờ cập nhật điểm</div>
-                       </div>
-                    </div>
-                 </div>
-
-                 <div style={{ ...pageStyles.panel, padding: 20, background: "linear-gradient(135deg, #0f172a, #1e293b)", color: "#ffffff" }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, marginBottom: 12, color: "#ffffff" }}>Hành động tiếp theo</h3>
-                    <p style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6, marginBottom: 20 }}>
-                       Dựa trên trạng thái hiện tại (<strong>{selectedRow.status}</strong>), hệ thống gợi ý bạn thực hiện các bước tiếp theo trong quy trình.
-                    </p>
-                    <div style={{ display: "grid", gap: 10 }}>
-                       <button 
-                          style={{ ...pageStyles.primaryButton, width: "100%", justifyContent: "space-between", background: "#f37021" }}
-                          onClick={() => updateMainTab("workflow")}
-                       >
-                          <span>Kiểm tra Workflow</span>
-                          <ChevronRight size={16} />
-                       </button>
-                       <button 
-                          style={{ ...pageStyles.ghostButton, width: "100%", justifyContent: "space-between", background: "transparent", color: "#ffffff", border: "1px solid #334155" }}
-                          onClick={() => updateMainTab("reports")}
-                       >
-                          <span>Xuất báo cáo tổng hợp</span>
-                          <Download size={16} />
-                       </button>
-                    </div>
-                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeMainTab === "students" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
-            <div style={{ display: "grid", gap: 16 }}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
-              >
-                <button
-                  type="button"
-                  style={pageStyles.primaryButton}
-                  onClick={() => studentsSectionRef.current?.openAdd()}
-                >
-                  <Plus size={15} /> Thêm sinh viên
-                </button>
-              </div>
-              <DefenseTermStudentsSection
-                ref={studentsSectionRef}
-                defenseTermId={selectedPeriodId}
-              />
-            </div>
-          )}
-
-          {activeMainTab === "lecturers" && (userRole !== "Student" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator")) && (
-            <div style={{ display: "grid", gap: 16 }}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
-              >
-                <button
-                  type="button"
-                  style={pageStyles.primaryButton}
-                  onClick={() => lecturersSectionRef.current?.openAdd()}
-                >
-                  <Plus size={15} /> Thêm giảng viên
-                </button>
-              </div>
-              <DefenseTermLecturersSection
-                ref={lecturersSectionRef}
-                defenseTermId={selectedPeriodId}
-              />
-            </div>
-          )}
-
-          {activeMainTab === "topics" && (
-            <div style={{ display: "grid", gap: 12 }}>
-              <DefenseTopicsSection defenseTermId={selectedPeriodId} />
-            </div>
-          )}
-
-          {activeMainTab === "progress" && (
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
-                Tiến độ hoàn thành
-              </div>
-              <div style={{ color: "#64748b", fontSize: 13 }}>
-                Theo dõi tiến độ hoàn thành của sinh viên trong đợt bảo vệ này.
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                {["Chưa bắt đầu", "Đang thực hiện", "Chờ duyệt", "Đủ điều kiện"].map(
-                  (status) => (
-                    <div
-                      key={status}
-                      style={{
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 10,
-                        padding: 14,
-                        textAlign: "center",
-                        background: "#f8fafc",
-                      }}
-                    >
-                      <div style={{ fontSize: 12, color: "#64748b" }}>
-                        {status}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 8,
-                          fontSize: 24,
-                          fontWeight: 900,
-                          color: "#0f172a",
-                        }}
-                      >
-                        0
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeMainTab === "reports" && (userRole === "SystemAdmin" || userRole === "FacultyCoordinator") && (
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
-                Xuất báo cáo
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                  gap: 12,
-                }}
-              >
-                {[
-                  {
-                    title: "Danh sách sinh viên đợt",
-                    description: "Xuất danh sách sinh viên tham gia",
-                    icon: <Flag size={20} />,
-                  },
-                  {
-                    title: "Danh sách giảng viên đợt",
-                    description: "Xuất danh sách giảng viên tham gia",
-                    icon: <Flag size={20} />,
-                  },
-                  {
-                    title: "Danh sách đề tài theo GVHD",
-                    description: "Xuất danh sách đề tài phân theo giảng viên",
-                    icon: <Grid size={20} />,
-                  },
-                ].map((report) => (
-                  <div
-                    key={report.title}
-                    style={{
-                      border: "1px solid #cbd5e1",
-                      borderRadius: 10,
-                      padding: 14,
-                      background: "#ffffff",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.borderColor =
-                        "#f37021";
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        "#ffffff";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.borderColor =
-                        "#cbd5e1";
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 8,
-                          background: "#fff7ed",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#f37021",
-                        }}
-                      >
-                        {report.icon}
-                      </div>
-                      <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                        {report.title}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "#64748b",
-                        marginBottom: 10,
-                      }}
-                    >
-                      {report.description}
-                    </div>
-                    <button
-                      type="button"
-                      style={{
-                        ...pageStyles.ghostButton,
-                        width: "100%",
-                        padding: "8px 12px",
-                      }}
-                    >
-                      <Download size={14} /> Xuất file
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!selectedRow && (
-            <div style={{ color: "#64748b", textAlign: "center", padding: "40px 20px" }}>
-              Vui lòng chọn một đợt để xem chi tiết
-            </div>
-          )}
-        </section>
-
-        {showForm && (
-          <div
+          <select
+            value={selectedId || ""}
+            onChange={(e) => setSelectedId(Number(e.target.value))}
             style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 40,
-              background: "rgba(0, 0, 0, 0.38)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 16,
+              padding: "10px 16px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#fff",
+              fontWeight: "700", fontSize: "14px", color: DEEP_BLUE_PRIMARY, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", outline: "none"
             }}
           >
-            <div
+            {rows.map(r => (
+              <option key={r.defenseTermId} value={r.defenseTermId}>
+                {r.name} ({getStatusPresentation(r.status).label})
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setPeriodModal({ isOpen: true, mode: "create" })}
+            style={{
+              padding: "10px 20px", borderRadius: "12px", background: DEEP_BLUE_PRIMARY, color: "#fff",
+              border: "none", fontWeight: "700", fontSize: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+              boxShadow: "0 4px 12px rgba(30, 58, 95, 0.25)"
+            }}
+          >
+            <Plus size={18} /> Tạo đợt mới
+          </button>
+        </div>
+      </div>
+
+      {/* Main Tabs Container */}
+      <div style={{ background: "#fff", borderRadius: "24px", border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+        {/* Sticky Tab Bar */}
+        <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
+          {[
+            { id: "overview", label: "Tổng quan", icon: <LayoutDashboard size={18} /> },
+            { id: "management", label: "Cấu hình đợt", icon: <Settings size={18} /> },
+            { id: "students", label: "Sinh viên", icon: <Users size={18} /> },
+            { id: "lecturers", label: "Giảng viên", icon: <UserCheck size={18} /> },
+            { id: "operations", label: "Điều hành", icon: <Zap size={18} /> },
+            { id: "statistics", label: "Thống kê", icon: <Activity size={18} /> },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as MainTab)}
               style={{
-                width: "min(720px, 100%)",
-                maxHeight: "90vh",
-                overflowY: "auto",
-                background: "#ffffff",
-                borderRadius: 18,
-                border: "1px solid #cbd5e1",
-                boxShadow: "0 24px 80px rgba(0, 0, 0, 0.18)",
-                padding: 20,
+                padding: "20px 24px", background: "none", border: "none", borderBottom: `3px solid ${activeTab === tab.id ? DEEP_BLUE_PRIMARY : "transparent"}`,
+                color: activeTab === tab.id ? DEEP_BLUE_PRIMARY : "#64748b", fontWeight: activeTab === tab.id ? "800" : "600", fontSize: "14px",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: "10px", transition: "all 0.2s ease"
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "start",
-                }}
-              >
-                <div>
-                  <div
-                    style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}
-                  >
-                    {editingPeriodId ? "Sửa đợt bảo vệ" : "Tạo đợt bảo vệ"}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: "#0f172a" }}>
-                    Nhập thông tin đợt theo chuẩn quản trị, ưu tiên bố cục gọn
-                    và dễ kiểm tra.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  style={pageStyles.ghostButton}
-                  onClick={() => setShowForm(false)}
-                  disabled={isActionBusy}
-                >
-                  Đóng
-                </button>
-              </div>
-
-              <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 700, color: "#0f172a" }}>
-                    Tên đợt *
-                  </span>
-                  <input
-                    type="text"
-                    value={formState.name}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        name: event.target.value,
-                      }))
-                    }
-                    placeholder="Ví dụ: Đợt bảo vệ học kỳ 1 - 2026"
-                    style={{
-                      border: "1px solid #cbd5e1",
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      background: "#ffffff",
-                    }}
-                  />
-                </label>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontWeight: 700, color: "#0f172a" }}>
-                      Ngày bắt đầu *
-                    </span>
-                    <input
-                      type="date"
-                      value={formState.startDate}
-                      onChange={(event) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          startDate: event.target.value,
-                        }))
-                      }
-                      style={{
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 12,
-                        padding: "12px 14px",
-                        background: "#ffffff",
-                      }}
-                    />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontWeight: 700, color: "#0f172a" }}>
-                      Ngày kết thúc
-                    </span>
-                    <input
-                      type="date"
-                      value={formState.endDate}
-                      onChange={(event) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          endDate: event.target.value,
-                        }))
-                      }
-                      style={{
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 12,
-                        padding: "12px 14px",
-                        background: "#ffffff",
-                      }}
-                    />
-                  </label>
-                </div>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 700, color: "#0f172a" }}>
-                    Trạng thái
-                  </span>
-                  <select
-                    value={formState.status}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        status: event.target.value as DefenseTermStatus,
-                      }))
-                    }
-                    style={selectControlStyle}
-                  >
-                    {statusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: 10,
-                  marginTop: 18,
-                }}
-              >
-                <button
-                  type="button"
-                  style={pageStyles.ghostButton}
-                  onClick={() => setShowForm(false)}
-                  disabled={isActionBusy}
-                >
-                  Đóng
-                </button>
-                <button
-                  type="button"
-                  style={pageStyles.primaryButton}
-                  onClick={() => void saveForm()}
-                  disabled={isActionBusy}
-                >
-                  <Save size={14} /> {isActionBusy ? "Đang lưu" : "Lưu đợt"}
-                </button>
-              </div>
-            </div>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {refreshing && <RefreshCw size={16} className="animate-spin" color="#94a3b8" />}
+            <button onClick={loadSnapshots} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", padding: "8px" }}>
+              <RefreshCw size={18} />
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* Tab Content Area */}
+        <div style={{ padding: "32px", background: "#fff" }}>
+          {activeTab === "overview" && renderOverview()}
+          {activeTab === "management" && renderManagement()}
+          {activeTab === "students" && (
+            <div style={{ display: "grid", gap: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <ImportExportActions moduleName="students" moduleLabel="Sinh viên tham gia" onImportSuccess={() => studentSectionRef.current?.openAdd()} />
+                <button onClick={() => studentSectionRef.current?.openAdd()} style={{ background: DEEP_BLUE_PRIMARY, color: "#fff", border: "none", borderRadius: "10px", padding: "8px 16px", fontWeight: "700", fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Plus size={16} /> Thêm sinh viên
+                </button>
+              </div>
+              <DefenseTermStudentsSection ref={studentSectionRef} defenseTermId={selectedId} />
+            </div>
+          )}
+          {activeTab === "lecturers" && (
+            <div style={{ display: "grid", gap: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <ImportExportActions moduleName="lecturers" moduleLabel="Giảng viên tham gia" onImportSuccess={() => lecturerSectionRef.current?.openAdd()} />
+                <button onClick={() => lecturerSectionRef.current?.openAdd()} style={{ background: DEEP_BLUE_PRIMARY, color: "#fff", border: "none", borderRadius: "10px", padding: "8px 16px", fontWeight: "700", fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Plus size={16} /> Thêm giảng viên
+                </button>
+              </div>
+              <DefenseTermLecturersSection ref={lecturerSectionRef} defenseTermId={selectedId} />
+            </div>
+          )}
+          {activeTab === "operations" && renderOperations()}
+          {activeTab === "statistics" && renderStatistics()}
+        </div>
       </div>
+
+      {/* Modals */}
+      <ConfirmModal
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => {
+          if (confirmState?.action === "DELETE_PERIOD") {
+            handleManagementCRUD("delete", selectedId);
+          } else {
+            executeAction();
+          }
+        }}
+        title={confirmState?.title || ""}
+        message={confirmState?.message || ""}
+        type={confirmState?.type || "info"}
+        isLoading={refreshing}
+      />
+
+      <DefensePeriodModal
+        isOpen={!!periodModal}
+        onClose={() => setPeriodModal(null)}
+        initialData={periodModal?.row}
+        isLoading={refreshing}
+        onSave={(data) => handleManagementCRUD(periodModal?.mode === "edit" ? "update" : periodModal?.mode as any, data)}
+      />
     </div>
   );
 };

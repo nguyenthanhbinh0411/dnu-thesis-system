@@ -32,7 +32,7 @@ namespace ThesisManagement.Api.Application.Command.DefenseExecution
 
     public interface IApproveRevisionByLecturerCommand
     {
-        Task<ApiResponse<bool>> ExecuteAsync(int revisionId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
+        Task<ApiResponse<bool>> ExecuteAsync(int revisionId, string? reason, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
     }
 
     public interface IRejectRevisionByLecturerCommand
@@ -89,8 +89,8 @@ namespace ThesisManagement.Api.Application.Command.DefenseExecution
     {
         private readonly IDefensePeriodCommandProcessor _processor;
         public ApproveRevisionByLecturerCommand(IDefensePeriodCommandProcessor processor) => _processor = processor;
-        public Task<ApiResponse<bool>> ExecuteAsync(int revisionId, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
-            => _processor.ApproveRevisionAsync(revisionId, lecturerCode, actorUserId, idempotencyKey, cancellationToken);
+        public Task<ApiResponse<bool>> ExecuteAsync(int revisionId, string? reason, string lecturerCode, int actorUserId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
+            => _processor.ApproveRevisionAsync(revisionId, reason, lecturerCode, actorUserId, idempotencyKey, cancellationToken);
     }
 
     public class RejectRevisionByLecturerCommand : IRejectRevisionByLecturerCommand

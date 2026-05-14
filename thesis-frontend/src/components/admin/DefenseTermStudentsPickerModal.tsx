@@ -87,7 +87,7 @@ function toStudentSelection(
     studentCode: asString(record.studentCode ?? record.StudentCode),
     userCode: asString(record.userCode ?? record.UserCode),
     fullName: asString(
-      record.fullName ?? record.FullName ?? record.name ?? record.Name,
+      record.fullName || record.FullName || record.studentName || record.StudentName || record.name || record.Name || record.studentCode || record.StudentCode
     ),
     classCode: asString(record.classCode ?? record.ClassCode),
     facultyCode: asString(record.facultyCode ?? record.FacultyCode),
@@ -310,7 +310,7 @@ const DefenseTermStudentsPickerModal: React.FC<
         setRows([]);
         setAssignedRows([]);
         setTotalCount(0);
-        setError("Vui lòng chọn một đợt bảo vệ trước khi thêm sinh viên.");
+        setError("Vui lòng chọn một đợt đồ án tốt nghiệp trước khi thêm sinh viên.");
         return;
       }
 
@@ -330,6 +330,7 @@ const DefenseTermStudentsPickerModal: React.FC<
             userCode: filters.userCode,
             page,
             pageSize,
+            excludeDefenseTermId: defenseTermId ?? undefined,
           });
 
           if (cancelled) return;
@@ -452,6 +453,7 @@ const DefenseTermStudentsPickerModal: React.FC<
         userCode: filters.userCode,
         page: 1,
         pageSize: 500,
+        excludeDefenseTermId: defenseTermId ?? undefined,
       });
       const nextSelection = response.data.map(toStudentSelection);
       setSelectedCache((prev) => {

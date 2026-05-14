@@ -27,7 +27,6 @@ namespace ThesisManagement.Api.Application.Query.DefenseTermLecturers
                 item.LecturerProfileID,
                 item.LecturerCode,
                 item.UserCode,
-                item.Role,
                 item.IsPrimary,
                 item.CreatedAt,
                 item.LastUpdated);

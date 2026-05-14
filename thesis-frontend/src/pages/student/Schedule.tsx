@@ -463,7 +463,7 @@ const Schedule: React.FC = () => {
     const fetchSnapshot = async () => {
       if (!periodId) {
         setLoading(false);
-        setLoadingMessage("Bạn chưa chọn đợt bảo vệ nào hết. Mình đang chờ bạn nè.");
+        setLoadingMessage("Bạn chưa chọn đợt đồ án tốt nghiệp nào hết. Mình đang chờ bạn nè.");
         setEvents([]);
         return;
       }
@@ -1057,7 +1057,7 @@ const Schedule: React.FC = () => {
         <div className="sch-hero-meta">
           <div className="sch-pill">
             <CalendarIcon size={14} />
-            {periodId ? `Đợt #${periodId}` : "Chưa xác định đợt bảo vệ"}
+            {periodId ? `Đợt #${periodId}` : "Chưa xác định đợt đồ án tốt nghiệp"}
           </div>
           <div className="sch-pill sch-pill--soft">
             <Bell size={14} />

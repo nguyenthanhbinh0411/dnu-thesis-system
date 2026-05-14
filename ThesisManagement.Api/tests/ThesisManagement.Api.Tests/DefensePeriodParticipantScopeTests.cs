@@ -107,7 +107,6 @@ public class DefensePeriodParticipantScopeTests
                 LecturerProfileID = 1,
                 LecturerCode = "L001",
                 UserCode = "LU001",
-                Role = "Chair",
                 IsPrimary = true,
                 CreatedAt = now,
                 LastUpdated = now
@@ -119,7 +118,6 @@ public class DefensePeriodParticipantScopeTests
                 LecturerProfileID = 2,
                 LecturerCode = "L002",
                 UserCode = "LU002",
-                Role = "Secretary",
                 IsPrimary = false,
                 CreatedAt = now,
                 LastUpdated = now
@@ -131,7 +129,6 @@ public class DefensePeriodParticipantScopeTests
                 LecturerProfileID = 3,
                 LecturerCode = "L999",
                 UserCode = "LU999",
-                Role = "Chair",
                 IsPrimary = true,
                 CreatedAt = now,
                 LastUpdated = now
