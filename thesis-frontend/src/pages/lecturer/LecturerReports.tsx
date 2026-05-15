@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Sparkles,
 } from "lucide-react";
+import TablePagination from "../../components/TablePagination/TablePagination";
 import { fetchData, normalizeUrl } from "../../api/fetchData";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../../context/useToast";
@@ -230,7 +231,7 @@ const LecturerReports: React.FC = () => {
   const [numForeignReferences, setNumForeignReferences] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [grandTotal, setGrandTotal] = useState(0);
   const [activeLecturerCode, setActiveLecturerCode] = useState<string>(
@@ -1252,81 +1253,23 @@ const LecturerReports: React.FC = () => {
                 </tbody>
               </table>
             </div>
-
             {/* Pagination */}
-            {totalCount > pageSize && (
-              <div
-                style={{
-                  padding: "16px",
-                  borderTop: "1px solid #E5E7EB",
-                  background: "#F9FAFB",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+            <div style={{ background: "#F9FAFB", borderTop: "1px solid #E5E7EB" }}>
+              <TablePagination
+                totalCount={totalCount}
+                page={currentPage}
+                pageCount={Math.ceil(totalCount / pageSize)}
+                pageSize={pageSize}
+                isLoading={loading}
+                onPageChange={(nextPage) => setCurrentPage(nextPage)}
+                onPageSizeChange={(nextPageSize) => {
+                  setPageSize(nextPageSize);
+                  setCurrentPage(1);
                 }}
-              >
-                <div style={{ fontSize: "14px", color: "#666" }}>
-                  Hiển thị{" "}
-                  {Math.min((currentPage - 1) * pageSize + 1, totalCount)} -{" "}
-                  {Math.min(currentPage * pageSize, totalCount)} của{" "}
-                  {totalCount} báo cáo
-                </div>
-                <div
-                  style={{ display: "flex", gap: "8px", alignItems: "center" }}
-                >
-                  <button
-                    style={{
-                      padding: "8px 12px",
-                      background: currentPage === 1 ? "#E5E7EB" : "#F37021",
-                      color: currentPage === 1 ? "#9CA3AF" : "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      fontSize: "14px",
-                      cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                    }}
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((prev) => prev - 1)}
-                  >
-                    Trước
-                  </button>
-
-                  <span
-                    style={{
-                      fontSize: "14px",
-                      color: "#666",
-                      margin: "0 12px",
-                    }}
-                  >
-                    Trang {currentPage} / {Math.ceil(totalCount / pageSize)}
-                  </span>
-
-                  <button
-                    style={{
-                      padding: "8px 12px",
-                      background:
-                        currentPage >= Math.ceil(totalCount / pageSize)
-                          ? "#E5E7EB"
-                          : "#F37021",
-                      color:
-                        currentPage >= Math.ceil(totalCount / pageSize)
-                          ? "#9CA3AF"
-                          : "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      fontSize: "14px",
-                      cursor:
-                        currentPage >= Math.ceil(totalCount / pageSize)
-                          ? "not-allowed"
-                          : "pointer",
-                    }}
-                    disabled={currentPage >= Math.ceil(totalCount / pageSize)}
-                    onClick={() => setCurrentPage((prev) => prev + 1)}
-                  >
-                    Sau
-                  </button>
-                </div>
-              </div>
-            )}
+                totalLabel="Tổng số báo cáo:"
+                pageSizeLabel="Hiển thị:"
+              />
+            </div>
           </div>
 
           {/* Report Detail Modal */}
@@ -2296,11 +2239,59 @@ const LecturerReports: React.FC = () => {
                               </span>{" "}
                               cho mốc{" "}
                               <span style={{ color: "#3b82f6" }}>
-                               {getMilestoneDisplayName(selectedReport.milestoneCode, selectedReport.ordinal)}
+                                {getMilestoneDisplayName(selectedReport.milestoneCode, selectedReport.ordinal)}
                               </span>
                             </p>
                           </div>
                         </div>
+
+                        {/* Direct Action Button */}
+                        {normalizeLecturerState(selectedReport.lecturerState) === "PENDING" && (
+                          <button
+                            onClick={() => {
+                              setSelectedReport(null);
+                              setSelectedReportForComment(selectedReport);
+                            }}
+                            style={{
+                              marginTop: "24px",
+                              padding: "14px 24px",
+                              backgroundColor: "#F37021",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "16px",
+                              fontSize: "14px",
+                              fontWeight: "900",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "10px",
+                              width: "100%",
+                              boxShadow: "0 10px 15px -3px rgba(243, 112, 33, 0.3)",
+                              transition: "all 0.2s ease"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = "#E55A1B";
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = "#F37021";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}
+                          >
+                            {selectedReport.ordinal === 4 || selectedReport.milestoneCode === "MS_FULL" ? (
+                              <>
+                                <CheckCircle size={18} />
+                                <span>Chấm điểm ngay</span>
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare size={18} />
+                                <span>Nhận xét báo cáo</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2309,494 +2300,352 @@ const LecturerReports: React.FC = () => {
             </div>
           )}
 
-          {/* Comment Modal */}
+          {/* --- PREMIUM EVALUATION MODAL (MATCHING RENAME TOPIC STYLE) --- */}
           {selectedReportForComment && (
             <div
               style={{
                 position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: "rgba(0,0,0,0.5)",
+                inset: 0,
+                zIndex: 2000,
+                background: "rgba(15, 23, 42, 0.4)",
+                backdropFilter: "blur(12px)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                zIndex: 1000,
+                padding: "24px",
+                animation: "evalFadeIn 0.3s ease-out",
               }}
               onClick={() => setSelectedReportForComment(null)}
             >
+              <style>{`
+                @keyframes evalFadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
+                @keyframes evalSlideIn {
+                  from { transform: translateY(20px) scale(0.98); opacity: 0; }
+                  to { transform: translateY(0) scale(1); opacity: 1; }
+                }
+                .eval-modal-card {
+                  animation: evalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+                .eval-custom-scrollbar::-webkit-scrollbar {
+                  width: 6px;
+                }
+                .eval-custom-scrollbar::-webkit-scrollbar-track {
+                  background: transparent;
+                }
+                .eval-custom-scrollbar::-webkit-scrollbar-thumb {
+                  background: #e2e8f0;
+                  border-radius: 3px;
+                }
+                .eval-input-focus:focus {
+                  border-color: #F37021 !important;
+                  box-shadow: 0 0 0 4px rgba(243, 112, 33, 0.1) !important;
+                  background: white !important;
+                }
+              `}</style>
+              
               <div
+                className="eval-modal-card"
                 style={{
-                  background: "white",
-                  borderRadius: "12px",
-                  padding: "32px",
-                  maxWidth: "600px",
-                  width: "90%",
-                  maxHeight: "80vh",
-                  overflow: "auto",
+                  width: "min(1200px, 100%)",
+                  height: "min(850px, 92vh)",
+                  background: "rgba(255, 255, 255, 0.98)",
+                  borderRadius: "32px",
+                  boxShadow: "0 40px 100px -20px rgba(0, 0, 0, 0.2)",
+                  display: "grid",
+                  gridTemplateColumns: "350px 1fr",
+                  overflow: "hidden",
+                  border: "1px solid rgba(255, 255, 255, 0.5)",
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <h2
+                {/* --- LEFT SIDEBAR (DARK PREMIUM) --- */}
+                <div
                   style={{
-                    fontSize: "20px",
-                    fontWeight: "600",
-                    color: "#1a1a1a",
-                    marginBottom: "16px",
+                    background: "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)",
+                    padding: "48px 32px",
+                    color: "white",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "40px",
+                    overflowY: "auto",
+                    position: "relative",
                   }}
+                  className="eval-custom-scrollbar"
                 >
-                  Nhận xét báo cáo
-                </h2>
+                  {/* Decorative Background Elements */}
+                  <div style={{ position: "absolute", top: "-50px", right: "-50px", width: "200px", height: "200px", background: "rgba(243, 112, 33, 0.05)", borderRadius: "50%", filter: "blur(60px)" }} />
+                  <div style={{ position: "absolute", bottom: "-30px", left: "-30px", width: "150px", height: "150px", background: "rgba(30, 58, 138, 0.1)", borderRadius: "50%", filter: "blur(50px)" }} />
 
-                {/* Report Info */}
-                <div style={{ marginBottom: "24px" }}>
-                  <div
-                    style={{
-                      background: "#F9FAFB",
-                      borderRadius: "8px",
-                      padding: "16px",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <h3
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: "#1a1a1a",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      {selectedReportForComment.reportTitle ||
-                        "Báo cáo chưa có tiêu đề"}
-                    </h3>
-                    <div style={{ fontSize: "14px", color: "#666" }}>
-                      <strong>Sinh viên:</strong>{" "}
-                      {studentProfiles[selectedReportForComment.studentUserCode]
-                        ?.fullName ||
-                        selectedReportForComment.studentUserCode}{" "}
-                      (
-                      {studentProfiles[selectedReportForComment.studentUserCode]
-                        ?.studentCode ||
-                        selectedReportForComment.studentUserCode}
-                      )
-                      <br />
-                      <strong>Đề tài:</strong>{" "}
-                      {topics[selectedReportForComment.studentUserCode]
-                        ?.title || "N/A"}
+                  {/* Header in Sidebar */}
+                  <div style={{ position: "relative" }}>
+                    <div style={{ 
+                      width: "56px", 
+                      height: "56px", 
+                      background: "linear-gradient(135deg, #F37021 0%, #E55A1B 100%)", 
+                      borderRadius: "18px", 
+                      display: "flex", 
+                      alignItems: "center", 
+                      justifyContent: "center",
+                      marginBottom: "20px",
+                      boxShadow: "0 10px 20px -5px rgba(243, 112, 33, 0.4)"
+                    }}>
+                      <FileText size={28} color="white" />
+                    </div>
+                    <h2 style={{ fontSize: "24px", fontWeight: "900", letterSpacing: "-0.03em", marginBottom: "8px" }}>Nhận xét</h2>
+                    <p style={{ fontSize: "14px", color: "#94a3b8", lineHeight: "1.6" }}>
+                      Đánh giá tiến độ và phản hồi cho sinh viên thực hiện đề tài.
+                    </p>
+                  </div>
+
+                  {/* Info Section Cards */}
+                  <div style={{ display: "grid", gap: "24px", position: "relative" }}>
+                    {/* Report Card */}
+                    <div style={{ 
+                      padding: "24px", 
+                      background: "rgba(255, 255, 255, 0.04)", 
+                      borderRadius: "24px", 
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      backdropFilter: "blur(10px)"
+                    }}>
+                      <div style={{ fontSize: "11px", fontWeight: "900", color: "#F37021", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "4px", height: "12px", background: "#F37021", borderRadius: "2px" }} />
+                        Thông tin báo cáo
+                      </div>
+                      
+                      <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#f8fafc", marginBottom: "6px", lineHeight: "1.4" }}>
+                        {selectedReportForComment.reportTitle || "Báo cáo tiến độ"}
+                      </h3>
+                      <div style={{ 
+                        fontSize: "13px", 
+                        color: "#94a3b8", 
+                        background: "rgba(255,255,255,0.05)", 
+                        padding: "6px 12px", 
+                        borderRadius: "8px",
+                        display: "inline-block"
+                      }}>
+                        {getMilestoneDisplayName(selectedReportForComment.milestoneCode, selectedReportForComment.ordinal)}
+                      </div>
+                    </div>
+
+                    {/* Student Card */}
+                    <div style={{ 
+                      padding: "24px", 
+                      background: "linear-gradient(135deg, rgba(243, 112, 33, 0.1) 0%, rgba(243, 112, 33, 0.02) 100%)", 
+                      borderRadius: "24px", 
+                      border: "1px solid rgba(243, 112, 33, 0.15)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "16px"
+                    }}>
+                      <div style={{ fontSize: "11px", fontWeight: "900", color: "#F37021", textTransform: "uppercase", letterSpacing: "0.15em", display: "flex", alignItems: "center", gap: "8px" }}>
+                        <User size={12} />
+                        Sinh viên thực hiện
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                        <div style={{ 
+                          width: "52px", 
+                          height: "52px", 
+                          borderRadius: "16px", 
+                          background: "white", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+                        }}>
+                          <span style={{ fontSize: "20px", fontWeight: "900", color: "#F37021" }}>
+                            {(studentProfiles[selectedReportForComment.studentUserCode]?.fullName || "S").charAt(0)}
+                          </span>
+                        </div>
+                        <div style={{ display: "grid", gap: "2px" }}>
+                          <div style={{ fontSize: "16px", fontWeight: "800", color: "white" }}>
+                            {studentProfiles[selectedReportForComment.studentUserCode]?.fullName}
+                          </div>
+                          <div style={{ fontSize: "13px", color: "#94a3b8", fontWeight: "500" }}>
+                            MSSV: {studentProfiles[selectedReportForComment.studentUserCode]?.studentCode}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Comment Form */}
-                <div style={{ display: "grid", gap: "16px" }}>
-                  {/* AI Analysis Integration in Comment Modal */}
-                  <div style={{ 
-                    background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)", 
-                    padding: "16px", 
-                    borderRadius: "16px", 
-                    border: "1px solid #fed7aa",
-                    marginBottom: "8px"
-                  }}>
-                    {!aiResults[selectedReportForComment.submissionID] ? (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <Sparkles size={16} color="#f37021" />
-                          <span style={{ fontSize: "12px", fontWeight: "800", color: "#c2410c" }}>AI Hỗ trợ nhận xét</span>
-                        </div>
-                        <button
-                          onClick={() => void handleAiAnalysis(selectedReportForComment)}
-                          disabled={aiLoadingId === selectedReportForComment.submissionID}
-                          style={{
-                            padding: "6px 12px",
-                            borderRadius: "8px",
-                            border: "none",
-                            background: "#f37021",
-                            color: "white",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            cursor: "pointer"
-                          }}
-                        >
-                          {aiLoadingId === selectedReportForComment.submissionID ? "Đang phân tích..." : "Tóm tắt & Gợi ý"}
-                        </button>
+                {/* --- RIGHT CONTENT AREA --- */}
+                <div style={{ display: "flex", flexDirection: "column", background: "#f8fafc", height: "100%", overflow: "hidden" }}>
+                  {/* Header */}
+                  <div style={{ padding: "24px 40px", background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+                    <div>
+                      <h2 style={{ fontSize: "18px", fontWeight: "800", color: "#0f172a" }}>Đánh giá & Chấm điểm</h2>
+                      <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>Topic: {topics[selectedReportForComment.studentUserCode]?.title}</div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedReportForComment(null)}
+                      style={{ padding: "8px", borderRadius: "12px", border: "none", background: "#f1f5f9", cursor: "pointer", color: "#64748b" }}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div 
+                    style={{ flex: 1, padding: "40px", overflowY: "auto", display: "grid", gap: "32px", alignContent: "start" }}
+                    className="eval-custom-scrollbar"
+                  >
+                    {/* Primary Comment Section */}
+                    <div style={{ background: "white", borderRadius: "24px", padding: "32px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.02)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+                        <MessageSquare size={18} color="#F37021" />
+                        <span style={{ fontSize: "14px", fontWeight: "900", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>Nhận xét chung</span>
                       </div>
-                    ) : (
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                          <Sparkles size={16} color="#f37021" />
-                          <span style={{ fontSize: "11px", fontWeight: "900", color: "#c2410c", textTransform: "uppercase" }}>AI Insight</span>
-                          <span style={{ 
-                            marginLeft: "auto", 
-                            fontSize: "10px", 
-                            fontWeight: "800",
-                            color: aiResults[selectedReportForComment.submissionID].riskLevel === "Cao" ? "#dc2626" : "#d97706"
-                          }}>
-                            Rủi ro: {aiResults[selectedReportForComment.submissionID].riskLevel}
-                          </span>
+                      <textarea
+                        className="eval-input-focus"
+                        value={lecturerComment}
+                        onChange={(e) => setLecturerComment(e.target.value)}
+                        placeholder="Nhập nội dung nhận xét hoặc góp ý cho sinh viên..."
+                        style={{
+                          width: "100%",
+                          minHeight: "150px",
+                          padding: "20px",
+                          borderRadius: "16px",
+                          border: "2px solid #e2e8f0",
+                          background: "#f8fafc",
+                          fontSize: "15px",
+                          fontWeight: "500",
+                          color: "#1e293b",
+                          outline: "none",
+                          transition: "all 0.2s ease",
+                          resize: "none"
+                        }}
+                      />
+                    </div>
+
+                    {/* Detailed Evaluation for Milestone 4 */}
+                    {(selectedReportForComment.ordinal === 4 || selectedReportForComment.milestoneCode === "MS_FULL") && (
+                      <div style={{ background: "white", borderRadius: "24px", padding: "32px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.02)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "24px", paddingBottom: "16px", borderBottom: "1px solid #f1f5f9" }}>
+                          <CheckCircle size={18} color="#F37021" />
+                          <span style={{ fontSize: "14px", fontWeight: "900", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>Đánh giá chi tiết mốc hoàn thiện</span>
                         </div>
-                        <p style={{ fontSize: "12px", color: "#475569", lineHeight: "1.5", marginBottom: "12px" }}>
-                          {aiResults[selectedReportForComment.submissionID].summary}
-                        </p>
-                        <div style={{ background: "white", padding: "10px", borderRadius: "8px", border: "1px solid #fff7ed" }}>
-                          <div style={{ fontSize: "10px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", marginBottom: "4px" }}>Gợi ý:</div>
-                          <div style={{ fontSize: "12px", color: "#334155", fontStyle: "italic" }}>
-                            "{aiResults[selectedReportForComment.submissionID].suggestedFeedback}"
+
+                        {/* Grading & Word Score */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "32px" }}>
+                          <div>
+                            <label style={{ fontSize: "12px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "8px", textTransform: "uppercase" }}>Điểm hướng dẫn (0-10)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="10"
+                              className="eval-input-focus"
+                              value={score}
+                              onChange={(e) => setScore(e.target.value)}
+                              style={{ width: "100%", padding: "14px 18px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "16px", fontWeight: "800", color: "#F37021", outline: "none" }}
+                            />
                           </div>
-                          <button
-                            onClick={() => setLecturerComment(aiResults[selectedReportForComment.submissionID].suggestedFeedback)}
-                            style={{
-                              marginTop: "8px",
-                              padding: "4px 8px",
-                              background: "#f8fafc",
-                              border: "1px solid #e2e8f0",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              fontWeight: "700",
-                              color: "#64748b",
-                              cursor: "pointer"
-                            }}
-                          >
-                            Dùng gợi ý này
-                          </button>
+                          <div>
+                            <label style={{ fontSize: "12px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "8px", textTransform: "uppercase" }}>Điểm bằng chữ</label>
+                            <input
+                              type="text"
+                              className="eval-input-focus"
+                              value={scoreInWords}
+                              onChange={(e) => setScoreInWords(e.target.value)}
+                              placeholder="Ví dụ: Tám phẩy không"
+                              style={{ width: "100%", padding: "14px 18px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "15px", fontWeight: "600", color: "#1e293b", outline: "none" }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Detailed Text Areas */}
+                        <div style={{ display: "grid", gap: "20px" }}>
+                          {[
+                            { label: "Về chất lượng đề tài", value: reviewQuality, setter: setReviewQuality },
+                            { label: "Về thái độ, ý thức sinh viên", value: reviewAttitude, setter: setReviewAttitude },
+                            { label: "Về năng lực làm việc độc lập", value: reviewCapability, setter: setReviewCapability },
+                            { label: "Về năng lực xử lý/biện luận", value: reviewResultProcessing, setter: setReviewResultProcessing },
+                            { label: "Những thành công đạt được", value: reviewAchievements, setter: setReviewAchievements },
+                            { label: "Những hạn chế của đồ án", value: reviewLimitations, setter: setReviewLimitations },
+                            { label: "Kết luận (Đồng ý bảo vệ?)", value: reviewConclusion, setter: setReviewConclusion },
+                          ].map((item) => (
+                            <div key={item.label}>
+                              <label style={{ fontSize: "11px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "6px", textTransform: "uppercase" }}>{item.label}</label>
+                              <textarea
+                                className="eval-input-focus"
+                                value={item.value}
+                                onChange={(e) => item.setter(e.target.value)}
+                                style={{ width: "100%", minHeight: "80px", padding: "12px 16px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "14px", fontWeight: "500", outline: "none", resize: "none" }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Statistical Inputs */}
+                        <div style={{ marginTop: "32px", paddingTop: "24px", borderTop: "1px solid #f1f5f9" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", marginBottom: "16px" }}>Thông số kỹ thuật</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "16px" }}>
+                            {[
+                              { label: "Số chương", value: numChapters, setter: setNumChapters },
+                              { label: "Số trang", value: numPages, setter: setNumPages },
+                              { label: "Số bảng", value: numTables, setter: setNumTables },
+                              { label: "Số hình", value: numFigures, setter: setNumFigures },
+                              { label: "Tổng TL tham khảo", value: numReferences, setter: setNumReferences },
+                              { label: "TL Tiếng Việt", value: numVnReferences, setter: setNumVnReferences },
+                              { label: "TL Nước ngoài", value: numForeignReferences, setter: setNumForeignReferences },
+                            ].map((item) => (
+                              <div key={item.label}>
+                                <label style={{ fontSize: "10px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "4px" }}>{item.label}</label>
+                                <input
+                                  type="number"
+                                  className="eval-input-focus"
+                                  value={item.value}
+                                  onChange={(e) => item.setter(e.target.value)}
+                                  style={{ width: "100%", padding: "10px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "13px", fontWeight: "700", textAlign: "center", outline: "none" }}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}
-                  </div>
 
-                  <div>
-                    <label
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        color: "#666",
-                        textTransform: "uppercase",
-                        display: "block",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      Nhận xét
-                    </label>
-                    <textarea
-                      value={lecturerComment}
-                      onChange={(e) => setLecturerComment(e.target.value)}
-                      placeholder="Nhập nhận xét của bạn..."
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        border: "1px solid #D1D5DB",
-                        borderRadius: "6px",
-                        fontSize: "14px",
-                        minHeight: "100px",
-                        resize: "vertical",
-                      }}
-                    />
-                  </div>
-
-                  {(selectedReportForComment.ordinal === 4 ||
-                    selectedReportForComment.milestoneCode === "MS_FULL") && (
-                    <div
-                      style={{
-                        background: "#FFF7ED",
-                        border: "1px solid #FFEDD5",
-                        borderRadius: "10px",
-                        padding: "20px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "20px",
-                      }}
-                    >
-                      <h4
-                        style={{
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          color: "#9A3412",
-                          textTransform: "uppercase",
-                          margin: 0,
-                          borderBottom: "1px solid #FED7AA",
-                          paddingBottom: "8px",
-                        }}
-                      >
-                        Phiếu đánh giá chi tiết (Mốc 4)
-                      </h4>
-
-                      {/* Score Section */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "16px",
-                        }}
-                      >
-                        <div>
-                          <label
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              color: "#C2410C",
-                              display: "block",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Điểm hướng dẫn (0-10)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            max="10"
-                            value={score}
-                            onChange={(e) => setScore(e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              border: "1px solid #FDBA74",
-                              borderRadius: "6px",
-                              fontSize: "14px",
-                              fontWeight: "600",
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              color: "#C2410C",
-                              display: "block",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            Điểm bằng chữ
-                          </label>
-                          <input
-                            type="text"
-                            value={scoreInWords}
-                            onChange={(e) => setScoreInWords(e.target.value)}
-                            placeholder="Ví dụ: Tám phẩy không"
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              border: "1px solid #FDBA74",
-                              borderRadius: "6px",
-                              fontSize: "14px",
-                            }}
-                          />
-                        </div>
+                    {/* Status & Feedback Level */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+                      <div style={{ background: "white", borderRadius: "24px", padding: "24px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ fontSize: "12px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "12px", textTransform: "uppercase" }}>Trạng thái phê duyệt</label>
+                        <select
+                          className="eval-input-focus"
+                          value={lecturerState}
+                          onChange={(e) => setLecturerState(e.target.value)}
+                          style={{ width: "100%", padding: "14px 18px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "14px", fontWeight: "600", outline: "none", cursor: "pointer" }}
+                        >
+                          <option value="">Chọn trạng thái</option>
+                          <option value="APPROVED">Duyệt (Đạt)</option>
+                          <option value="REVISION_REQUIRED">Yêu cầu sửa đổi (Chưa đạt)</option>
+                        </select>
                       </div>
 
-                      {/* Reviews Section */}
-                      <div
-                        style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-                      >
-                        {[
-                          {
-                            label: "Về chất lượng đề tài",
-                            value: reviewQuality,
-                            setter: setReviewQuality,
-                          },
-                          {
-                            label: "Về thái độ, ý thức của sinh viên",
-                            value: reviewAttitude,
-                            setter: setReviewAttitude,
-                          },
-                          {
-                            label: "Về năng lực làm việc độc lập...",
-                            value: reviewCapability,
-                            setter: setReviewCapability,
-                          },
-                          {
-                            label: "Về năng lực xử lý/biện luận kết quả",
-                            value: reviewResultProcessing,
-                            setter: setReviewResultProcessing,
-                          },
-                          {
-                            label: "Những thành công đạt được",
-                            value: reviewAchievements,
-                            setter: setReviewAchievements,
-                          },
-                          {
-                            label: "Những hạn chế của đồ án",
-                            value: reviewLimitations,
-                            setter: setReviewLimitations,
-                          },
-                          {
-                            label: "Kết luận (Đồng ý bảo vệ hay không)",
-                            value: reviewConclusion,
-                            setter: setReviewConclusion,
-                          },
-                        ].map((item) => (
-                          <div key={item.label}>
-                            <label
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "600",
-                                color: "#C2410C",
-                                display: "block",
-                                marginBottom: "4px",
-                              }}
-                            >
-                              {item.label}
-                            </label>
-                            <textarea
-                              value={item.value}
-                              onChange={(e) => item.setter(e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "8px",
-                                border: "1px solid #FDBA74",
-                                borderRadius: "6px",
-                                fontSize: "13px",
-                                minHeight: "60px",
-                              }}
-                            />
-                          </div>
-                        ))}
+                      <div style={{ background: "white", borderRadius: "24px", padding: "24px", border: "1px solid #e2e8f0" }}>
+                        <label style={{ fontSize: "12px", fontWeight: "800", color: "#64748b", display: "block", marginBottom: "12px", textTransform: "uppercase" }}>Cấp độ phản hồi</label>
+                        <select
+                          className="eval-input-focus"
+                          value={feedbackLevel}
+                          onChange={(e) => setFeedbackLevel(e.target.value)}
+                          style={{ width: "100%", padding: "14px 18px", borderRadius: "16px", border: "2px solid #e2e8f0", background: "#f8fafc", fontSize: "14px", fontWeight: "600", outline: "none", cursor: "pointer" }}
+                        >
+                          <option value="">Chọn cấp độ</option>
+                          <option value="High">Cao (Quan trọng)</option>
+                          <option value="Normal">Bình thường</option>
+                          <option value="Moderate">Trung bình</option>
+                          <option value="Low">Thấp (Gợi ý)</option>
+                        </select>
                       </div>
-
-                      {/* Stats Section */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(4, 1fr)",
-                          gap: "12px",
-                        }}
-                      >
-                        {[
-                          {
-                            label: "Số chương",
-                            value: numChapters,
-                            setter: setNumChapters,
-                          },
-                          { label: "Số trang", value: numPages, setter: setNumPages },
-                          { label: "Số bảng", value: numTables, setter: setNumTables },
-                          { label: "Số hình", value: numFigures, setter: setNumFigures },
-                          {
-                            label: "Tổng TL tham khảo",
-                            value: numReferences,
-                            setter: setNumReferences,
-                          },
-                          {
-                            label: "TL Tiếng Việt",
-                            value: numVnReferences,
-                            setter: setNumVnReferences,
-                          },
-                          {
-                            label: "TL Nước ngoài",
-                            value: numForeignReferences,
-                            setter: setNumForeignReferences,
-                          },
-                        ].map((item) => (
-                          <div key={item.label}>
-                            <label
-                              style={{
-                                fontSize: "11px",
-                                fontWeight: "600",
-                                color: "#C2410C",
-                                display: "block",
-                                marginBottom: "2px",
-                              }}
-                            >
-                              {item.label}
-                            </label>
-                            <input
-                              type="number"
-                              value={item.value}
-                              onChange={(e) => item.setter(e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "6px",
-                                border: "1px solid #FDBA74",
-                                borderRadius: "4px",
-                                fontSize: "12px",
-                              }}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: "16px",
-                    }}
-                  >
-                    <div>
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#666",
-                          textTransform: "uppercase",
-                          display: "block",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Trạng thái
-                      </label>
-                      <select
-                        value={lecturerState}
-                        onChange={(e) => setLecturerState(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "12px",
-                          border: "1px solid #D1D5DB",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          background: "white",
-                        }}
-                      >
-                        <option value="">Chọn trạng thái</option>
-                        <option value="APPROVED">Duyệt</option>
-                        <option value="REVISION_REQUIRED">Yêu cầu sửa đổi</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          color: "#666",
-                          textTransform: "uppercase",
-                          display: "block",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Cấp độ phản hồi
-                      </label>
-                      <select
-                        value={feedbackLevel}
-                        onChange={(e) => setFeedbackLevel(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "12px",
-                          border: "1px solid #D1D5DB",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          background: "white",
-                        }}
-                      >
-                        <option value="">Chọn cấp độ</option>
-                        <option value="High">Cao</option>
-                        <option value="Normal">Bình thường</option>
-                        <option value="Moderate">Trung bình</option>
-                        <option value="Low">Thấp</option>
-                      </select>
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "12px",
-                      justifyContent: "flex-end",
-                      marginTop: "24px",
-                    }}
-                  >
+                  {/* Footer */}
+                  <div style={{ padding: "24px 40px", background: "white", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", gap: "16px" }}>
                     <button
                       onClick={() => {
                         setSelectedReportForComment(null);
@@ -2805,35 +2654,37 @@ const LecturerReports: React.FC = () => {
                         setFeedbackLevel("");
                         setScore("");
                       }}
-                      style={{
-                        padding: "12px 24px",
-                        background: "#6B7280",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                      }}
+                      style={{ padding: "12px 28px", borderRadius: "16px", border: "none", background: "#f1f5f9", color: "#475569", fontSize: "14px", fontWeight: "800", cursor: "pointer", transition: "all 0.2s ease" }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "#e2e8f0"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "#f1f5f9"}
                     >
-                      Hủy
+                      Đóng
                     </button>
                     <button
                       onClick={handleSubmitComment}
                       disabled={submitting || !lecturerState}
-                      style={{
-                        padding: "12px 24px",
-                        background: "#F37021",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        cursor: submitting ? "not-allowed" : "pointer",
-                        opacity: submitting ? 0.6 : 1,
+                      style={{ 
+                        padding: "12px 28px", 
+                        borderRadius: "16px", 
+                        border: "none", 
+                        background: "#F37021", 
+                        color: "white", 
+                        fontSize: "14px", 
+                        fontWeight: "800", 
+                        cursor: (submitting || !lecturerState) ? "not-allowed" : "pointer", 
+                        transition: "all 0.3s ease",
+                        boxShadow: "0 10px 15px -3px rgba(243, 112, 33, 0.3)",
+                        opacity: (submitting || !lecturerState) ? 0.6 : 1
                       }}
+                      onMouseEnter={(e) => !submitting && (e.currentTarget.style.transform = "translateY(-2px)")}
+                      onMouseLeave={(e) => !submitting && (e.currentTarget.style.transform = "translateY(0)")}
                     >
-                      {submitting ? "Đang gửi..." : "Gửi nhận xét"}
+                      {submitting ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div style={{ width: "14px", height: "14px", border: "2px solid white", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                          Đang xử lý...
+                        </div>
+                      ) : "Hoàn tất đánh giá"}
                     </button>
                   </div>
                 </div>

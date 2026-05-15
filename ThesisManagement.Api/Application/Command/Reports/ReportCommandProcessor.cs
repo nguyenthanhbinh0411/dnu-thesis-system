@@ -53,18 +53,18 @@ namespace ThesisManagement.Api.Application.Command.Reports
             if (IsPendingTopic(topic.Status))
                 return OperationResult<StudentProgressSubmitResultDto>.Failed("Topic is pending approval", 409);
 
+            var milestone = await _uow.ProgressMilestones.Query().FirstOrDefaultAsync(x => x.MilestoneCode == payload.MilestoneCode && x.TopicCode == payload.TopicCode);
+            if (milestone == null)
+                return OperationResult<StudentProgressSubmitResultDto>.Failed("Milestone not found", 404);
+
             var latestSubmissionForMilestone = await _uow.ProgressSubmissions.Query()
-                .Where(x => x.StudentUserCode == payload.StudentUserCode && x.MilestoneCode == payload.MilestoneCode)
+                .Where(x => x.StudentUserCode == payload.StudentUserCode && x.MilestoneID == milestone.MilestoneID)
                 .OrderByDescending(x => x.SubmittedAt)
                 .ThenByDescending(x => x.SubmissionID)
                 .FirstOrDefaultAsync();
 
             if (latestSubmissionForMilestone != null && IsPendingLecturerState(latestSubmissionForMilestone.LecturerState))
                 return OperationResult<StudentProgressSubmitResultDto>.Failed("Latest submission for this milestone is still pending review", 409);
-
-            var milestone = await _uow.ProgressMilestones.Query().FirstOrDefaultAsync(x => x.MilestoneCode == payload.MilestoneCode && x.TopicCode == payload.TopicCode);
-            if (milestone == null)
-                return OperationResult<StudentProgressSubmitResultDto>.Failed("Milestone not found", 404);
 
             var studentUser = await _uow.Users.Query()
                 .Where(x => x.UserCode == payload.StudentUserCode)
@@ -294,12 +294,11 @@ namespace ThesisManagement.Api.Application.Command.Reports
 
             if (currentMilestone == null) return;
 
-            // 1. Mark current milestone as Completed
-            currentMilestone.State = "Completed";
-            currentMilestone.LastUpdated = DateTime.UtcNow;
+            var currentOrdinal = currentMilestone.Ordinal ?? 0;
+            var topicId = currentMilestone.TopicID;
 
-            // Set completion time based on ordinal
-            switch (currentMilestone.Ordinal)
+            // 1. Update completion time for the current ordinal
+            switch (currentOrdinal)
             {
                 case 1: currentMilestone.CompletedAt1 = DateTime.UtcNow; break;
                 case 2: currentMilestone.CompletedAt2 = DateTime.UtcNow; break;
@@ -308,14 +307,12 @@ namespace ThesisManagement.Api.Application.Command.Reports
                 case 5: currentMilestone.CompletedAt5 = DateTime.UtcNow; break;
             }
 
-            _uow.ProgressMilestones.Update(currentMilestone);
-
-            var currentOrdinal = currentMilestone.Ordinal ?? 0;
-            var topicId = currentMilestone.TopicID;
+            currentMilestone.LastUpdated = DateTime.UtcNow;
 
             // 2. Handle Final Milestone (Ordinal 4 - MS_FULL)
             if (currentOrdinal == 4 || currentMilestone.MilestoneTemplateCode == "MS_FULL")
             {
+                currentMilestone.State = "Completed";
                 var topic = await _uow.Topics.GetByIdAsync(topicId);
                 if (topic != null)
                 {
@@ -346,7 +343,7 @@ namespace ThesisManagement.Api.Application.Command.Reports
                     _uow.Topics.Update(topic);
                 }
             }
-            // 3. Handle transition to next milestone
+            // 3. Handle transition to next milestone within the SAME record
             else if (currentOrdinal < 4)
             {
                 var nextOrdinal = currentOrdinal + 1;
@@ -355,34 +352,14 @@ namespace ThesisManagement.Api.Application.Command.Reports
 
                 if (nextTemplate != null)
                 {
-                    var nextMilestone = await _uow.ProgressMilestones.Query()
-                        .FirstOrDefaultAsync(x => x.TopicID == topicId && x.Ordinal == nextOrdinal);
-
-                    if (nextMilestone == null)
-                    {
-                        nextMilestone = new ProgressMilestone
-                        {
-                            MilestoneID = await GetNextProgressMilestoneIdAsync(),
-                            MilestoneCode = await GenerateMilestoneCodeAsync(),
-                            TopicID = topicId,
-                            TopicCode = currentMilestone.TopicCode,
-                            MilestoneTemplateCode = nextTemplate.MilestoneTemplateCode,
-                            Ordinal = nextOrdinal,
-                            Deadline = nextTemplate.Deadline,
-                            State = "Pending", // Initially Pending, Lazy Update will move to In Progress
-                            CreatedAt = DateTime.UtcNow,
-                            LastUpdated = DateTime.UtcNow
-                        };
-                        await _uow.ProgressMilestones.AddAsync(nextMilestone);
-                    }
-                    else if (nextMilestone.State != "Completed")
-                    {
-                        nextMilestone.State = "Pending";
-                        nextMilestone.LastUpdated = DateTime.UtcNow;
-                        _uow.ProgressMilestones.Update(nextMilestone);
-                    }
+                    currentMilestone.Ordinal = nextOrdinal;
+                    currentMilestone.MilestoneTemplateCode = nextTemplate.MilestoneTemplateCode;
+                    currentMilestone.State = "Pending"; // Or "In Progress"
+                    currentMilestone.Deadline = nextTemplate.Deadline;
                 }
             }
+
+            _uow.ProgressMilestones.Update(currentMilestone);
 
             await _uow.SaveChangesAsync();
         }

@@ -197,7 +197,8 @@ namespace ThesisManagement.Api.Application.Query.Reports
             var totalCount = await query.CountAsync();
 
             var submissions = await query
-                .OrderByDescending(x => x.SubmittedAt)
+                .OrderBy(x => (x.LecturerState == null || x.LecturerState == "" || x.LecturerState == "PENDING" || x.LecturerState == "CHO_DUYET") ? 0 : 1)
+                .ThenByDescending(x => x.SubmittedAt)
                 .ThenByDescending(x => x.SubmissionID)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)

@@ -42,7 +42,7 @@ interface Student {
   topicTitle: string;
   topicCode: string;
   registrationDate: string;
-  status: "approved" | "pending" | "defense-ready" | "committee-assigned";
+  status: "approved" | "pending" | "defense-ready" | "committee-assigned" | "post-defense";
   progress: number;
   lastActivity: string;
   topic: Topic;
@@ -138,14 +138,23 @@ const LecturerStudents: React.FC = () => {
         return "pending";
       case "đủ điều kiện bảo vệ":
       case "waitingforcommittee":
+        return "defense-ready";
       case "cần sửa đổi":
       case "revision":
         return "approved";
       case "đã phân hội đồng":
       case "phân hội đồng":
+        return "committee-assigned";
+      case "đã bảo vệ":
+      case "hậu bảo vệ":
+      case "đã chốt":
+      case "finalized":
+      case "completed":
+      case "đã hoàn thành":
+        return "post-defense";
       case "từ chối":
       case "rejected":
-        return "committee-assigned";
+        return "pending";
       default:
         return "pending";
     }
@@ -303,6 +312,8 @@ const LecturerStudents: React.FC = () => {
         return <CheckCircle size={16} color="#10B981" />;
       case "committee-assigned":
         return <BookOpen size={16} color="#3B82F6" />;
+      case "post-defense":
+        return <Archive size={16} color="#F37021" />;
       default:
         return <Clock size={16} color="#6B7280" />;
     }
@@ -318,6 +329,8 @@ const LecturerStudents: React.FC = () => {
         return "Đủ điều kiện bảo vệ";
       case "committee-assigned":
         return "Đã phân hội đồng";
+      case "post-defense":
+        return "Hậu bảo vệ";
       default:
         return "Không xác định";
     }
@@ -330,9 +343,11 @@ const LecturerStudents: React.FC = () => {
       case "pending":
         return "#F59E0B";
       case "defense-ready":
-        return "#8B5CF6";
+        return "#10B981";
       case "committee-assigned":
         return "#3B82F6";
+      case "post-defense":
+        return "#F37021";
       default:
         return "#6B7280";
     }
@@ -582,6 +597,7 @@ const LecturerStudents: React.FC = () => {
                     <option value="approved">Đã duyệt</option>
                     <option value="defense-ready">Đủ điều kiện bảo vệ</option>
                     <option value="committee-assigned">Đã phân hội đồng</option>
+                    <option value="post-defense">Hậu bảo vệ</option>
                   </select>
                 </div>
 

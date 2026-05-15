@@ -272,7 +272,10 @@ namespace ThesisManagement.Api.Application.Command.Workflows
                     milestone.Ordinal = 2;
                     milestone.CompletedAt1 = DateTime.UtcNow;
                 }
-                milestone.State = targetState;
+                else
+                {
+                    milestone.State = targetState;
+                }
                 milestone.LastUpdated = DateTime.UtcNow;
                 _uow.ProgressMilestones.Update(milestone);
             }
