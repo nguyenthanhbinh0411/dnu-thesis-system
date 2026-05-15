@@ -6,6 +6,7 @@ using ThesisManagement.Api.Data;
 using ThesisManagement.Api.DTOs.DefensePeriods;
 using ThesisManagement.Api.Models;
 using ThesisManagement.Api.Services.FileStorage;
+using ThesisManagement.Api.Application.Command.Notifications;
 
 namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
 {
@@ -14,6 +15,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
         Task ApproveRevisionAsync(int revisionId, string lecturerCode, int actorUserId, CancellationToken cancellationToken = default);
         Task RejectRevisionAsync(int revisionId, string reason, string lecturerCode, int actorUserId, CancellationToken cancellationToken = default);
         Task SubmitStudentRevisionAsync(StudentRevisionSubmissionDto request, string studentCode, int actorUserId, CancellationToken cancellationToken = default);
+        Task ReviewBySecretaryAsync(int revisionId, string action, string? comment, string secretaryUserCode, int actorUserId, DateTime? newDeadline = null, CancellationToken cancellationToken = default);
     }
 
     public sealed class DefenseRevisionWorkflowService : IDefenseRevisionWorkflowService
@@ -23,18 +25,21 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
         private readonly IDefenseAuditTrailService _auditTrail;
         private readonly DefenseRevisionQuorumOptions _quorumOptions;
         private readonly IFileStorageService _storageService;
+        private readonly INotificationEventPublisher _notificationPublisher;
 
         public DefenseRevisionWorkflowService(
             ApplicationDbContext db,
             ThesisManagement.Api.Services.IUnitOfWork uow,
             IDefenseAuditTrailService auditTrail,
             IFileStorageService storageService,
+            INotificationEventPublisher notificationPublisher,
             IOptions<DefenseRevisionQuorumOptions> quorumOptions)
         {
             _db = db;
             _uow = uow;
             _auditTrail = auditTrail;
             _storageService = storageService;
+            _notificationPublisher = notificationPublisher;
             _quorumOptions = quorumOptions.Value;
         }
 
@@ -89,13 +94,26 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     revision = new DefenseRevision
                     {
                         AssignmentId = request.AssignmentId,
+                        Status = RevisionStatus.WaitingStudent,
+                        SubmissionCount = 0,
                         CreatedAt = DateTime.UtcNow
                     };
                     await _uow.DefenseRevisions.AddAsync(revision);
                 }
 
+                if (revision.SubmissionDeadline.HasValue && DateTime.UtcNow > revision.SubmissionDeadline.Value)
+                {
+                    revision.Status = RevisionStatus.Expired;
+                    revision.LastUpdated = DateTime.UtcNow;
+                    _uow.DefenseRevisions.Update(revision);
+                    await _uow.SaveChangesAsync();
+                    throw new BusinessRuleException("Đã quá hạn nộp hậu đồ án tốt nghiệp.");
+                }
+
                 revision.RevisedContent = request.RevisedContent;
                 revision.RevisionFileUrl = uploadedRevisionUrl;
+                revision.Status = RevisionStatus.StudentSubmitted;
+                revision.SubmissionCount = Math.Max(0, revision.SubmissionCount) + 1;
                 revision.IsCtApproved = false;
                 revision.IsGvhdApproved = false;
                 revision.IsUvtkApproved = false;
@@ -113,10 +131,52 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     "STUDENT_REVISION_SUBMIT",
                     "SUCCESS",
                     beforeSnapshot,
-                    new { revision.RevisedContent, revision.RevisionFileUrl, revision.FinalStatus },
+                    new { revision.RevisedContent, revision.RevisionFileUrl, revision.Status, revision.SubmissionCount, revision.FinalStatus },
                     new { request.AssignmentId, StudentCode = studentCode },
                     actorUserId,
                     cancellationToken);
+
+                // Notify Parties
+                try
+                {
+                    var committeeInfo = await _db.DefenseAssignments
+                        .Where(a => a.AssignmentID == request.AssignmentId)
+                        .Select(a => new { a.CommitteeID, a.TopicCode })
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    if (committeeInfo?.CommitteeID != null)
+                    {
+                        // 1. Notify Secretary (UVTK)
+                        var secretary = await _db.CommitteeMembers
+                            .Where(m => m.CommitteeID == committeeInfo.CommitteeID)
+                            .Where(m => m.Role != null && (m.Role.ToUpper().Contains("UVTK") || m.Role.ToUpper().Contains("THU") || m.Role.ToUpper() == "TK"))
+                            .Select(m => m.MemberUserCode)
+                            .FirstOrDefaultAsync(cancellationToken);
+
+                        if (!string.IsNullOrWhiteSpace(secretary))
+                        {
+                            await _notificationPublisher.PublishAsync(new NotificationEventRequest(
+                                NotifCategory: "DEFENSE_REVISION",
+                                NotifTitle: "Hậu đồ án tốt nghiệp: Sinh viên đã nộp bản chỉnh sửa",
+                                NotifBody: $"Sinh viên {studentCode} đã nộp bản chỉnh sửa cho đề tài {committeeInfo.TopicCode}. Vui lòng kiểm tra và phê duyệt.",
+                                NotifPriority: "NORMAL",
+                                ActionType: "VIEW_REVISION",
+                                ActionUrl: $"/lecturer/revisions?committeeId={committeeInfo.CommitteeID}",
+                                RelatedEntityName: "DefenseAssignment",
+                                RelatedEntityCode: committeeInfo.TopicCode,
+                                RelatedEntityID: request.AssignmentId,
+                                IsGlobal: false,
+                                TargetUserCodes: new List<string> { secretary }
+                            ));
+                        }
+
+                        // 2. No notification to student on submission - only secretary review outcome notification
+                    }
+                }
+                catch
+                {
+                    // Ignore notification errors to not block the main flow
+                }
             }
             catch
             {
@@ -156,10 +216,11 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             var role = member != null ? NormalizeRole(member.Role) : string.Empty;
             var isSupervisor = !string.IsNullOrWhiteSpace(topic.SupervisorLecturerCode)
                 && string.Equals(topic.SupervisorLecturerCode, lecturerCode, StringComparison.OrdinalIgnoreCase);
-            var canApprove = role == "CT" || role == "UVTK" || isSupervisor;
+            // Only secretary (UVTK) is allowed to perform final approve/reject actions.
+            var canApprove = role == "UVTK";
             if (!canApprove)
             {
-                throw new BusinessRuleException("Giảng viên không có quyền duyệt revision này.");
+                throw new BusinessRuleException("Chỉ Thư ký hội đồng mới có quyền duyệt hồ sơ hậu đồ án tốt nghiệp.");
             }
 
             if (!approved && string.IsNullOrWhiteSpace(reason))
@@ -175,9 +236,8 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 revision.FinalStatus
             };
 
-            if (role == "CT") revision.IsCtApproved = approved;
+            // Only set secretary approval flag here; chair and supervisor approvals are not required in the new flow.
             if (role == "UVTK") revision.IsUvtkApproved = approved;
-            if (isSupervisor) revision.IsGvhdApproved = approved;
 
             revision.FinalStatus = ResolveFinalStatus(revision, approved, _quorumOptions);
             revision.LastUpdated = DateTime.UtcNow;
@@ -210,6 +270,90 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 cancellationToken);
         }
 
+        public async Task ReviewBySecretaryAsync(int revisionId, string action, string? comment, string secretaryUserCode, int actorUserId, DateTime? newDeadline = null, CancellationToken cancellationToken = default)
+        {
+            await using var tx = await _uow.BeginTransactionAsync(cancellationToken);
+
+            var revision = await _db.DefenseRevisions.FirstOrDefaultAsync(x => x.Id == revisionId, cancellationToken);
+            if (revision == null)
+            {
+                throw new BusinessRuleException("Không tìm thấy revision.");
+            }
+
+            var normalizedAction = (action ?? string.Empty).Trim().ToUpperInvariant();
+            if (normalizedAction == "APPROVE")
+            {
+                revision.Status = RevisionStatus.Approved;
+                revision.FinalStatus = RevisionFinalStatus.Approved;
+                revision.SecretaryApprovedAt = DateTime.UtcNow;
+            }
+            else if (normalizedAction == "REJECT")
+            {
+                revision.Status = RevisionStatus.Rejected;
+                revision.FinalStatus = RevisionFinalStatus.Rejected;
+                if (newDeadline.HasValue)
+                {
+                    revision.SubmissionDeadline = newDeadline.Value;
+                }
+                revision.SecretaryApprovedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                throw new BusinessRuleException("Action không hợp lệ. Chỉ chấp nhận APPROVE hoặc REJECT.");
+            }
+
+            revision.SecretaryComment = comment;
+            revision.SecretaryUserCode = secretaryUserCode;
+            revision.LastUpdated = DateTime.UtcNow;
+
+            _uow.DefenseRevisions.Update(revision);
+            await _uow.SaveChangesAsync();
+            await _auditTrail.WriteAsync(
+                "SECRETARY_REVIEW_REVISION",
+                "SUCCESS",
+                null,
+                new { revision.Id, revision.Status, revision.SecretaryComment, revision.SecretaryUserCode, revision.SecretaryApprovedAt },
+                new { RevisionId = revisionId, Action = normalizedAction },
+                actorUserId,
+                cancellationToken);
+
+            await tx.CommitAsync(cancellationToken);
+
+            // Notify Student of result
+            try
+            {
+                var studentInfo = await _db.DefenseAssignments
+                    .Join(_db.Topics, a => a.TopicCode, t => t.TopicCode, (a, t) => new { a.AssignmentID, t.ProposerStudentCode, t.TopicCode })
+                    .Where(x => x.AssignmentID == revision.AssignmentId)
+                    .Select(x => new { x.ProposerStudentCode, x.TopicCode })
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (studentInfo != null && !string.IsNullOrWhiteSpace(studentInfo.ProposerStudentCode))
+                {
+                    var isApproved = normalizedAction == "APPROVE";
+                    var title = isApproved ? "Thư ký hội đồng đã duyệt" : "Thư ký hội đồng đã từ chối";
+                    var body = isApproved 
+                        ? $"Báo cáo hoàn thiện của bạn đã được thư ký hội đồng duyệt. Chúc mừng bạn đã hoàn thành khóa luận!"
+                        : $"Báo cáo hoàn thiện của bạn đã bị từ chối. Lý do: {comment ?? "Vui lòng xem chi tiết"}"; // Removed deadline info for reject
+                    
+                    await _notificationPublisher.PublishAsync(new NotificationEventRequest(
+                        NotifCategory: "DEFENSE_REVISION",
+                        NotifTitle: title,
+                        NotifBody: body,
+                        NotifPriority: isApproved ? "NORMAL" : "HIGH",
+                        ActionType: "VIEW_REVISION_RESULT",
+                        ActionUrl: $"/student/defense-info",
+                        RelatedEntityName: "DefenseRevision",
+                        RelatedEntityCode: studentInfo.TopicCode,
+                        RelatedEntityID: revisionId,
+                        IsGlobal: false,
+                        TargetUserCodes: new List<string> { studentInfo.ProposerStudentCode }
+                    ));
+                }
+            }
+            catch { }
+        }
+
         private static RevisionFinalStatus ResolveFinalStatus(DefenseRevision revision, bool approved, DefenseRevisionQuorumOptions options)
         {
             if (!approved && options.RejectAsVeto)
@@ -217,15 +361,11 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 return RevisionFinalStatus.Rejected;
             }
 
-            var approvalCount = 0;
-            if (revision.IsCtApproved) approvalCount++;
-            if (revision.IsUvtkApproved) approvalCount++;
-            if (revision.IsGvhdApproved) approvalCount++;
-
+            // New flow: only secretary approval determines finalization. Use quorum options to allow flexibility,
+            // but by default require secretary approval to mark as Approved.
+            var approvalCount = revision.IsUvtkApproved ? 1 : 0;
             var requireCount = Math.Max(1, options.MinimumApprovals);
-            var requiredRolesOk = (!options.RequireChairApproval || revision.IsCtApproved)
-                && (!options.RequireSecretaryApproval || revision.IsUvtkApproved)
-                && (!options.RequireSupervisorApproval || revision.IsGvhdApproved);
+            var requiredRolesOk = (!options.RequireSecretaryApproval || revision.IsUvtkApproved);
 
             if (requiredRolesOk && approvalCount >= requireCount)
             {

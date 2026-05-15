@@ -9,7 +9,6 @@ namespace ThesisManagement.Api.Models
         public int LecturerProfileID { get; set; }
         public string LecturerCode { get; set; } = null!;
         public string UserCode { get; set; } = null!;
-        public string? Role { get; set; }
         public bool IsPrimary { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime LastUpdated { get; set; }

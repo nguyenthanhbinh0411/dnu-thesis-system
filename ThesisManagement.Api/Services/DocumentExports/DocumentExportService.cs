@@ -13,7 +13,7 @@ public sealed class DocumentExportService : IDocumentExportService
 {
     private static readonly IReadOnlyDictionary<DocumentExportType, string> TemplateNames = new Dictionary<DocumentExportType, string>
     {
-        [DocumentExportType.BangDiem] = "BẢNG ĐIỂM GHI KẾT QUẢ BẢO VỆ.docx",
+        [DocumentExportType.BangDiem] = "BẢNG ĐIỂM GHI KẾT QUẢ ĐỒ ÁN TỐT NGHIỆP.docx",
         [DocumentExportType.BienBan] = "BIÊN BẢN HỌP.docx",
         [DocumentExportType.NhanXet] = "NHẬN XÉT CỦA NGƯỜI PHẢN BIỆN.docx"
     };
@@ -149,6 +149,13 @@ public sealed class DocumentExportService : IDocumentExportService
             }
 
             var original = string.Concat(texts.Select(x => x.Text));
+            var upper = original.ToUpperInvariant();
+            // Remove small standalone table captions/titles from templates
+            if (upper.Contains("BẢNG") || upper.Contains("BANG") || upper.Contains("DANH SÁCH") || upper.Contains("THEO DÕI"))
+            {
+                paragraph.Remove();
+                continue;
+            }
             var modified = original;
 
             foreach (var kv in tokenMap)

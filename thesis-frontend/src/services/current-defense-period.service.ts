@@ -38,6 +38,8 @@ export type CurrentLecturerDefenseAccessResult =
       councilListLocked: boolean | null;
       hasCommitteeAccess: boolean;
       committeeCount: number;
+      isSecretary: boolean;
+      hasPendingRevisions: boolean;
     }
   | {
       ok: false;
@@ -166,6 +168,8 @@ const extractLecturerDefenseAccess = (
   councilListLocked: boolean | null;
   hasCommitteeAccess: boolean;
   committeeCount: number;
+  isSecretary: boolean;
+  hasPendingRevisions: boolean;
 } => {
   const snapshotRecord = toRecord(
     pickCaseInsensitiveValue(payload ?? {}, ["snapshot", "Snapshot"], payload),
@@ -190,10 +194,15 @@ const extractLecturerDefenseAccess = (
           pickCaseInsensitiveValue(snapshotRecord ?? {}, ["committees", "Committees", "items", "Items"], []),
         ).length;
 
+  const isSecretary = Boolean(pickCaseInsensitiveValue(snapshotRecord ?? payload ?? {}, ["isSecretary", "IsSecretary"], false));
+  const hasPendingRevisions = Boolean(pickCaseInsensitiveValue(snapshotRecord ?? payload ?? {}, ["hasPendingRevisions", "HasPendingRevisions"], false));
+
   return {
     councilListLocked,
     hasCommitteeAccess: councilListLocked === true && committeeCount > 0,
     committeeCount,
+    isSecretary,
+    hasPendingRevisions,
   };
 };
 
@@ -217,7 +226,7 @@ export const fetchCurrentDefensePeriod = async (
         ok: false,
         status: null,
         code: "INVALID_CONTRACT",
-        message: "Snapshot hiện tại không chứa thông tin đợt bảo vệ hợp lệ.",
+        message: "Snapshot hiện tại không chứa thông tin đợt đồ án tốt nghiệp hợp lệ.",
       };
     }
 
@@ -237,7 +246,7 @@ export const fetchCurrentDefensePeriod = async (
           code: "NOT_MAPPED",
           message:
             apiMessage ??
-            "Không tìm thấy mapping đợt bảo vệ đang hoạt động cho tài khoản hiện tại.",
+            "Không tìm thấy mapping đợt đồ án tốt nghiệp đang hoạt động cho tài khoản hiện tại.",
         };
       }
 
@@ -248,7 +257,7 @@ export const fetchCurrentDefensePeriod = async (
           code: "AMBIGUOUS",
           message:
             apiMessage ??
-            "Tài khoản hiện đang có nhiều mapping đợt bảo vệ hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.",
+            "Tài khoản hiện đang có nhiều mapping đợt đồ án tốt nghiệp hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.",
         };
       }
 
@@ -256,7 +265,7 @@ export const fetchCurrentDefensePeriod = async (
         ok: false,
         status,
         code: "REQUEST_FAILED",
-        message: apiMessage ?? "Không tải được dữ liệu đợt bảo vệ hiện tại.",
+        message: apiMessage ?? "Không tải được dữ liệu đợt đồ án tốt nghiệp hiện tại.",
       };
     }
 
@@ -264,7 +273,7 @@ export const fetchCurrentDefensePeriod = async (
       ok: false,
       status: null,
       code: "REQUEST_FAILED",
-      message: "Không thể kết nối hệ thống để lấy đợt bảo vệ hiện tại.",
+      message: "Không thể kết nối hệ thống để lấy đợt đồ án tốt nghiệp hiện tại.",
     };
   }
 };
@@ -287,7 +296,7 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
         ok: false,
         status: null,
         code: "INVALID_CONTRACT",
-        message: "Snapshot hiện tại không chứa thông tin đợt bảo vệ hợp lệ.",
+        message: "Snapshot hiện tại không chứa thông tin đợt đồ án tốt nghiệp hợp lệ.",
       };
     }
 
@@ -299,6 +308,8 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
       councilListLocked: access.councilListLocked,
       hasCommitteeAccess: access.hasCommitteeAccess,
       committeeCount: access.committeeCount,
+      isSecretary: access.isSecretary,
+      hasPendingRevisions: access.hasPendingRevisions,
     };
   } catch (error) {
     if (error instanceof FetchDataError) {
@@ -312,7 +323,7 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
           code: "NOT_MAPPED",
           message:
             apiMessage ??
-            "Không tìm thấy mapping đợt bảo vệ đang hoạt động cho tài khoản hiện tại.",
+            "Không tìm thấy mapping đợt đồ án tốt nghiệp đang hoạt động cho tài khoản hiện tại.",
         };
       }
 
@@ -323,7 +334,7 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
           code: "AMBIGUOUS",
           message:
             apiMessage ??
-            "Tài khoản hiện đang có nhiều mapping đợt bảo vệ hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.",
+            "Tài khoản hiện đang có nhiều mapping đợt đồ án tốt nghiệp hoạt động. Vui lòng liên hệ quản trị viên để xử lý dữ liệu.",
         };
       }
 
@@ -331,7 +342,7 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
         ok: false,
         status,
         code: "REQUEST_FAILED",
-        message: apiMessage ?? "Không tải được dữ liệu đợt bảo vệ hiện tại.",
+        message: apiMessage ?? "Không tải được dữ liệu đợt đồ án tốt nghiệp hiện tại.",
       };
     }
 
@@ -339,7 +350,7 @@ export const fetchCurrentLecturerDefenseAccess = async (): Promise<CurrentLectur
       ok: false,
       status: null,
       code: "REQUEST_FAILED",
-      message: "Không thể kết nối hệ thống để lấy đợt bảo vệ hiện tại.",
+      message: "Không thể kết nối hệ thống để lấy đợt đồ án tốt nghiệp hiện tại.",
     };
   }
 };

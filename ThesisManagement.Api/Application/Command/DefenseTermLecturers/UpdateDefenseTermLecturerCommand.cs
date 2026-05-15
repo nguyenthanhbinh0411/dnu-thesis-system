@@ -52,7 +52,6 @@ namespace ThesisManagement.Api.Application.Command.DefenseTermLecturers
             entity.LecturerProfileID = lecturer.LecturerProfileID;
             entity.LecturerCode = lecturer.LecturerCode;
             entity.UserCode = userCode.Trim();
-            entity.Role = dto.Role ?? entity.Role;
             entity.IsPrimary = dto.IsPrimary ?? entity.IsPrimary;
             entity.CreatedAt = dto.CreatedAt ?? entity.CreatedAt;
             entity.LastUpdated = dto.LastUpdated ?? DateTime.UtcNow;

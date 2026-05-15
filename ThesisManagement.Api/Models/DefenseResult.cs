@@ -31,6 +31,12 @@ namespace ThesisManagement.Api.Models
         [Column("FINALSCORE_TEXT")]
         public string? FinalScoreText { get; set; }
 
+        /// <summary>
+        /// Auto-calculated pass/fail status: true if FinalScoreNumeric >= 5, false otherwise
+        /// </summary>
+        [Column("IS_PASSED")]
+        public bool? IsPassed { get; set; }
+
         [Column("ISLOCKED")]
         public bool IsLocked { get; set; }
 

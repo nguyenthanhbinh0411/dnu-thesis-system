@@ -917,7 +917,7 @@ const TopicRegistration: React.FC = () => {
           : "";
 
     if (/defense\s*term|dot\s*bao\s*ve|đợt\s*bảo\s*vệ/i.test(rawMessage)) {
-      return "Đợt bảo vệ đã chọn không hợp lệ hoặc không còn khả dụng. Vui lòng chọn lại đợt bảo vệ.";
+      return "Đợt đồ án tốt nghiệp đã chọn không hợp lệ hoặc không còn khả dụng. Vui lòng chọn lại đợt đồ án tốt nghiệp.";
     }
 
     return err instanceof Error ? err.message : fallbackMessage;
@@ -983,7 +983,7 @@ const TopicRegistration: React.FC = () => {
       }
 
       if (!selectedDefenseTermId) {
-        setError("Vui lòng chọn đợt bảo vệ trước khi gửi đề tài.");
+        setError("Vui lòng chọn đợt đồ án tốt nghiệp trước khi gửi đề tài.");
         return;
       }
 
@@ -1060,7 +1060,7 @@ const TopicRegistration: React.FC = () => {
       }
 
       if (!selectedDefenseTermId) {
-        setError("Vui lòng chọn đợt bảo vệ trước khi cập nhật đề tài.");
+        setError("Vui lòng chọn đợt đồ án tốt nghiệp trước khi cập nhật đề tài.");
         return;
       }
 
@@ -1429,7 +1429,7 @@ const TopicRegistration: React.FC = () => {
                 size={16}
                 style={{ marginRight: "8px", verticalAlign: "middle" }}
               />
-              Đợt bảo vệ *
+              Đợt đồ án tốt nghiệp *
             </label>
             <select
               value={selectedDefenseTermId ?? ""}
@@ -1452,7 +1452,7 @@ const TopicRegistration: React.FC = () => {
               onFocus={(e) => (e.target.style.borderColor = "#f37021")}
               onBlur={(e) => (e.target.style.borderColor = "#ddd")}
             >
-              <option value="">-- Chọn đợt bảo vệ --</option>
+              <option value="">-- Chọn đợt đồ án tốt nghiệp --</option>
               {defenseTerms.map((term) => (
                 <option key={term.defenseTermId} value={term.defenseTermId}>
                   {term.defenseTermCode} - {term.defenseTermName}
@@ -1467,7 +1467,7 @@ const TopicRegistration: React.FC = () => {
                   color: "#f44336",
                 }}
               >
-                Hiện chưa có đợt bảo vệ khả dụng, vui lòng thử lại sau.
+                Hiện chưa có đợt đồ án tốt nghiệp khả dụng, vui lòng thử lại sau.
               </div>
             )}
           </div>
@@ -2206,7 +2206,7 @@ const TopicRegistration: React.FC = () => {
 
               <div className="space-y-10 flex-1">
                 <div className="p-8 bg-white/10 rounded-[40px] border border-white/20 backdrop-blur-sm shadow-2xl">
-                  <label className="block text-[10px] font-black text-orange-100 uppercase mb-4 tracking-[0.2em] font-jakarta">Đợt bảo vệ dự kiến</label>
+                  <label className="block text-[10px] font-black text-orange-100 uppercase mb-4 tracking-[0.2em] font-jakarta">Đợt đồ án tốt nghiệp dự kiến</label>
                   <div className="relative">
                     <div className="text-xl font-black text-white font-jakarta">
                       {defenseTerms.find(term => String(term.defenseTermId) === String(selectedDefenseTermId))?.defenseTermName || "--"}

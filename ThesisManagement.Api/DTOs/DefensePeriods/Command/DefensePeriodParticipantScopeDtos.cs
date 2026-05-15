@@ -23,7 +23,6 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public int Size { get; set; } = 50;
 
         // Lecturer scope filters.
-        public string? Role { get; set; }
         public bool? IsPrimary { get; set; }
     }
 
@@ -51,7 +50,6 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public int? LecturerProfileID { get; set; }
         public string? LecturerCode { get; set; }
         public string? UserCode { get; set; }
-        public string? Role { get; set; }
         public bool? IsPrimary { get; set; }
     }
 }

@@ -51,7 +51,7 @@ namespace ThesisManagement.Api.Application.Common.Constraints
             if (conflict != null)
             {
                 throw new BusinessRuleException(
-                    "Một sinh viên chỉ được có 1 assignment trong toàn kỳ bảo vệ.",
+                    "Một sinh viên chỉ được có 1 assignment trong toàn kỳ đồ án tốt nghiệp.",
                     DefenseUcErrorCodes.Constraints.DuplicateStudentAssignment,
                     new { conflict.CommitteeID, conflict.TopicCode, conflict.ProposerStudentCode });
             }

@@ -20,7 +20,6 @@ export type DefenseTermLecturerFilter = {
   lecturerProfileID?: number | string;
   lecturerCode?: string;
   userCode?: string;
-  role?: string;
   isPrimary?: boolean;
   search?: string;
   fromDate?: string;
@@ -42,6 +41,7 @@ export type StudentProfileFilter = {
   userCode?: string;
   page?: number;
   pageSize?: number;
+  excludeDefenseTermId?: number | string;
 };
 
 export type LecturerProfileFilter = {
@@ -54,6 +54,7 @@ export type LecturerProfileFilter = {
   userCode?: string;
   page?: number;
   pageSize?: number;
+  excludeDefenseTermId?: number | string;
 };
 
 export type DefenseTermStudentPayload = {
@@ -68,7 +69,6 @@ export type DefenseTermLecturerPayload = {
   lecturerProfileID: number;
   lecturerCode?: string;
   userCode?: string;
-  role: string;
   isPrimary?: boolean;
 };
 

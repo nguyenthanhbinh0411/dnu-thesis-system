@@ -11,16 +11,19 @@ using ThesisManagement.Api.Application.Command.DefenseTermStudents;
 using ThesisManagement.Api.Application.Common;
 using ThesisManagement.Api.Application.Command.DefenseExecution;
 using ThesisManagement.Api.Application.Command.DefenseSetup;
+using ThesisManagement.Api.Application.Command.DefensePeriods;
 using ThesisManagement.Api.Application.Query.DefenseTermLecturers;
 using ThesisManagement.Api.Application.Query.DefenseTermStudents;
 using ThesisManagement.Api.Application.Query.DefenseExecution;
 using ThesisManagement.Api.Application.Query.DefenseSetup;
+using ThesisManagement.Api.Application.Query.DefensePeriods;
 using ThesisManagement.Api.DTOs.DefenseTermLecturers.Command;
 using ThesisManagement.Api.DTOs.DefenseTermLecturers.Query;
 using ThesisManagement.Api.DTOs.DefenseTermStudents.Command;
 using ThesisManagement.Api.DTOs.DefenseTermStudents.Query;
 using ThesisManagement.Api.DTOs;
 using ThesisManagement.Api.DTOs.DefensePeriods;
+using ThesisManagement.Api.DTOs.Revisions;
 using ThesisManagement.Api.Data;
 using ThesisManagement.Api.Models;
 using ThesisManagement.Api.Services.DefenseOperationsExport;
@@ -36,8 +39,22 @@ namespace ThesisManagement.Api.Controllers
     [Authorize]
     public class DefensePeriodsController : BaseApiController
     {
+        private sealed class DefensePeriodSnapshotOverviewDto
+        {
+            public int TotalStudents { get; set; }
+            public int TotalLecturers { get; set; }
+            public int TotalCommittees { get; set; }
+            public int TotalTopics { get; set; }
+        }
+
         private readonly ApplicationDbContext _db;
         private readonly ISyncDefensePeriodCommand _syncCommand;
+        private readonly IStartDefensePeriodCommand _startCommand;
+        private readonly IMoveNextDefensePeriodCommand _moveNextCommand;
+        private readonly IPauseDefensePeriodCommand _pauseCommand;
+        private readonly IResumeDefensePeriodCommand _resumeCommand;
+        private readonly ILockScoringDefensePeriodCommand _lockScoringCommand;
+        private readonly ICloseDefensePeriodCommand _closeCommand;
         private readonly IGetDefensePeriodStudentsQuery _getStudentsQuery;
         private readonly IGetDefensePeriodConfigQuery _getConfigQuery;
         private readonly IGetDefensePeriodStateQuery _getStateQuery;
@@ -95,6 +112,7 @@ namespace ThesisManagement.Api.Controllers
         private readonly ICreateDefenseTermLecturerCommand _createDefenseTermLecturerCommand;
         private readonly IUpdateDefenseTermLecturerCommand _updateDefenseTermLecturerCommand;
         private readonly IDeleteDefenseTermLecturerCommand _deleteDefenseTermLecturerCommand;
+        private readonly IDefensePeriodQueryProcessor _queryProcessor;
 
         public DefensePeriodsController(
             Services.IUnitOfWork uow,
@@ -102,6 +120,11 @@ namespace ThesisManagement.Api.Controllers
             AutoMapper.IMapper mapper,
             ApplicationDbContext db,
             ISyncDefensePeriodCommand syncCommand,
+            IStartDefensePeriodCommand startCommand,
+            IPauseDefensePeriodCommand pauseCommand,
+            IResumeDefensePeriodCommand resumeCommand,
+            ILockScoringDefensePeriodCommand lockScoringCommand,
+            ICloseDefensePeriodCommand closeCommand,
             IGetDefensePeriodStudentsQuery getStudentsQuery,
             IGetDefensePeriodConfigQuery getConfigQuery,
             IGetDefensePeriodStateQuery getStateQuery,
@@ -158,10 +181,18 @@ namespace ThesisManagement.Api.Controllers
             IDeleteDefenseTermStudentCommand deleteDefenseTermStudentCommand,
             ICreateDefenseTermLecturerCommand createDefenseTermLecturerCommand,
             IUpdateDefenseTermLecturerCommand updateDefenseTermLecturerCommand,
-            IDeleteDefenseTermLecturerCommand deleteDefenseTermLecturerCommand) : base(uow, codeGen, mapper)
+            IDeleteDefenseTermLecturerCommand deleteDefenseTermLecturerCommand,
+            IMoveNextDefensePeriodCommand moveNextCommand,
+            IDefensePeriodQueryProcessor queryProcessor) : base(uow, codeGen, mapper)
         {
             _db = db;
             _syncCommand = syncCommand;
+            _startCommand = startCommand;
+            _moveNextCommand = moveNextCommand;
+            _pauseCommand = pauseCommand;
+            _resumeCommand = resumeCommand;
+            _lockScoringCommand = lockScoringCommand;
+            _closeCommand = closeCommand;
             _getStudentsQuery = getStudentsQuery;
             _getConfigQuery = getConfigQuery;
             _getStateQuery = getStateQuery;
@@ -219,6 +250,30 @@ namespace ThesisManagement.Api.Controllers
             _createDefenseTermLecturerCommand = createDefenseTermLecturerCommand;
             _updateDefenseTermLecturerCommand = updateDefenseTermLecturerCommand;
             _deleteDefenseTermLecturerCommand = deleteDefenseTermLecturerCommand;
+            _queryProcessor = queryProcessor;
+        }
+
+        private async Task<DefensePeriodSnapshotOverviewDto> BuildSnapshotOverviewAsync(int periodId, CancellationToken cancellationToken)
+        {
+            var studentCount = await _db.DefenseTermStudents.AsNoTracking()
+                .CountAsync(x => x.DefenseTermId == periodId, cancellationToken);
+
+            var lecturerCount = await _db.DefenseTermLecturers.AsNoTracking()
+                .CountAsync(x => x.DefenseTermId == periodId, cancellationToken);
+
+            var committeeCount = await _db.Committees.AsNoTracking()
+                .CountAsync(x => x.DefenseTermId == periodId, cancellationToken);
+
+            var topicCount = await _db.Topics.AsNoTracking()
+                .CountAsync(x => x.DefenseTermId == periodId, cancellationToken);
+
+            return new DefensePeriodSnapshotOverviewDto
+            {
+                TotalStudents = studentCount,
+                TotalLecturers = lecturerCount,
+                TotalCommittees = committeeCount,
+                TotalTopics = topicCount,
+            };
         }
 
         [HttpGet]
@@ -312,7 +367,7 @@ namespace ThesisManagement.Api.Controllers
                 warnings: state.Warnings));
         }
 
-        [HttpPatch("{periodId:int}")]
+        [HttpPut("{periodId:int}")]
         [Authorize(Roles = "Admin,Head")]
         public Task<ActionResult<ApiResponse<DefensePeriodDetailDto>>> UpdatePeriodCompact(int periodId, [FromBody] DefensePeriodUpdateDto request)
         {
@@ -390,11 +445,35 @@ namespace ThesisManagement.Api.Controllers
                         syncRequest,
                         request.IdempotencyKey),
                     action),
+                "START" => WrapAsObject(
+                    await StartPeriod(periodId, request.IdempotencyKey),
+                    action),
+                "NEXT" => WrapAsObject<bool>(
+                    await _moveNextCommand.ExecuteAsync(periodId, CurrentUserId, request.IdempotencyKey, HttpContext.RequestAborted),
+                    action),
+                "NEXT_STEP" => WrapAsObject<bool>(
+                    await _moveNextCommand.ExecuteAsync(periodId, CurrentUserId, request.IdempotencyKey, HttpContext.RequestAborted),
+                    action),
+                "PAUSE" => WrapAsObject(
+                    await PausePeriod(periodId, request.IdempotencyKey),
+                    action),
+                "RESUME" => WrapAsObject(
+                    await ResumePeriod(periodId, request.IdempotencyKey),
+                    action),
+                "LOCK" => WrapAsObject(
+                    await LockScoring(periodId, request.IdempotencyKey),
+                    action),
+                "LOCK_SCORING" => WrapAsObject(
+                    await LockScoring(periodId, request.IdempotencyKey),
+                    action),
                 "FINALIZE" => WrapAsObject(
                     await FinalizePeriod(
                         periodId,
                         finalizeRequest,
                         request.IdempotencyKey),
+                    action),
+                "CLOSE" => WrapAsObject(
+                    await ClosePeriod(periodId, request.IdempotencyKey),
                     action),
                 "PUBLISH" => WrapAsObject(
                     await PublishScores(periodId, request.IdempotencyKey),
@@ -417,7 +496,7 @@ namespace ThesisManagement.Api.Controllers
                 "REOPEN" => WrapAsObject(
                     await ReopenPeriod(periodId, reopenRequest),
                     action),
-                _ => BadRequest(ApiResponse<object>.Fail("Action không hợp lệ. Hỗ trợ: SYNC, FINALIZE, PUBLISH, ROLLBACK, LOCK_COUNCILS, REOPEN_COUNCILS, ARCHIVE, REOPEN.", 400))
+                _ => BadRequest(ApiResponse<object>.Fail("Action không hợp lệ. Hỗ trợ: SYNC, START, PAUSE, RESUME, LOCK_SCORING, FINALIZE, PUBLISH, ROLLBACK, LOCK_COUNCILS, REOPEN_COUNCILS, ARCHIVE, REOPEN, CLOSE.", 400))
             };
         }
 
@@ -502,6 +581,8 @@ namespace ThesisManagement.Api.Controllers
                 return MapFailure(autoConfig, autoConfigStatusCode, "Không thể lấy cấu hình auto-generate.");
             }
 
+            var overview = await BuildSnapshotOverviewAsync(periodId, HttpContext.RequestAborted);
+
             var snapshot = new
             {
                 Config = config.Data,
@@ -510,7 +591,12 @@ namespace ThesisManagement.Api.Controllers
                 Lecturers = lecturers.Data,
                 Topics = topics.Data,
                 Councils = councils.Data,
-                AutoGenerate = autoConfig.Data
+                AutoGenerate = autoConfig.Data,
+                Overview = overview,
+                Analytics = new
+                {
+                    Overview = overview
+                }
             };
 
             return Ok(ApiResponse<object>.SuccessResponse(
@@ -625,7 +711,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (!await DefensePeriodExistsAsync(periodId))
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             if (normalizedView == "runtime")
@@ -647,7 +733,7 @@ namespace ThesisManagement.Api.Controllers
             }
 
             return WrapAsObject(
-                await GetLecturerScopeParticipants(periodId, query.Keyword, query.Page, query.Size, query.Role, query.IsPrimary),
+                await GetLecturerScopeParticipants(periodId, query.Keyword, query.Page, query.Size, query.IsPrimary),
                 "LIST_PARTICIPANTS");
         }
 
@@ -677,7 +763,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (!await DefensePeriodExistsAsync(periodId))
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             if (normalizedKind == "student")
@@ -707,7 +793,7 @@ namespace ThesisManagement.Api.Controllers
 
             if (!await DefensePeriodExistsAsync(periodId))
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             if (normalizedKind == "student")
@@ -760,18 +846,32 @@ namespace ThesisManagement.Api.Controllers
             var totalCount = await query.CountAsync();
 
             var items = await query
-                .OrderByDescending(x => x.LastUpdated)
-                .ThenByDescending(x => x.DefenseTermStudentID)
+                .GroupJoin(
+                    _uow.StudentProfiles.Query().AsNoTracking(),
+                    dts => dts.StudentCode,
+                    sp => sp.StudentCode,
+                    (dts, profiles) => new
+                    {
+                        Row = dts,
+                        Profile = profiles.FirstOrDefault()
+                    })
+                .OrderByDescending(x => x.Row.LastUpdated)
+                .ThenByDescending(x => x.Row.DefenseTermStudentID)
                 .Skip((safePage - 1) * safeSize)
                 .Take(safeSize)
                 .Select(x => new DefenseTermStudentReadDto(
-                    x.DefenseTermStudentID,
-                    x.DefenseTermId,
-                    x.StudentProfileID,
-                    x.StudentCode,
-                    x.UserCode,
-                    x.CreatedAt,
-                    x.LastUpdated))
+                    x.Row.DefenseTermStudentID,
+                    x.Row.DefenseTermId,
+                    x.Row.StudentProfileID,
+                    x.Row.StudentCode,
+                    x.Row.UserCode,
+                    x.Profile != null ? x.Profile.FullName : null,
+                    x.Profile != null ? x.Profile.ClassCode : null,
+                    x.Profile != null ? x.Profile.FacultyCode : null,
+                    x.Profile != null ? x.Profile.DepartmentCode : null,
+                    x.Profile != null ? x.Profile.GPA : null,
+                    x.Row.CreatedAt,
+                    x.Row.LastUpdated))
                 .ToListAsync();
 
             var data = new
@@ -791,17 +891,12 @@ namespace ThesisManagement.Api.Controllers
             string? keyword,
             int page,
             int size,
-            string? role,
             bool? isPrimary)
         {
             var query = _uow.DefenseTermLecturers.Query().AsNoTracking()
                 .Where(x => x.DefenseTermId == periodId);
 
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                var normalizedRole = role.Trim().ToUpperInvariant();
-                query = query.Where(x => x.Role != null && x.Role.ToUpper().Contains(normalizedRole));
-            }
+
 
             if (isPrimary.HasValue)
             {
@@ -813,8 +908,7 @@ namespace ThesisManagement.Api.Controllers
                 var normalizedKeyword = keyword.Trim().ToUpperInvariant();
                 query = query.Where(x =>
                     (x.LecturerCode != null && x.LecturerCode.ToUpper().Contains(normalizedKeyword))
-                    || (x.UserCode != null && x.UserCode.ToUpper().Contains(normalizedKeyword))
-                    || (x.Role != null && x.Role.ToUpper().Contains(normalizedKeyword)));
+                    || (x.UserCode != null && x.UserCode.ToUpper().Contains(normalizedKeyword)));
             }
 
             var safePage = Math.Max(page, 1);
@@ -829,7 +923,7 @@ namespace ThesisManagement.Api.Controllers
                     (dt, profiles) => new
                     {
                         Row = dt,
-                        LecturerName = profiles.Select(p => p.FullName).FirstOrDefault()
+                        Profile = profiles.FirstOrDefault()
                     })
                 .OrderByDescending(x => x.Row.LastUpdated)
                 .ThenByDescending(x => x.Row.DefenseTermLecturerID)
@@ -840,12 +934,16 @@ namespace ThesisManagement.Api.Controllers
                     x.Row.DefenseTermId,
                     x.Row.LecturerProfileID,
                     x.Row.LecturerCode,
-                    string.IsNullOrWhiteSpace(x.LecturerName) ? x.Row.LecturerCode : x.LecturerName!,
+                    string.IsNullOrWhiteSpace(x.Profile != null ? x.Profile.FullName : null) ? x.Row.LecturerCode : x.Profile!.FullName!,
+                    string.IsNullOrWhiteSpace(x.Profile != null ? x.Profile.FullName : null) ? x.Row.LecturerCode : x.Profile!.FullName!,
                     x.Row.UserCode,
-                    x.Row.Role,
                     x.Row.IsPrimary,
                     x.Row.CreatedAt,
-                    x.Row.LastUpdated))
+                    x.Row.LastUpdated)
+                {
+                    DepartmentCode = x.Profile != null ? x.Profile.DepartmentCode : null,
+                    Degree = x.Profile != null ? x.Profile.Degree : null
+                })
                 .ToListAsync();
 
             var data = new
@@ -939,7 +1037,6 @@ namespace ThesisManagement.Api.Controllers
                     request.Lecturer.LecturerProfileID,
                     request.Lecturer.LecturerCode,
                     request.Lecturer.UserCode,
-                    request.Lecturer.Role,
                     request.Lecturer.IsPrimary,
                     null,
                     DateTime.UtcNow);
@@ -953,7 +1050,6 @@ namespace ThesisManagement.Api.Controllers
                 request.Lecturer.LecturerProfileID,
                 request.Lecturer.LecturerCode,
                 request.Lecturer.UserCode,
-                request.Lecturer.Role,
                 request.Lecturer.IsPrimary ?? false,
                 DateTime.UtcNow,
                 DateTime.UtcNow);
@@ -1292,12 +1388,32 @@ namespace ThesisManagement.Api.Controllers
                 return MapFailure(tagOverview, tagOverviewStatusCode, "Không thể lấy tag overview.");
             }
 
+            var snapshotOverview = await BuildSnapshotOverviewAsync(periodId, HttpContext.RequestAborted);
+
+            var analyticsOverview = new
+            {
+                TotalStudents = overview.Data?.TotalStudents ?? snapshotOverview.TotalStudents,
+                Average = overview.Data?.Average ?? 0m,
+                PassRate = overview.Data?.PassRate ?? 0m,
+                Highest = overview.Data?.Highest ?? 0m,
+                Lowest = overview.Data?.Lowest ?? 0m,
+                HighestStudentCode = overview.Data?.HighestStudentCode,
+                HighestStudentName = overview.Data?.HighestStudentName,
+                HighestTopicTitle = overview.Data?.HighestTopicTitle,
+                LowestStudentCode = overview.Data?.LowestStudentCode,
+                LowestStudentName = overview.Data?.LowestStudentName,
+                LowestTopicTitle = overview.Data?.LowestTopicTitle,
+                TotalLecturers = snapshotOverview.TotalLecturers,
+                TotalCommittees = snapshotOverview.TotalCommittees,
+                TotalTopics = snapshotOverview.TotalTopics
+            };
+
             var data = new
             {
                 Pipeline = pipeline.Data,
                 Analytics = new
                 {
-                    Overview = overview.Data,
+                    Overview = analyticsOverview,
                     ByCouncil = byCouncil.Data,
                     Distribution = distribution.Data
                 },
@@ -1397,146 +1513,21 @@ namespace ThesisManagement.Api.Controllers
                 return BadRequest(ApiResponse<object>.Fail("revisionId phải lớn hơn 0.", 400));
             }
 
-            var monitoringAction = await GetMonitoringSnapshotCompact(periodId, query.CommitteeId);
-            if (!TryExtractApiResponse(monitoringAction, out var monitoring, out var monitoringStatusCode) || monitoring == null)
+            var snapshotResult = await _queryProcessor.GetOperationsSnapshotAsync(periodId, query, HttpContext.RequestAborted);
+            if (!snapshotResult.Success || snapshotResult.Data == null)
             {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
+                return FromResult(ApiResponse<object>.Fail(snapshotResult.Message ?? "Không tìm thấy dữ liệu.", snapshotResult.HttpStatusCode));
             }
 
-            if (!monitoring.Success)
-            {
-                return MapFailure(monitoring, monitoringStatusCode, "Không thể lấy monitoring snapshot.");
-            }
-
-            var scoringMatrixAction = await GetScoringMatrix(periodId, query.CommitteeId);
-            if (!TryExtractApiResponse(scoringMatrixAction, out var scoringMatrix, out var scoringMatrixStatusCode) || scoringMatrix == null)
-            {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
-            }
-
-            if (!scoringMatrix.Success)
-            {
-                return MapFailure(scoringMatrix, scoringMatrixStatusCode, "Không thể lấy scoring matrix.");
-            }
-
-            var progressAction = await GetProgressPipeline(periodId);
-            if (!TryExtractApiResponse(progressAction, out var progress, out var progressStatusCode) || progress == null)
-            {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
-            }
-
-            if (!progress.Success)
-            {
-                return MapFailure(progress, progressStatusCode, "Không thể lấy progress pipeline.");
-            }
-
-            var postDefenseAction = await GetPostDefensePipeline(
-                periodId,
-                query.RevisionStatus,
-                query.RevisionKeyword,
-                query.RevisionPage,
-                query.RevisionSize);
-            if (!TryExtractApiResponse(postDefenseAction, out var postDefense, out var postDefenseStatusCode) || postDefense == null)
-            {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
-            }
-
-            if (!postDefense.Success)
-            {
-                return MapFailure(postDefense, postDefenseStatusCode, "Không thể lấy hậu bảo vệ.");
-            }
-
-            var auditAction = await GetAuditSnapshotCompact(periodId, query.AuditSize, query.CommitteeId, query.RevisionId);
-            if (!TryExtractApiResponse(auditAction, out var audit, out var auditStatusCode) || audit == null)
-            {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
-            }
-
-            if (!audit.Success)
-            {
-                return MapFailure(audit, auditStatusCode, "Không thể lấy audit snapshot.");
-            }
-
-            var stateAction = await GetState(periodId);
-            if (!TryExtractApiResponse(stateAction, out var state, out var stateStatusCode) || state == null)
-            {
-                return StatusCode(500, ApiResponse<object>.Fail("Không thể lấy operations snapshot.", 500));
-            }
-
-            if (!state.Success)
-            {
-                return MapFailure(state, stateStatusCode, "Không thể lấy trạng thái đợt.");
-            }
-
-            var safeScoringMatrix = scoringMatrix.Data?.Select(row =>
-            {
-                if (row.IsLocked || row.Status == "LOCKED")
-                {
-                    return row;
-                }
-                
-                return new ScoringMatrixRowDto
-                {
-                    CommitteeId = row.CommitteeId,
-                    CommitteeCode = row.CommitteeCode,
-                    CommitteeName = row.CommitteeName,
-                    Room = row.Room,
-                    AssignmentId = row.AssignmentId,
-                    AssignmentCode = row.AssignmentCode,
-                    TopicCode = row.TopicCode,
-                    TopicTitle = row.TopicTitle,
-                    SupervisorLecturerCode = row.SupervisorLecturerCode,
-                    SupervisorLecturerName = row.SupervisorLecturerName,
-                    CommitteeChairCode = row.CommitteeChairCode,
-                    CommitteeChairName = row.CommitteeChairName,
-                    CommitteeSecretaryCode = row.CommitteeSecretaryCode,
-                    CommitteeSecretaryName = row.CommitteeSecretaryName,
-                    CommitteeReviewerCode = row.CommitteeReviewerCode,
-                    CommitteeReviewerName = row.CommitteeReviewerName,
-                    Chair = row.Chair,
-                    ChairName = row.ChairName,
-                    Secretary = row.Secretary,
-                    SecretaryName = row.SecretaryName,
-                    Reviewer = row.Reviewer,
-                    ReviewerName = row.ReviewerName,
-                    TopicTags = row.TopicTags,
-                    Session = row.Session,
-                    SessionCode = row.SessionCode,
-                    ScheduledAt = row.ScheduledAt,
-                    StartTime = row.StartTime,
-                    EndTime = row.EndTime,
-                    StudentCode = row.StudentCode,
-                    StudentName = row.StudentName,
-                    ClassName = row.ClassName,
-                    CohortCode = row.CohortCode,
-                    SupervisorOrganization = row.SupervisorOrganization,
-                    SubmittedCount = row.SubmittedCount,
-                    RequiredCount = row.RequiredCount,
-                    IsLocked = row.IsLocked,
-                    Status = row.Status,
-                    DefenseDocuments = row.DefenseDocuments,
-                    TopicSupervisorScore = row.TopicSupervisorScore,
-                    ScoreCt = null,
-                    ScoreTk = null,
-                    ScorePb = null,
-                    ScoreGvhd = null,
-                    FinalScore = null,
-                    FinalGrade = null,
-                    Variance = null,
-                    CommentCt = null,
-                    CommentTk = null,
-                    CommentPb = null,
-                    CommentGvhd = null
-                };
-            }).ToList();
+            var stateResult = await _queryProcessor.GetStateAsync(periodId, HttpContext.RequestAborted);
 
             var data = new
             {
-                Monitoring = monitoring.Data,
-                ScoringMatrix = safeScoringMatrix,
-                ProgressTracking = progress.Data,
-                PostDefense = postDefense.Data,
-                Audit = audit.Data,
+                Monitoring = snapshotResult.Data.Monitoring,
+                ScoringMatrix = snapshotResult.Data.ScoringMatrix,
+                ProgressTracking = snapshotResult.Data.Monitoring.Pipeline,
+                PostDefense = snapshotResult.Data.PostDefense,
+                Audit = snapshotResult.Data.Audit,
                 Reporting = new
                 {
                     SupportedReportTypes = new[]
@@ -1552,8 +1543,8 @@ namespace ThesisManagement.Api.Controllers
 
             return Ok(ApiResponse<object>.SuccessResponse(
                 data,
-                allowedActions: state.Data?.AllowedActions ?? new List<string>(),
-                warnings: state.Warnings));
+                allowedActions: stateResult.Data?.AllowedActions ?? new List<string>(),
+                warnings: stateResult.Data?.Warnings?.Select(w => new ApiWarning { Message = w }).ToList()));
         }
 
         [HttpGet("{periodId:int}/operations/export")]
@@ -1561,8 +1552,10 @@ namespace ThesisManagement.Api.Controllers
         public async Task<ActionResult<ApiResponse<object>>> ExportOperationsSnapshotCompact(
             int periodId,
             [FromQuery] DefensePeriodOperationsSnapshotQueryDto query,
-            [FromQuery] string format = "xlsx")
+            [FromQuery] string format = "xlsx",
+            [FromQuery] string? template = "dashboard")
         {
+            var normalizedTemplate = (template ?? query.Template ?? "dashboard").Trim().ToLowerInvariant();
             var operationsAction = await GetOperationsSnapshotCompact(periodId, query);
             if (!TryExtractApiResponse(operationsAction, out var operations, out var operationsStatusCode) || operations == null)
             {
@@ -1602,7 +1595,15 @@ namespace ThesisManagement.Api.Controllers
             exportSnapshot.State = state.Data ?? new DefensePeriodStateDto();
             exportSnapshot.Councils = councils.Data ?? new PagedResult<CouncilDraftDto>();
 
-            var exportResult = await _operationsExportService.ExportAsync(exportSnapshot, format, HttpContext.RequestAborted);
+            // Apply IsPassed filter to ScoringMatrix if requested
+            if (query.IsPassed.HasValue && exportSnapshot.ScoringMatrix != null)
+            {
+                exportSnapshot.ScoringMatrix = exportSnapshot.ScoringMatrix
+                    .Where(x => x.IsPassed == query.IsPassed.Value)
+                    .ToList();
+            }
+
+            var exportResult = await _operationsExportService.ExportAsync(exportSnapshot, format, normalizedTemplate, query.SelectedFields, HttpContext.RequestAborted);
             if (!exportResult.Success)
             {
                 return StatusCode(exportResult.HttpStatusCode == 0 ? 400 : exportResult.HttpStatusCode, exportResult);
@@ -1756,427 +1757,487 @@ namespace ThesisManagement.Api.Controllers
         [Authorize(Roles = "Admin,Head,Secretary,Lecturer")]
         public async Task<IActionResult> ExportStudentsByPeriod(int periodId, [FromQuery] string format = "xlsx", [FromQuery] bool includeScores = false)
         {
-            var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
-            if (period == null)
+            try
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
-            }
+                var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
+                if (period == null)
+                {
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
+                }
 
-            var context = await BuildPeriodPipelineContextAsync(period);
-            var items = await BuildRegistrationItemsAsync(context);
-            var students = items.Where(x => x.IsEligibleForDefense).ToList();
+                var context = await BuildPeriodPipelineContextAsync(period);
+                var items = await BuildRegistrationItemsAsync(context);
+                var students = items.Where(x => x.IsEligibleForDefense).ToList();
 
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            var fileNameBase = $"students-period-{periodId}-{timestamp}";
+                var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+                var fileNameBase = $"students-period-{periodId}-{timestamp}";
 
-            if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("STT,MaSV,Ho va ten,Ngay sinh,Lop,Diem TBC, Xep loai,Ten de tai,Giang vien huong dan,Ghi chu");
+                if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("STT,MaSV,Ho va ten,Ngay sinh,Lop,Diem TBC, Xep loai,Ten de tai,Giang vien huong dan,Ghi chu");
+                    for (int i = 0; i < students.Count; i++)
+                    {
+                        var s = students[i];
+                        var line = string.Join(",",
+                            (i + 1).ToString(),
+                            EscapeCsv(s.StudentCode),
+                            EscapeCsv(s.StudentName),
+                            "",
+                            "",
+                            "",
+                            "",
+                            EscapeCsv(s.TopicTitle ?? string.Empty),
+                            EscapeCsv(s.SupervisorName ?? string.Empty),
+                            "");
+                        sb.AppendLine(line);
+                    }
+
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+                    return File(bytes, "text/csv", fileNameBase + ".csv");
+                }
+
+                if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var headers = new List<string> { "STT", "Mã SV", "Họ và tên", "Tên đề tài", "Giảng viên hướng dẫn", "Ghi chú" };
+                    var rows = students.Select((s, i) => new List<string>
+                    {
+                        (i+1).ToString(),
+                        s.StudentCode ?? string.Empty,
+                        s.StudentName ?? string.Empty,
+                        s.TopicTitle ?? string.Empty,
+                        s.SupervisorName ?? string.Empty,
+                        string.Empty
+                    }).ToList();
+
+                    var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> {
+                        ("DANH SÁCH SINH VIÊN", headers, rows)
+                    };
+
+                    if (includeScores)
+                    {
+                        var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
+                        var scoreData = scoreRows.Success && scoreRows.Data != null
+                            ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
+                            : new List<List<string>>();
+
+                        var scoreHeaders = new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" };
+                        sections.Add(("BẢNG ĐIỂM", scoreHeaders, scoreData));
+                    }
+
+                    var docx = CreateDocxWithTables(sections);
+                    var doc = new Aspose.Words.Document(new MemoryStream(docx));
+                    using var outMs = new MemoryStream();
+                    doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
+                    return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                }
+
+                using var wb = new XLWorkbook();
+                var ws = wb.Worksheets.Add("Sinh vien");
+                var row = 1;
+                ws.Cell(row, 1).Value = "STT";
+                ws.Cell(row, 2).Value = "Mã SV";
+                ws.Cell(row, 3).Value = "Họ và tên";
+                ws.Cell(row, 4).Value = "Ngày sinh";
+                ws.Cell(row, 5).Value = "Lớp";
+                ws.Cell(row, 6).Value = "Điểm TBC";
+                ws.Cell(row, 7).Value = "Xếp loại";
+                ws.Cell(row, 8).Value = "Tên đề tài";
+                ws.Cell(row, 9).Value = "Giảng viên hướng dẫn";
+                ws.Row(row).Style.Font.Bold = true;
+
                 for (int i = 0; i < students.Count; i++)
                 {
                     var s = students[i];
-                        var line = string.Join(",",
-                        (i + 1).ToString(),
-                        EscapeCsv(s.StudentCode),
-                        EscapeCsv(s.StudentName),
-                        "",
-                        "",
-                        "",
-                        "",
-                        EscapeCsv(s.TopicTitle ?? string.Empty),
-                        EscapeCsv(s.SupervisorName ?? string.Empty),
-                        "");
-                    sb.AppendLine(line);
+                    row++;
+                    ws.Cell(row, 1).Value = i + 1;
+                    ws.Cell(row, 2).Value = s.StudentCode;
+                    ws.Cell(row, 3).Value = s.StudentName;
+                    ws.Cell(row, 4).Value = string.Empty;
+                    ws.Cell(row, 5).Value = string.Empty;
+                    ws.Cell(row, 6).Value = string.Empty;
+                    ws.Cell(row, 7).Value = string.Empty;
+                    ws.Cell(row, 8).Value = s.TopicTitle ?? string.Empty;
+                    ws.Cell(row, 9).Value = s.SupervisorName ?? string.Empty;
                 }
 
-                var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
-                return File(bytes, "text/csv", fileNameBase + ".csv");
-            }
+                // Apply standard branding and formatting
+                ApplyStandardExcelFormatting(ws, "DANH SÁCH SINH VIÊN ĐỦ ĐIỀU KIỆN THAM GIA THỰC HIỆN ĐỒ ÁN", students.Count);
 
-            if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                var headers = new List<string> { "STT", "Mã SV", "Họ và tên", "Tên đề tài", "Giảng viên hướng dẫn", "Ghi chú" };
-                var rows = students.Select((s, i) => new List<string>
+                using var ms = new MemoryStream();
+                wb.SaveAs(ms);
+                ms.Seek(0, SeekOrigin.Begin);
+                var fileBytes = ms.ToArray();
+                if (fileBytes == null || fileBytes.Length == 0)
                 {
-                    (i+1).ToString(),
-                    s.StudentCode ?? string.Empty,
-                    s.StudentName ?? string.Empty,
-                    s.TopicTitle ?? string.Empty,
-                    s.SupervisorName ?? string.Empty,
-                    string.Empty
-                }).ToList();
-
-                var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> {
-                    ("DANH SÁCH SINH VIÊN", headers, rows)
-                };
-
-                if (includeScores)
-                {
-                    var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
-                    var scoreData = scoreRows.Success && scoreRows.Data != null
-                        ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
-                        : new List<List<string>>();
-
-                    var scoreHeaders = new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" };
-                    sections.Add(("BẢNG ĐIỂM", scoreHeaders, scoreData));
+                    return BadRequest(ApiResponse<object>.Fail("Không thể tạo file Excel. Dữ liệu có thể trống hoặc có lỗi khi tạo file.", 400));
                 }
-
-                var docx = CreateDocxWithTables(sections);
-                var doc = new Aspose.Words.Document(new MemoryStream(docx));
-                using var outMs = new MemoryStream();
-                doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
-                return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
             }
-
-            using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("Sinh vien");
-            var row = 1;
-            ws.Cell(row, 1).Value = "STT";
-            ws.Cell(row, 2).Value = "Mã SV";
-            ws.Cell(row, 3).Value = "Họ và tên";
-            ws.Cell(row, 4).Value = "Ngày sinh";
-            ws.Cell(row, 5).Value = "Lớp";
-            ws.Cell(row, 6).Value = "Điểm TBC";
-            ws.Cell(row, 7).Value = "Xếp loại";
-            ws.Cell(row, 8).Value = "Tên đề tài";
-            ws.Cell(row, 9).Value = "Giảng viên hướng dẫn";
-            ws.Row(row).Style.Font.Bold = true;
-
-            for (int i = 0; i < students.Count; i++)
+            catch (Exception ex)
             {
-                var s = students[i];
-                row++;
-                ws.Cell(row, 1).Value = i + 1;
-                ws.Cell(row, 2).Value = s.StudentCode;
-                ws.Cell(row, 3).Value = s.StudentName;
-                ws.Cell(row, 4).Value = string.Empty;
-                ws.Cell(row, 5).Value = string.Empty;
-                ws.Cell(row, 6).Value = string.Empty;
-                ws.Cell(row, 7).Value = string.Empty;
-                ws.Cell(row, 8).Value = s.TopicTitle ?? string.Empty;
-                ws.Cell(row, 9).Value = s.SupervisorName ?? string.Empty;
+                var errorMsg = $"Lỗi khi xuất danh sách sinh viên: {ex.Message}";
+                return StatusCode(500, ApiResponse<object>.Fail(errorMsg, 500));
             }
-
-            using var ms = new MemoryStream();
-            wb.SaveAs(ms);
-            return File(ms.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
         }
 
         [HttpGet("{periodId:int}/exports/lecturers")]
         [Authorize(Roles = "Admin,Head,Secretary")]
         public async Task<IActionResult> ExportLecturersByPeriod(int periodId, [FromQuery] string format = "xlsx", [FromQuery] bool includeScores = false)
         {
-            var exists = await DefensePeriodExistsAsync(periodId);
-            if (!exists)
+            try
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
-            }
+                var exists = await DefensePeriodExistsAsync(periodId);
+                if (!exists)
+                {
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
+                }
 
-            var query = _uow.DefenseTermLecturers.Query().AsNoTracking()
-                .Where(x => x.DefenseTermId == periodId);
+                var query = _uow.DefenseTermLecturers.Query().AsNoTracking()
+                    .Where(x => x.DefenseTermId == periodId);
 
-            var list = await query
-                .GroupJoin(_uow.LecturerProfiles.Query().AsNoTracking(),
-                    dt => dt.LecturerCode,
-                    lp => lp.LecturerCode,
-                    (dt, profiles) => new
+                var list = await query
+                    .GroupJoin(_uow.LecturerProfiles.Query().AsNoTracking(),
+                        dt => dt.LecturerCode,
+                        lp => lp.LecturerCode,
+                        (dt, profiles) => new
+                        {
+                            dt.LecturerCode,
+                            Name = profiles.Select(p => p.FullName).FirstOrDefault() ?? dt.LecturerCode,
+                            dt.IsPrimary,
+                            dt.UserCode
+                        })
+                    .OrderBy(x => x.Name)
+                    .ToListAsync();
+
+                var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+                var fileNameBase = $"lecturers-period-{periodId}-{timestamp}";
+
+                if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("STT,MaGV,Ho va ten,IsPrimary,UserCode");
+                    for (int i = 0; i < list.Count; i++)
                     {
-                        dt.LecturerCode,
-                        Name = profiles.Select(p => p.FullName).FirstOrDefault() ?? dt.LecturerCode,
-                        dt.Role,
-                        dt.IsPrimary,
-                        dt.UserCode
-                    })
-                .OrderBy(x => x.Name)
-                .ToListAsync();
+                        var r = list[i];
+                        sb.AppendLine(string.Join(",",
+                            (i + 1).ToString(),
+                            EscapeCsv(r.LecturerCode),
+                            EscapeCsv(r.Name),
+                            r.IsPrimary ? "Có" : "Không",
+                            EscapeCsv(r.UserCode ?? string.Empty)));
+                    }
+                    return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
+                }
 
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            var fileNameBase = $"lecturers-period-{periodId}-{timestamp}";
+                if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var headers = new List<string> { "STT", "Mã GV", "Họ và tên", "Là chính", "UserCode" };
+                    var rows = list.Select((r, i) => new List<string> { (i+1).ToString(), r.LecturerCode, r.Name, r.IsPrimary ? "Có" : "Không", r.UserCode ?? string.Empty }).ToList();
 
-            if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("STT,MaGV,Ho va ten,Role,IsPrimary,UserCode");
+                    var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH GIẢng VIÊN", headers, rows) };
+                    var docx = CreateDocxWithTables(sections);
+                    var doc = new Aspose.Words.Document(new MemoryStream(docx));
+                    using var outMs = new MemoryStream();
+                    doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
+                    return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                }
+
+                using var wb = new XLWorkbook();
+                var ws = wb.Worksheets.Add("Giang vien");
+                var row = 1;
+                ws.Cell(row, 1).Value = "STT";
+                ws.Cell(row, 2).Value = "Mã GV";
+                ws.Cell(row, 3).Value = "Họ và tên";
+                ws.Cell(row, 4).Value = "Là chính";
+                ws.Cell(row, 5).Value = "UserCode";
+                ws.Row(row).Style.Font.Bold = true;
+
                 for (int i = 0; i < list.Count; i++)
                 {
                     var r = list[i];
-                    sb.AppendLine(string.Join(",",
-                        (i + 1).ToString(),
-                        EscapeCsv(r.LecturerCode),
-                        EscapeCsv(r.Name),
-                        EscapeCsv(r.Role ?? string.Empty),
-                        r.IsPrimary ? "Có" : "Không",
-                        EscapeCsv(r.UserCode ?? string.Empty)));
+                    row++;
+                    ws.Cell(row, 1).Value = i + 1;
+                    ws.Cell(row, 2).Value = r.LecturerCode;
+                    ws.Cell(row, 3).Value = r.Name;
+                    ws.Cell(row, 4).Value = r.IsPrimary ? "Có" : "Không";
+                    ws.Cell(row, 5).Value = r.UserCode ?? string.Empty;
                 }
-                return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
-            }
 
-            if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+                // Apply standard branding and formatting
+                ApplyStandardExcelFormatting(ws, "DANH SÁCH GIẢNG VIÊN HƯỚNG DẪN", list.Count);
+
+                using var ms = new MemoryStream();
+                wb.SaveAs(ms);
+                ms.Seek(0, SeekOrigin.Begin);
+                var fileBytes = ms.ToArray();
+                if (fileBytes == null || fileBytes.Length == 0)
+                {
+                    return BadRequest(ApiResponse<object>.Fail("Không thể tạo file Excel. Dữ liệu có thể trống hoặc có lỗi khi tạo file.", 400));
+                }
+                return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
+            }
+            catch (Exception ex)
             {
-                var headers = new List<string> { "STT", "Mã GV", "Họ và tên", "Vai trò", "Là chính", "UserCode" };
-                var rows = list.Select((r, i) => new List<string> { (i+1).ToString(), r.LecturerCode, r.Name, r.Role ?? string.Empty, r.IsPrimary ? "Có" : "Không", r.UserCode ?? string.Empty }).ToList();
-
-                var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH GIẢng VIÊN", headers, rows) };
-                var docx = CreateDocxWithTables(sections);
-                var doc = new Aspose.Words.Document(new MemoryStream(docx));
-                using var outMs = new MemoryStream();
-                doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
-                return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                var errorMsg = $"Lỗi khi xuất danh sách giảng viên: {ex.Message}";
+                return StatusCode(500, ApiResponse<object>.Fail(errorMsg, 500));
             }
-
-            using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("Giang vien");
-            var row = 1;
-            ws.Cell(row, 1).Value = "STT";
-            ws.Cell(row, 2).Value = "Mã GV";
-            ws.Cell(row, 3).Value = "Họ và tên";
-            ws.Cell(row, 4).Value = "Role";
-            ws.Cell(row, 5).Value = "Là chính";
-            ws.Cell(row, 6).Value = "UserCode";
-            ws.Row(row).Style.Font.Bold = true;
-
-            for (int i = 0; i < list.Count; i++)
-            {
-                var r = list[i];
-                row++;
-                ws.Cell(row, 1).Value = i + 1;
-                ws.Cell(row, 2).Value = r.LecturerCode;
-                ws.Cell(row, 3).Value = r.Name;
-                ws.Cell(row, 4).Value = r.Role ?? string.Empty;
-                ws.Cell(row, 5).Value = r.IsPrimary ? "Có" : "Không";
-                ws.Cell(row, 6).Value = r.UserCode ?? string.Empty;
-            }
-
-            using var ms = new MemoryStream();
-            wb.SaveAs(ms);
-            return File(ms.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
         }
 
         [HttpGet("{periodId:int}/exports/topics-by-supervisor")]
         [Authorize(Roles = "Admin,Head,Secretary")]
         public async Task<IActionResult> ExportTopicsBySupervisor(int periodId, [FromQuery] string? supervisorCode = null, [FromQuery] string format = "xlsx", [FromQuery] bool includeScores = false)
         {
-            var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
-            if (period == null)
+            try
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
-            }
+                var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
+                if (period == null)
+                {
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
+                }
 
-            var context = await BuildPeriodPipelineContextAsync(period);
-            var items = await BuildRegistrationItemsAsync(context);
-            var filtered = string.IsNullOrWhiteSpace(supervisorCode)
-                ? items
-                : items.Where(x => string.Equals(x.SupervisorCode, supervisorCode, StringComparison.OrdinalIgnoreCase)).ToList();
+                var context = await BuildPeriodPipelineContextAsync(period);
+                var items = await BuildRegistrationItemsAsync(context);
+                var filtered = string.IsNullOrWhiteSpace(supervisorCode)
+                    ? items
+                    : items.Where(x => string.Equals(x.SupervisorCode, supervisorCode, StringComparison.OrdinalIgnoreCase)).ToList();
 
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            var fileNameBase = $"topics-by-supervisor-{periodId}-{timestamp}";
+                var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+                var fileNameBase = $"topics-by-supervisor-{periodId}-{timestamp}";
 
-            if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("STT,MaDeTai,TenDeTai,MaSV,Ho va ten,MaGVHD,Giang vien huong dan,Trang thai,Da phan cong");
+                if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("STT,MaDeTai,TenDeTai,MaSV,Ho va ten,MaGVHD,Giang vien huong dan,Trang thai,Da phan cong");
+                    for (int i = 0; i < filtered.Count; i++)
+                    {
+                        var t = filtered[i];
+                        sb.AppendLine(string.Join(",",
+                            (i + 1).ToString(),
+                            EscapeCsv(t.TopicCode),
+                            EscapeCsv(t.TopicTitle),
+                            EscapeCsv(t.StudentCode),
+                            EscapeCsv(t.StudentName),
+                            EscapeCsv(t.SupervisorCode ?? string.Empty),
+                            EscapeCsv(t.SupervisorName ?? string.Empty),
+                            EscapeCsv(t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa"),
+                            EscapeCsv(t.IsAssignedToCouncil ? "Có" : "Không")));
+                    }
+                    return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
+                }
+
+                if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var headers = new List<string> { "STT", "Mã đề tài", "Tên đề tài", "Mã SV", "Họ và tên", "Mã GVHD", "Giảng viên hướng dẫn", "Trạng thái", "Đã phân công" };
+                    var rows = filtered.Select((t, i) => new List<string> {
+                        (i+1).ToString(), t.TopicCode ?? string.Empty, t.TopicTitle ?? string.Empty, t.StudentCode ?? string.Empty, t.StudentName ?? string.Empty, t.SupervisorCode ?? string.Empty, t.SupervisorName ?? string.Empty, t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa", t.IsAssignedToCouncil ? "Có" : "Không"
+                    }).ToList();
+
+                    var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH ĐỀ TÀI", headers, rows) };
+                    if (includeScores)
+                    {
+                        var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
+                        var scoreData = scoreRows.Success && scoreRows.Data != null
+                            ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
+                            : new List<List<string>>();
+                        sections.Add(("BẢNG ĐIỂM", new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" }, scoreData));
+                    }
+
+                    var docx = CreateDocxWithTables(sections);
+                    var doc = new Aspose.Words.Document(new MemoryStream(docx));
+                    using var outMs = new MemoryStream();
+                    doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
+                    return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                }
+
+                using var wb = new XLWorkbook();
+                var ws = wb.Worksheets.Add("De tai");
+                var row = 1;
+                ws.Cell(row, 1).Value = "STT";
+                ws.Cell(row, 2).Value = "Mã đề tài";
+                ws.Cell(row, 3).Value = "Tên đề tài";
+                ws.Cell(row, 4).Value = "Mã SV";
+                ws.Cell(row, 5).Value = "Họ và tên";
+                ws.Cell(row, 6).Value = "Mã GVHD";
+                ws.Cell(row, 7).Value = "Giảng viên hướng dẫn";
+                ws.Cell(row, 8).Value = "Trạng thái";
+                ws.Cell(row, 9).Value = "Đã phân công";
+                ws.Row(row).Style.Font.Bold = true;
+
                 for (int i = 0; i < filtered.Count; i++)
                 {
                     var t = filtered[i];
-                    sb.AppendLine(string.Join(",",
-                        (i + 1).ToString(),
-                        EscapeCsv(t.TopicCode),
-                        EscapeCsv(t.TopicTitle),
-                        EscapeCsv(t.StudentCode),
-                        EscapeCsv(t.StudentName),
-                        EscapeCsv(t.SupervisorCode ?? string.Empty),
-                        EscapeCsv(t.SupervisorName ?? string.Empty),
-                        EscapeCsv(t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa"),
-                        EscapeCsv(t.IsAssignedToCouncil ? "Có" : "Không")));
+                    row++;
+                    ws.Cell(row, 1).Value = i + 1;
+                    ws.Cell(row, 2).Value = t.TopicCode;
+                    ws.Cell(row, 3).Value = t.TopicTitle;
+                    ws.Cell(row, 4).Value = t.StudentCode;
+                    ws.Cell(row, 5).Value = t.StudentName;
+                    ws.Cell(row, 6).Value = t.SupervisorCode ?? string.Empty;
+                    ws.Cell(row, 7).Value = t.SupervisorName ?? string.Empty;
+                    ws.Cell(row, 8).Value = t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa";
+                    ws.Cell(row, 9).Value = t.IsAssignedToCouncil ? "Có" : "Không";
                 }
-                return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
-            }
 
-            if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                var headers = new List<string> { "STT", "Mã đề tài", "Tên đề tài", "Mã SV", "Họ và tên", "Mã GVHD", "Giảng viên hướng dẫn", "Trạng thái", "Đã phân công" };
-                var rows = filtered.Select((t, i) => new List<string> {
-                    (i+1).ToString(), t.TopicCode ?? string.Empty, t.TopicTitle ?? string.Empty, t.StudentCode ?? string.Empty, t.StudentName ?? string.Empty, t.SupervisorCode ?? string.Empty, t.SupervisorName ?? string.Empty, t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa", t.IsAssignedToCouncil ? "Có" : "Không"
-                }).ToList();
-
-                var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH ĐỀ TÀI", headers, rows) };
-                if (includeScores)
+                using var ms = new MemoryStream();
+                wb.SaveAs(ms);
+                ms.Seek(0, SeekOrigin.Begin);
+                var fileBytes = ms.ToArray();
+                if (fileBytes == null || fileBytes.Length == 0)
                 {
-                    var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
-                    var scoreData = scoreRows.Success && scoreRows.Data != null
-                        ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
-                        : new List<List<string>>();
-                    sections.Add(("BẢNG ĐIỂM", new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" }, scoreData));
+                    return BadRequest(ApiResponse<object>.Fail("Không thể tạo file Excel. Dữ liệu có thể trống hoặc có lỗi khi tạo file.", 400));
                 }
-
-                var docx = CreateDocxWithTables(sections);
-                var doc = new Aspose.Words.Document(new MemoryStream(docx));
-                using var outMs = new MemoryStream();
-                doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
-                return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
             }
-
-            using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("De tai");
-            var row = 1;
-            ws.Cell(row, 1).Value = "STT";
-            ws.Cell(row, 2).Value = "Mã đề tài";
-            ws.Cell(row, 3).Value = "Tên đề tài";
-            ws.Cell(row, 4).Value = "Mã SV";
-            ws.Cell(row, 5).Value = "Họ và tên";
-            ws.Cell(row, 6).Value = "Mã GVHD";
-            ws.Cell(row, 7).Value = "Giảng viên hướng dẫn";
-            ws.Cell(row, 8).Value = "Trạng thái";
-            ws.Cell(row, 9).Value = "Đã phân công";
-            ws.Row(row).Style.Font.Bold = true;
-
-            for (int i = 0; i < filtered.Count; i++)
+            catch (Exception ex)
             {
-                var t = filtered[i];
-                row++;
-                ws.Cell(row, 1).Value = i + 1;
-                ws.Cell(row, 2).Value = t.TopicCode;
-                ws.Cell(row, 3).Value = t.TopicTitle;
-                ws.Cell(row, 4).Value = t.StudentCode;
-                ws.Cell(row, 5).Value = t.StudentName;
-                ws.Cell(row, 6).Value = t.SupervisorCode ?? string.Empty;
-                ws.Cell(row, 7).Value = t.SupervisorName ?? string.Empty;
-                ws.Cell(row, 8).Value = t.IsEligibleForDefense ? "Đủ điều kiện" : "Chưa";
-                ws.Cell(row, 9).Value = t.IsAssignedToCouncil ? "Có" : "Không";
+                var errorMsg = $"Lỗi khi xuất danh sách đề tài: {ex.Message}";
+                return StatusCode(500, ApiResponse<object>.Fail(errorMsg, 500));
             }
-
-            using var ms = new MemoryStream();
-            wb.SaveAs(ms);
-            return File(ms.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
         }
 
         [HttpGet("{periodId:int}/exports/assigned-topics")]
         [Authorize(Roles = "Admin,Head,Secretary")]
         public async Task<IActionResult> ExportAssignedTopics(int periodId, [FromQuery] string format = "xlsx", [FromQuery] bool includeScores = false)
         {
-            var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
-            if (period == null)
+            try
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
-            }
-
-            var councilIds = await GetPeriodCouncilIdsAsync(period);
-            if (councilIds.Count == 0)
-            {
-                return Ok(ApiResponse<object>.SuccessResponse(new { Message = "Không có hội đồng để xuất." }));
-            }
-
-            var assignments = await _uow.DefenseAssignments.Query().AsNoTracking()
-                .Where(x => x.CommitteeID.HasValue && councilIds.Contains(x.CommitteeID.Value))
-                .ToListAsync();
-
-            var topicIds = assignments.Where(a => a.TopicID.HasValue).Select(a => a.TopicID!.Value).Distinct().ToList();
-            var topics = topicIds.Count == 0
-                ? new List<dynamic>()
-                : await _uow.Topics.Query().AsNoTracking()
-                    .Where(t => topicIds.Contains(t.TopicID))
-                    .Select(t => new { t.TopicID, t.TopicCode, t.Title, t.ProposerStudentCode })
-                    .ToListAsync<dynamic>();
-
-            var studentCodes = topics.Select(t => (string?)t.ProposerStudentCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var studentMap = studentCodes.Count == 0
-                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                : (await _uow.StudentProfiles.Query().AsNoTracking()
-                    .Where(s => studentCodes.Contains(s.StudentCode))
-                    .Select(s => new { s.StudentCode, s.FullName })
-                    .ToListAsync())
-                    .ToDictionary(x => x.StudentCode, x => string.IsNullOrWhiteSpace(x.FullName) ? x.StudentCode : x.FullName, StringComparer.OrdinalIgnoreCase);
-
-            var list = assignments.Select(a =>
-            {
-                var topic = topics.FirstOrDefault(t => t.TopicID == a.TopicID);
-                var proposer = topic != null ? (string?)topic.ProposerStudentCode : null;
-                var studentName = string.IsNullOrWhiteSpace(proposer) ? string.Empty : (studentMap.TryGetValue(proposer!, out var n) ? n : proposer);
-                return new
+                var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
+                if (period == null)
                 {
-                    a.AssignmentID,
-                    a.AssignmentCode,
-                    TopicCode = topic != null ? topic.TopicCode : string.Empty,
-                    TopicTitle = topic != null ? topic.Title : string.Empty,
-                    StudentCode = proposer ?? string.Empty,
-                    StudentName = studentName,
-                    a.CommitteeID
-                };
-            }).OrderBy(x => x.CommitteeID).ThenBy(x => x.AssignmentCode).ToList();
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
+                }
 
-            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            var fileNameBase = $"assigned-topics-period-{periodId}-{timestamp}";
+                var councilIds = await GetPeriodCouncilIdsAsync(period);
+                if (councilIds.Count == 0)
+                {
+                    return Ok(ApiResponse<object>.SuccessResponse(new { Message = "Không có hội đồng để xuất." }));
+                }
 
-            if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("STT,MaPhanCong,MaDeTai,TenDeTai,MaSV,Ho va ten,MaHoiDong");
+                var assignments = await _uow.DefenseAssignments.Query().AsNoTracking()
+                    .Where(x => x.CommitteeID.HasValue && councilIds.Contains(x.CommitteeID.Value))
+                    .ToListAsync();
+
+                var topicIds = assignments.Where(a => a.TopicID.HasValue).Select(a => a.TopicID!.Value).Distinct().ToList();
+                var topics = topicIds.Count == 0
+                    ? new List<dynamic>()
+                    : await _uow.Topics.Query().AsNoTracking()
+                        .Where(t => topicIds.Contains(t.TopicID))
+                        .Select(t => new { t.TopicID, t.TopicCode, t.Title, t.ProposerStudentCode })
+                        .ToListAsync<dynamic>();
+
+                var studentCodes = topics.Select(t => (string?)t.ProposerStudentCode).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var studentMap = studentCodes.Count == 0
+                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    : (await _uow.StudentProfiles.Query().AsNoTracking()
+                        .Where(s => studentCodes.Contains(s.StudentCode))
+                        .Select(s => new { s.StudentCode, s.FullName })
+                        .ToListAsync())
+                        .ToDictionary(x => x.StudentCode, x => string.IsNullOrWhiteSpace(x.FullName) ? x.StudentCode : x.FullName, StringComparer.OrdinalIgnoreCase);
+
+                var list = assignments.Select(a =>
+                {
+                    var topic = topics.FirstOrDefault(t => t.TopicID == a.TopicID);
+                    var proposer = topic != null ? (string?)topic.ProposerStudentCode : null;
+                    var studentName = string.IsNullOrWhiteSpace(proposer) ? string.Empty : (studentMap.TryGetValue(proposer!, out var n) ? n : proposer);
+                    return new
+                    {
+                        a.AssignmentID,
+                        a.AssignmentCode,
+                        TopicCode = topic != null ? topic.TopicCode : string.Empty,
+                        TopicTitle = topic != null ? topic.Title : string.Empty,
+                        StudentCode = proposer ?? string.Empty,
+                        StudentName = studentName,
+                        a.CommitteeID
+                    };
+                }).OrderBy(x => x.CommitteeID).ThenBy(x => x.AssignmentCode).ToList();
+
+                var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+                var fileNameBase = $"assigned-topics-period-{periodId}-{timestamp}";
+
+                if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("STT,MaPhanCong,MaDeTai,TenDeTai,MaSV,Ho va ten,MaHoiDong");
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        var r = list[i];
+                        sb.AppendLine(string.Join(",",
+                            (i + 1).ToString(),
+                            EscapeCsv(r.AssignmentCode),
+                            EscapeCsv(r.TopicCode),
+                            EscapeCsv(r.TopicTitle),
+                            EscapeCsv(r.StudentCode),
+                            EscapeCsv(r.StudentName),
+                            r.CommitteeID?.ToString() ?? string.Empty));
+                    }
+                    return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
+                }
+
+                if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var headers = new List<string> { "STT", "Mã phân công", "Mã đề tài", "Tên đề tài", "Mã SV", "Họ và tên", "Mã hội đồng" };
+                    var rows = list.Select((r, i) => new List<string> { (i+1).ToString(), r.AssignmentCode ?? string.Empty, r.TopicCode ?? string.Empty, r.TopicTitle ?? string.Empty, r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.CommitteeID?.ToString() ?? string.Empty }).ToList();
+
+                    var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH PHÂN CÔNG", headers, rows) };
+                    if (includeScores)
+                    {
+                        var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
+                        var scoreData = scoreRows.Success && scoreRows.Data != null
+                            ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
+                            : new List<List<string>>();
+                        sections.Add(("BẢNG ĐIỂM", new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" }, scoreData));
+                    }
+
+                    var docx = CreateDocxWithTables(sections);
+                    var doc = new Aspose.Words.Document(new MemoryStream(docx));
+                    using var outMs = new MemoryStream();
+                    doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
+                    return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                }
+
+                using var wb = new XLWorkbook();
+                var ws = wb.Worksheets.Add("Phan cong");
+                var row = 1;
+                ws.Cell(row, 1).Value = "STT";
+                ws.Cell(row, 2).Value = "Mã phân công";
+                ws.Cell(row, 3).Value = "Mã đề tài";
+                ws.Cell(row, 4).Value = "Tên đề tài";
+                ws.Cell(row, 5).Value = "Mã SV";
+                ws.Cell(row, 6).Value = "Họ và tên";
+                ws.Cell(row, 7).Value = "Mã hội đồng";
+                ws.Row(row).Style.Font.Bold = true;
+
                 for (int i = 0; i < list.Count; i++)
                 {
                     var r = list[i];
-                    sb.AppendLine(string.Join(",",
-                        (i + 1).ToString(),
-                        EscapeCsv(r.AssignmentCode),
-                        EscapeCsv(r.TopicCode),
-                        EscapeCsv(r.TopicTitle),
-                        EscapeCsv(r.StudentCode),
-                        EscapeCsv(r.StudentName),
-                        r.CommitteeID?.ToString() ?? string.Empty));
+                    row++;
+                    ws.Cell(row, 1).Value = i + 1;
+                    ws.Cell(row, 2).Value = r.AssignmentCode;
+                    ws.Cell(row, 3).Value = r.TopicCode;
+                    ws.Cell(row, 4).Value = r.TopicTitle;
+                    ws.Cell(row, 5).Value = r.StudentCode;
+                    ws.Cell(row, 6).Value = r.StudentName;
+                    ws.Cell(row, 7).Value = r.CommitteeID?.ToString() ?? string.Empty;
                 }
-                return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", fileNameBase + ".csv");
-            }
 
-            if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                var headers = new List<string> { "STT", "Mã phân công", "Mã đề tài", "Tên đề tài", "Mã SV", "Họ và tên", "Mã hội đồng" };
-                var rows = list.Select((r, i) => new List<string> { (i+1).ToString(), r.AssignmentCode ?? string.Empty, r.TopicCode ?? string.Empty, r.TopicTitle ?? string.Empty, r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.CommitteeID?.ToString() ?? string.Empty }).ToList();
+                ApplyStandardExcelFormatting(ws, "DANH SÁCH ĐỀ TÀI ĐÃ PHÂN CÔNG", list.Count);
 
-                var sections = new List<(string Title, List<string> Headers, List<List<string>> Rows)> { ("DANH SÁCH PHÂN CÔNG", headers, rows) };
-                if (includeScores)
+                using var ms = new MemoryStream();
+                wb.SaveAs(ms);
+                ms.Seek(0, SeekOrigin.Begin);
+                var fileBytes = ms.ToArray();
+                if (fileBytes == null || fileBytes.Length == 0)
                 {
-                    var scoreRows = await _scoringMatrixQuery.ExecuteAsync(periodId);
-                    var scoreData = scoreRows.Success && scoreRows.Data != null
-                        ? scoreRows.Data.Select((r, idx) => new List<string> { (idx+1).ToString(), r.StudentCode ?? string.Empty, r.StudentName ?? string.Empty, r.FinalScore?.ToString() ?? string.Empty, r.FinalGrade ?? string.Empty }).ToList()
-                        : new List<List<string>>();
-                    sections.Add(("BẢNG ĐIỂM", new List<string> { "STT", "Mã SV", "Họ và tên", "Điểm", "Xếp loại" }, scoreData));
+                    return BadRequest(ApiResponse<object>.Fail("Không thể tạo file Excel. Dữ liệu có thể trống hoặc có lỗi khi tạo file.", 400));
                 }
-
-                var docx = CreateDocxWithTables(sections);
-                var doc = new Aspose.Words.Document(new MemoryStream(docx));
-                using var outMs = new MemoryStream();
-                doc.Save(outMs, Aspose.Words.SaveFormat.Pdf);
-                return File(outMs.ToArray(), "application/pdf", fileNameBase + ".pdf");
+                return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
             }
-
-            using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("Phan cong");
-            var row = 1;
-            ws.Cell(row, 1).Value = "STT";
-            ws.Cell(row, 2).Value = "Mã phân công";
-            ws.Cell(row, 3).Value = "Mã đề tài";
-            ws.Cell(row, 4).Value = "Tên đề tài";
-            ws.Cell(row, 5).Value = "Mã SV";
-            ws.Cell(row, 6).Value = "Họ và tên";
-            ws.Cell(row, 7).Value = "Mã hội đồng";
-            ws.Row(row).Style.Font.Bold = true;
-
-            for (int i = 0; i < list.Count; i++)
+            catch (Exception ex)
             {
-                var r = list[i];
-                row++;
-                ws.Cell(row, 1).Value = i + 1;
-                ws.Cell(row, 2).Value = r.AssignmentCode;
-                ws.Cell(row, 3).Value = r.TopicCode;
-                ws.Cell(row, 4).Value = r.TopicTitle;
-                ws.Cell(row, 5).Value = r.StudentCode;
-                ws.Cell(row, 6).Value = r.StudentName;
-                ws.Cell(row, 7).Value = r.CommitteeID?.ToString() ?? string.Empty;
+                var errorMsg = $"Lỗi khi xuất danh sách đề tài: {ex.Message}";
+                return StatusCode(500, ApiResponse<object>.Fail(errorMsg, 500));
             }
-
-            using var ms = new MemoryStream();
-            wb.SaveAs(ms);
-            return File(ms.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileNameBase + ".xlsx");
         }
 
         private static string EscapeCsv(string? v)
@@ -2200,8 +2261,9 @@ namespace ThesisManagement.Api.Controllers
 
                 foreach (var section in sections)
                 {
-                    // Title
-                    var p = new Paragraph(new Run(new Text(section.Title))) { ParagraphProperties = new ParagraphProperties(new Justification { Val = JustificationValues.Center }) };
+                    // Title (centered, uppercase, bold)
+                    var titleRun = new Run(new RunProperties(new Bold()), new Text(section.Title.ToUpperInvariant()));
+                    var p = new Paragraph(titleRun) { ParagraphProperties = new ParagraphProperties(new Justification { Val = JustificationValues.Center }) };
                     body.AppendChild(p);
 
                     // Table
@@ -2214,11 +2276,13 @@ namespace ThesisManagement.Api.Controllers
                         new InsideHorizontalBorder { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 4 },
                         new InsideVerticalBorder { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 4 })));
 
-                    // header row
+                    // header row (bold, centered)
                     var headerRow = new TableRow();
                     foreach (var h in section.Headers)
                     {
-                        var tc = new TableCell(new Paragraph(new Run(new Text(h))));
+                        var headerRun = new Run(new RunProperties(new Bold()), new Text(h ?? string.Empty));
+                        var headerPara = new Paragraph(headerRun) { ParagraphProperties = new ParagraphProperties(new Justification { Val = JustificationValues.Center }) };
+                        var tc = new TableCell(headerPara);
                         headerRow.Append(tc);
                     }
                     table.Append(headerRow);
@@ -2236,6 +2300,13 @@ namespace ThesisManagement.Api.Controllers
                     }
 
                     body.AppendChild(table);
+
+                    // Footer for this section (right-aligned export date)
+                    var footerText = $"Xuất: {DateTime.UtcNow:dd/MM/yyyy}";
+                    var footerRun = new Run(new Text(footerText));
+                    var footerPara = new Paragraph(footerRun) { ParagraphProperties = new ParagraphProperties(new Justification { Val = JustificationValues.Right }) };
+                    body.AppendChild(footerPara);
+
                     // page break between sections
                     body.AppendChild(new Paragraph(new Run(new Break() { Type = BreakValues.Page })));
                 }
@@ -2449,7 +2520,11 @@ namespace ThesisManagement.Api.Controllers
                 .Select(x => new DefensePeriodListItemDto
                 {
                     DefenseTermId = x.DefenseTermId,
+                    TermCode = x.TermCode,
                     Name = x.Name,
+                    Description = x.Description,
+                    AcademicYear = x.AcademicYear,
+                    Semester = x.Semester,
                     StartDate = x.StartDate,
                     EndDate = x.EndDate,
                     Status = x.Status,
@@ -2467,7 +2542,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var councilIds = await GetPeriodCouncilIdsAsync(period);
@@ -2509,7 +2584,11 @@ namespace ThesisManagement.Api.Controllers
             var dto = new DefensePeriodDetailDto
             {
                 DefenseTermId = period.DefenseTermId,
+                TermCode = period.TermCode,
                 Name = period.Name,
+                Description = period.Description,
+                AcademicYear = period.AcademicYear,
+                Semester = period.Semester,
                 StartDate = period.StartDate,
                 EndDate = period.EndDate,
                 Status = period.Status,
@@ -2554,13 +2633,34 @@ namespace ThesisManagement.Api.Controllers
                 .FirstOrDefaultAsync() != null;
             if (duplicatedName)
             {
-                return Conflict(ApiResponse<object>.Fail("Tên đợt bảo vệ đã tồn tại.", 409));
+                return Conflict(ApiResponse<object>.Fail("Tên đợt đồ án tốt nghiệp đã tồn tại.", 409));
             }
 
+            if (normalizedStatus == "Running")
+            {
+                var hasRunning = await _uow.DefenseTerms.Query().AsNoTracking()
+                    .Where(x => x.Status == "Running")
+                    .Select(x => (int?)x.DefenseTermId)
+                    .FirstOrDefaultAsync() != null;
+                if (hasRunning)
+                {
+                    return BadRequest(ApiResponse<object>.Fail("Chỉ được phép có duy nhất 1 đợt ở trạng thái RUNNING.", 400));
+                }
+            }
+            
+            if (string.IsNullOrWhiteSpace(request.TermCode))
+            {
+                request.TermCode = await GenerateUniqueTermCodeAsync(request.StartDate);
+            }
+            
             var now = DateTime.UtcNow;
             var period = new Models.DefenseTerm
             {
+                TermCode = request.TermCode,
                 Name = request.Name.Trim(),
+                Description = request.Description,
+                AcademicYear = request.AcademicYear,
+                Semester = request.Semester,
                 StartDate = request.StartDate.Date,
                 EndDate = request.EndDate?.Date,
                 Status = normalizedStatus,
@@ -2574,7 +2674,11 @@ namespace ThesisManagement.Api.Controllers
             var dto = new DefensePeriodDetailDto
             {
                 DefenseTermId = period.DefenseTermId,
+                TermCode = period.TermCode,
                 Name = period.Name,
+                Description = period.Description,
+                AcademicYear = period.AcademicYear,
+                Semester = period.Semester,
                 StartDate = period.StartDate,
                 EndDate = period.EndDate,
                 Status = period.Status,
@@ -2589,6 +2693,31 @@ namespace ThesisManagement.Api.Controllers
             return StatusCode(201, ApiResponse<DefensePeriodDetailDto>.SuccessResponse(dto, 1, 201));
         }
 
+
+        private async Task<string> GenerateUniqueTermCodeAsync(DateTime startDate)
+        {
+            var year = startDate.Year;
+            var prefix = $"DT-{year}-";
+            
+            var lastCode = await _uow.DefenseTerms.Query()
+                .AsNoTracking()
+                .Where(x => x.TermCode != null && x.TermCode.StartsWith(prefix))
+                .OrderByDescending(x => x.TermCode)
+                .Select(x => x.TermCode)
+                .FirstOrDefaultAsync();
+                
+            int nextSeq = 1;
+            if (lastCode != null && lastCode.Length > prefix.Length)
+            {
+                var seqPart = lastCode.Substring(prefix.Length);
+                if (int.TryParse(seqPart, out int currentSeq))
+                {
+                    nextSeq = currentSeq + 1;
+                }
+            }
+            
+            return $"{prefix}{nextSeq:D3}";
+        }
 
         private async Task<ActionResult<ApiResponse<DefensePeriodDetailDto>>> UpdatePeriod(int periodId, [FromBody] DefensePeriodUpdateDto request)
         {
@@ -2614,7 +2743,19 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
+            }
+
+            if (normalizedStatus == "Running" && period.Status != "Running")
+            {
+                var hasRunning = await _uow.DefenseTerms.Query().AsNoTracking()
+                    .Where(x => x.Status == "Running" && x.DefenseTermId != periodId)
+                    .Select(x => (int?)x.DefenseTermId)
+                    .FirstOrDefaultAsync() != null;
+                if (hasRunning)
+                {
+                    return BadRequest(ApiResponse<object>.Fail("Chỉ được phép có duy nhất 1 đợt ở trạng thái RUNNING.", 400));
+                }
             }
 
             var duplicatedName = await _uow.DefenseTerms.Query().AsNoTracking()
@@ -2623,10 +2764,14 @@ namespace ThesisManagement.Api.Controllers
                 .FirstOrDefaultAsync() != null;
             if (duplicatedName)
             {
-                return Conflict(ApiResponse<object>.Fail("Tên đợt bảo vệ đã tồn tại.", 409));
+                return Conflict(ApiResponse<object>.Fail("Tên đợt đồ án tốt nghiệp đã tồn tại.", 409));
             }
 
+            period.TermCode = request.TermCode;
             period.Name = request.Name.Trim();
+            period.Description = request.Description;
+            period.AcademicYear = request.AcademicYear;
+            period.Semester = request.Semester;
             period.StartDate = request.StartDate.Date;
             period.EndDate = request.EndDate?.Date;
             period.Status = normalizedStatus;
@@ -2673,7 +2818,11 @@ namespace ThesisManagement.Api.Controllers
             var dto = new DefensePeriodDetailDto
             {
                 DefenseTermId = period.DefenseTermId,
+                TermCode = period.TermCode,
                 Name = period.Name,
+                Description = period.Description,
+                AcademicYear = period.AcademicYear,
+                Semester = period.Semester,
                 StartDate = period.StartDate,
                 EndDate = period.EndDate,
                 Status = period.Status,
@@ -2696,7 +2845,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var councilIds = await GetPeriodCouncilIdsAsync(period);
@@ -2710,7 +2859,7 @@ namespace ThesisManagement.Api.Controllers
 
                 if (hasAssignments)
                 {
-                    return Conflict(ApiResponse<object>.Fail("Đợt đã phát sinh phân công bảo vệ, không thể xóa.", 409));
+                    return Conflict(ApiResponse<object>.Fail("Đợt đã phát sinh phân công đồ án tốt nghiệp, không thể xóa.", 409));
                 }
 
                 var hasCommittees = await _uow.Committees.Query().AsNoTracking()
@@ -2721,6 +2870,24 @@ namespace ThesisManagement.Api.Controllers
                 {
                     return Conflict(ApiResponse<object>.Fail("Đợt đã phát sinh hội đồng, không thể xóa.", 409));
                 }
+            }
+
+            // Check for students
+            var hasStudents = await _uow.DefenseTermStudents.Query().AsNoTracking()
+                .Where(x => x.DefenseTermId == periodId)
+                .AnyAsync();
+            if (hasStudents)
+            {
+                return Conflict(ApiResponse<object>.Fail("Đợt đã có sinh viên tham gia, không thể xóa.", 409));
+            }
+
+            // Check for lecturers
+            var hasLecturers = await _uow.DefenseTermLecturers.Query().AsNoTracking()
+                .Where(x => x.DefenseTermId == periodId)
+                .AnyAsync();
+            if (hasLecturers)
+            {
+                return Conflict(ApiResponse<object>.Fail("Đợt đã có giảng viên tham gia, không thể xóa.", 409));
             }
 
             _uow.DefenseTerms.Remove(period);
@@ -2734,7 +2901,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var stateResult = await _getStateQuery.ExecuteAsync(periodId);
@@ -2857,7 +3024,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var normalizedSource = (source ?? "all").Trim().ToLowerInvariant();
@@ -2951,7 +3118,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var normalizedSource = (source ?? "all").Trim().ToLowerInvariant();
@@ -3125,7 +3292,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var stateResult = await _getStateQuery.ExecuteAsync(periodId);
@@ -3202,7 +3369,7 @@ namespace ThesisManagement.Api.Controllers
                 new()
                 {
                     StepKey = "FINALIZE_PERIOD",
-                    StepName = "Chốt danh sách bảo vệ",
+                    StepName = "Chốt danh sách đồ án tốt nghiệp",
                     Completed = state.Finalized,
                     Enabled = state.AllowedActions.Contains("FINALIZE", StringComparer.OrdinalIgnoreCase),
                     BlockedReason = state.Finalized ? null : "Cần có hội đồng hợp lệ trước khi finalize."
@@ -3268,7 +3435,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
             if (period == null)
             {
-                var notFound = ApiResponse<DefensePeriodStatusTransitionResponseDto>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                var notFound = ApiResponse<DefensePeriodStatusTransitionResponseDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
                 await SaveLifecycleResponseAsync("ARCHIVE_PERIOD", periodId, request.IdempotencyKey, requestHash, notFound);
                 return NotFound(notFound);
             }
@@ -3363,7 +3530,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.GetByIdAsync(periodId);
             if (period == null)
             {
-                var notFound = ApiResponse<DefensePeriodStatusTransitionResponseDto>.Fail("Không tìm thấy đợt bảo vệ.", 404);
+                var notFound = ApiResponse<DefensePeriodStatusTransitionResponseDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404);
                 await SaveLifecycleResponseAsync("REOPEN_PERIOD", periodId, request.IdempotencyKey, requestHash, notFound);
                 return NotFound(notFound);
             }
@@ -3410,7 +3577,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var stateResult = await _getStateQuery.ExecuteAsync(periodId);
@@ -3500,7 +3667,7 @@ namespace ThesisManagement.Api.Controllers
                 {
                     Sequence = 4,
                     StageKey = "DEFENSE_SCORING",
-                    StageName = "Bảo vệ và chấm điểm",
+                    StageName = "Bảo vệ và chấm điểm đồ án tốt nghiệp",
                     TotalCount = assignedTopics,
                     CompletedCount = scoredTopics,
                     CompletionPercent = CalculateCompletionPercent(assignedTopics, scoredTopics),
@@ -3511,12 +3678,12 @@ namespace ThesisManagement.Api.Controllers
                 {
                     Sequence = 5,
                     StageKey = "POST_DEFENSE",
-                    StageName = "Hậu bảo vệ",
+                    StageName = "Hậu bảo vệ đồ án tốt nghiệp",
                     TotalCount = revisionTotal,
                     CompletedCount = approvedRevisionCount + rejectedRevisionCount,
                     CompletionPercent = CalculateCompletionPercent(revisionTotal, approvedRevisionCount + rejectedRevisionCount),
                     Status = ResolvePipelineStageStatus(revisionTotal, approvedRevisionCount + rejectedRevisionCount, stagePostDefenseBlocked),
-                    BlockedReason = stagePostDefenseBlocked ? "Cần publish điểm trước khi đóng toàn bộ nghiệp vụ hậu bảo vệ." : null
+                    BlockedReason = stagePostDefenseBlocked ? "Cần publish điểm trước khi đóng toàn bộ nghiệp vụ hậu bảo vệ đồ án tốt nghiệp." : null
                 }
             };
 
@@ -3559,7 +3726,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var context = await BuildPeriodPipelineContextAsync(period);
@@ -3636,7 +3803,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var context = await BuildPeriodPipelineContextAsync(period);
@@ -3687,7 +3854,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var normalizedStatus = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
@@ -3744,7 +3911,7 @@ namespace ThesisManagement.Api.Controllers
                         TopicTitle = topic?.Title ?? string.Empty,
                         StudentCode = studentCode,
                         StudentName = studentName,
-                        FinalStatus = revision.FinalStatus.ToString().ToUpperInvariant(),
+                        FinalStatus = (revision.FinalStatus?.ToString() ?? "PENDING").ToUpperInvariant(),
                         IsGvhdApproved = revision.IsGvhdApproved,
                         IsUvtkApproved = revision.IsUvtkApproved,
                         IsCtApproved = revision.IsCtApproved,
@@ -4011,7 +4178,7 @@ namespace ThesisManagement.Api.Controllers
             var period = await _uow.DefenseTerms.Query().AsNoTracking().FirstOrDefaultAsync(x => x.DefenseTermId == periodId);
             if (period == null)
             {
-                return NotFound(ApiResponse<AutoGenerateSimulationResultDto>.Fail("Không tìm thấy đợt bảo vệ.", 404));
+                return NotFound(ApiResponse<AutoGenerateSimulationResultDto>.Fail("Không tìm thấy đợt đồ án tốt nghiệp.", 404));
             }
 
             var periodStart = period.StartDate.Date;
@@ -5393,6 +5560,11 @@ namespace ThesisManagement.Api.Controllers
 
         private static string ResolveTopicStatusForCouncilAssignment(string? topicStatus, bool isAssignedToCouncil)
         {
+            if (topicStatus == "Hoàn thành bảo vệ" || topicStatus == "Hậu bảo vệ" || topicStatus == "Chỉnh sửa sau bảo vệ")
+            {
+                return topicStatus;
+            }
+
             if (isAssignedToCouncil)
             {
                 return "Đã phân hội đồng";
@@ -5583,11 +5755,19 @@ namespace ThesisManagement.Api.Controllers
             return normalized switch
             {
                 "DRAFT" => "Draft",
-                "PREPARING" => "Preparing",
+                "REGISTRATION" => "Registration",
+                "ASSIGNMENT" => "Assignment",
+                "PROGRESSTRACKING" => "ProgressTracking",
+                "COMMITTEEPREPARATION" => "CommitteePreparation",
+                "RUNNING" => "Running",
+                "PAUSED" => "Paused",
+                "SCORINGLOCKED" => "ScoringLocked",
+                "FINALIZATION" => "Finalization",
                 "FINALIZED" => "Finalized",
                 "PUBLISHED" => "Published",
+                "CLOSED" => "Closed",
                 "ARCHIVED" => "Archived",
-                _ => throw new ArgumentException("Status ch? h? tr?: Draft, Preparing, Finalized, Published, Archived.")
+                _ => throw new ArgumentException("Status không hợp lệ.")
             };
         }
 
@@ -5752,6 +5932,357 @@ namespace ThesisManagement.Api.Controllers
                 Processed = true,
                 Message = $"Yêu cầu {action} cho hội đồng {committee.CommitteeCode} đã được nhận."
             }));
+        }
+
+        #region Post-Defense (Hậu Bảo Vệ) Endpoints
+
+        /// <summary>
+        /// Get list of revisions for secretary review dashboard
+        /// Secretary can filter by status to find revisions needing action
+        /// </summary>
+        [HttpGet("{periodId:int}/revisions")]
+        [Authorize(Roles = "Admin,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<List<DTOs.Revisions.RevisionReadDto>>>> GetRevisions(
+            int periodId,
+            [FromQuery] string? status = null,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var query = _db.DefenseRevisions.AsNoTracking()
+                    .AsQueryable();
+
+                // Filter by status if provided
+                if (!string.IsNullOrWhiteSpace(status))
+                {
+                    if (!Enum.TryParse<RevisionStatus>(status, ignoreCase: true, out var revisionStatus))
+                    {
+                        return BadRequest(ApiResponse<List<DTOs.Revisions.RevisionReadDto>>.Fail($"Invalid status: {status}", 400));
+                    }
+                    query = query.Where(x => x.Status == revisionStatus);
+                }
+
+                var revisions = await query
+                    .OrderByDescending(x => x.CreatedAt)
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync(cancellationToken);
+
+                var dtos = _mapper.Map<List<DTOs.Revisions.RevisionReadDto>>(revisions);
+                return Ok(ApiResponse<List<DTOs.Revisions.RevisionReadDto>>.SuccessResponse(dtos));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<List<DTOs.Revisions.RevisionReadDto>>.Fail($"Error retrieving revisions: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get detail of a specific revision
+        /// </summary>
+        [HttpGet("{periodId:int}/revisions/{revisionId:int}")]
+        [Authorize(Roles = "Admin,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<DTOs.Revisions.RevisionReadDto>>> GetRevisionDetail(
+            int periodId,
+            int revisionId,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var revision = await _db.DefenseRevisions.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == revisionId, cancellationToken);
+
+                if (revision == null)
+                {
+                    return NotFound(ApiResponse<DTOs.Revisions.RevisionReadDto>.Fail($"Revision {revisionId} not found", 404));
+                }
+
+                var dto = _mapper.Map<DTOs.Revisions.RevisionReadDto>(revision);
+                return Ok(ApiResponse<DTOs.Revisions.RevisionReadDto>.SuccessResponse(dto));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<DTOs.Revisions.RevisionReadDto>.Fail($"Error retrieving revision: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Secretary submits review decision on a revision (APPROVE, REJECT, or REQUEST_REVISION)
+        /// </summary>
+        [HttpPost("{periodId:int}/revisions/{revisionId:int}/review")]
+        [Authorize(Roles = "Admin,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<object>>> ReviewRevision(
+            int periodId,
+            int revisionId,
+            [FromBody] DTOs.Revisions.SecretaryReviewRevisionDto reviewDto,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var revision = await _db.DefenseRevisions.FirstOrDefaultAsync(x => x.Id == revisionId, cancellationToken);
+                if (revision == null)
+                {
+                    return NotFound(ApiResponse<object>.Fail($"Revision {revisionId} not found", 404));
+                }
+
+                var userCode = User.FindFirst("UserCode")?.Value;
+                var action = reviewDto.Action?.Trim().ToUpper() ?? "APPROVE";
+
+                // Update revision based on action
+                switch (action)
+                {
+                    case "APPROVE":
+                        revision.Status = RevisionStatus.Approved;
+                        revision.SecretaryApprovedAt = DateTime.UtcNow;
+                        break;
+
+                    case "REJECT":
+                        revision.Status = RevisionStatus.Rejected;
+                        if (reviewDto.NewDeadline.HasValue)
+                        {
+                            revision.SubmissionDeadline = reviewDto.NewDeadline.Value;
+                        }
+                        revision.SecretaryApprovedAt = DateTime.UtcNow;
+                        break;
+
+                    default:
+                        return BadRequest(ApiResponse<object>.Fail($"Invalid action: {action}. Use APPROVE or REJECT", 400));
+                }
+
+                revision.SecretaryComment = reviewDto.Comment;
+                revision.SecretaryUserCode = userCode;
+                revision.LastUpdated = DateTime.UtcNow;
+
+                _db.DefenseRevisions.Update(revision);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                return Ok(ApiResponse<object>.SuccessResponse(new
+                {
+                    RevisionId = revision.Id,
+                    Status = revision.Status.ToString(),
+                    UpdatedAt = revision.LastUpdated,
+                    Message = $"Revision reviewed successfully with action: {action}"
+                }));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Error reviewing revision: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Student submits revised content
+        /// Updates revision content and changes status to STUDENT_SUBMITTED
+        /// </summary>
+        [HttpPost("{periodId:int}/revisions/{revisionId:int}/submit")]
+        [Authorize(Roles = "Student")]
+        public async Task<ActionResult<ApiResponse<object>>> SubmitRevision(
+            int periodId,
+            int revisionId,
+            [FromBody] DTOs.Revisions.SubmitRevisionDto submitDto,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var revision = await _db.DefenseRevisions.FirstOrDefaultAsync(x => x.Id == revisionId, cancellationToken);
+                if (revision == null)
+                {
+                    return NotFound(ApiResponse<object>.Fail($"Revision {revisionId} not found", 404));
+                }
+
+                // Check if student can submit (deadline not passed, status is WAITING_STUDENT or REJECTED)
+                if (revision.Status != RevisionStatus.WaitingStudent && revision.Status != RevisionStatus.Rejected)
+                {
+                    return BadRequest(ApiResponse<object>.Fail($"Cannot submit revision in status: {revision.Status}", 400));
+                }
+
+                if (revision.SubmissionDeadline.HasValue && DateTime.UtcNow > revision.SubmissionDeadline.Value)
+                {
+                    revision.Status = RevisionStatus.Expired;
+                    _db.DefenseRevisions.Update(revision);
+                    await _db.SaveChangesAsync(cancellationToken);
+                    return BadRequest(ApiResponse<object>.Fail("Revision submission deadline has passed", 400));
+                }
+
+                // Update revision content
+                revision.RevisedContent = submitDto.RevisedContent;
+                revision.RevisionFileUrl = submitDto.RevisionFileUrl;
+                revision.Status = RevisionStatus.StudentSubmitted;
+                revision.SubmissionCount++;
+                revision.LastUpdated = DateTime.UtcNow;
+
+                _db.DefenseRevisions.Update(revision);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                return Ok(ApiResponse<object>.SuccessResponse(new
+                {
+                    RevisionId = revision.Id,
+                    Status = revision.Status.ToString(),
+                    SubmissionCount = revision.SubmissionCount,
+                    SubmittedAt = revision.LastUpdated,
+                    Message = "Revision submitted successfully"
+                }));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Error submitting revision: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Extend submission deadline for a revision
+        /// Secretary use this to give more time to students
+        /// </summary>
+        [HttpPost("{periodId:int}/revisions/{revisionId:int}/extend-deadline")]
+        [Authorize(Roles = "Admin,Head,Secretary")]
+        public async Task<ActionResult<ApiResponse<object>>> ExtendDeadline(
+            int periodId,
+            int revisionId,
+            [FromBody] dynamic request,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var revision = await _db.DefenseRevisions.FirstOrDefaultAsync(x => x.Id == revisionId, cancellationToken);
+                if (revision == null)
+                {
+                    return NotFound(ApiResponse<object>.Fail($"Revision {revisionId} not found", 404));
+                }
+
+                // Parse days from request
+                int daysToAdd = 7; // default
+                if (request?.daysToAdd != null)
+                {
+                    daysToAdd = (int)request.daysToAdd;
+                }
+
+                var newDeadline = (revision.SubmissionDeadline ?? DateTime.UtcNow).AddDays(daysToAdd);
+                revision.SubmissionDeadline = newDeadline;
+                revision.LastUpdated = DateTime.UtcNow;
+
+                _db.DefenseRevisions.Update(revision);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                return Ok(ApiResponse<object>.SuccessResponse(new
+                {
+                    RevisionId = revision.Id,
+                    NewDeadline = newDeadline,
+                    DaysExtended = daysToAdd,
+                    Message = $"Deadline extended by {daysToAdd} days"
+                }));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Error extending deadline: {ex.Message}", 500));
+            }
+        }
+
+        #endregion
+
+
+        private async Task<ActionResult<ApiResponse<bool>>> StartPeriod(int periodId, string? idempotencyKey)
+        {
+            return await _startCommand.ExecuteAsync(periodId, CurrentUserId, idempotencyKey);
+        }
+
+        private async Task<ActionResult<ApiResponse<bool>>> PausePeriod(int periodId, string? idempotencyKey)
+        {
+            return await _pauseCommand.ExecuteAsync(periodId, CurrentUserId, idempotencyKey);
+        }
+
+        private async Task<ActionResult<ApiResponse<bool>>> ResumePeriod(int periodId, string? idempotencyKey)
+        {
+            return await _resumeCommand.ExecuteAsync(periodId, CurrentUserId, idempotencyKey);
+        }
+
+        private async Task<ActionResult<ApiResponse<bool>>> LockScoring(int periodId, string? idempotencyKey)
+        {
+            return await _lockScoringCommand.ExecuteAsync(periodId, CurrentUserId, idempotencyKey);
+        }
+
+        private async Task<ActionResult<ApiResponse<bool>>> ClosePeriod(int periodId, string? idempotencyKey)
+        {
+            return await _closeCommand.ExecuteAsync(periodId, CurrentUserId, idempotencyKey);
+        }
+
+        private void ApplyStandardExcelFormatting(IXLWorksheet ws, string title, int totalCount)
+        {
+            ws.Style.Font.FontName = "Times New Roman";
+            ws.Style.Font.FontSize = 11;
+            
+            // Header starts at row 1
+            ws.Row(1).InsertRowsAbove(8);
+            
+            var row = 1;
+            // Left Header
+            ws.Cell(row, 1).Value = "TRƯỜNG ĐẠI HỌC ĐẠI NAM";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row + 1, 1).Value = "KHOA CÔNG NGHỆ THÔNG TIN";
+            ws.Cell(row + 1, 1).Style.Font.Bold = true;
+            
+            // Right Header (Motto)
+            ws.Cell(row, 6).Value = "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
+            ws.Cell(row, 6).Style.Font.Bold = true;
+            ws.Cell(row, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 6, row, 10).Merge();
+            
+            ws.Cell(row + 1, 6).Value = "Độc lập - Tự do - Hạnh phúc";
+            ws.Cell(row + 1, 6).Style.Font.Bold = true;
+            ws.Cell(row + 1, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row + 1, 6, row + 1, 10).Merge();
+            
+            // Title
+            row += 4;
+            ws.Cell(row, 1).Value = title.ToUpperInvariant();
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 1).Style.Font.FontSize = 14;
+            ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 1, row, 10).Merge();
+            
+            row++;
+            ws.Cell(row, 1).Value = "NGÀNH CÔNG NGHỆ THÔNG TIN";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 1).Style.Font.FontSize = 12;
+            ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 1, row, 10).Merge();
+            
+            // Table content starts at row 9
+            
+            // Footer
+            var lastDataRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+            row = lastDataRow + 2;
+            
+            ws.Cell(row, 1).Value = "Tổng số lượng";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            var unit = title.ToLower().Contains("sinh viên") ? "sinh viên" : (title.ToLower().Contains("giảng viên") ? "giảng viên" : "đề tài");
+            ws.Cell(row, 2).Value = $"{totalCount} {unit}";
+            
+            row += 3;
+            var now = DateTime.Now;
+            ws.Cell(row, 8).Value = $"Hà Nội, ngày {now.Day:D2} tháng {now.Month:D2} năm {now.Year}";
+            ws.Cell(row, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 8, row, 10).Merge();
+            
+            row++;
+            ws.Cell(row, 4).Value = "Người lập biểu";
+            ws.Cell(row, 4).Style.Font.Bold = true;
+            ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 4, row, 5).Merge();
+            
+            ws.Cell(row, 8).Value = "TRƯỞNG KHOA";
+            ws.Cell(row, 8).Style.Font.Bold = true;
+            ws.Cell(row, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 8, row, 10).Merge();
+            
+            row += 3;
+            ws.Cell(row, 8).Value = "Trần Đăng Công";
+            ws.Cell(row, 8).Style.Font.Bold = true;
+            ws.Cell(row, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Range(row, 8, row, 10).Merge();
+            
+            ws.Columns().AdjustToContents();
         }
     }
 }

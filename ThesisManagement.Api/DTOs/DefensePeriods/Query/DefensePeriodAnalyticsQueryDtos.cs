@@ -95,8 +95,13 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public decimal? TopicSupervisorScore { get; set; }
         public decimal? FinalScore { get; set; }
         public string? FinalGrade { get; set; }
+        public bool? IsPassed { get; set; }
         public decimal? Variance { get; set; }
         public string Status { get; set; } = string.Empty;
+        public string? RevisionReason { get; set; }
+        public DateTime? SubmissionDeadline { get; set; }
+        public string? SecretaryComment { get; set; }
+        public int DocumentCount { get; set; }
         public List<DefenseDocumentDto> DefenseDocuments { get; set; } = new();
     }
 

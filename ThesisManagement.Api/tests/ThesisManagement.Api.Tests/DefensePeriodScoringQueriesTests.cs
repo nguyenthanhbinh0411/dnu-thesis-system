@@ -27,7 +27,7 @@ public class DefensePeriodScoringQueriesTests
         completed.CommitteeId.Should().Be(11);
         completed.RequiredCount.Should().Be(2);
         completed.SubmittedCount.Should().Be(2);
-        completed.Status.Should().Be("COMPLETED");
+        completed.Status.Should().Be("WAITING_PUBLIC");
         completed.Variance.Should().Be(3m);
         completed.StudentCode.Should().Be("S001");
         completed.StudentName.Should().Be("Nguyen Van A");

@@ -17,11 +17,7 @@ import {
 } from "../../services/defense-term-membership.service";
 import TablePagination from "../TablePagination/TablePagination";
 
-const ROLE_OPTIONS = [
-  { value: "Giảng viên hướng dẫn", label: "Giảng viên hướng dẫn" },
-  { value: "Thư ký", label: "Thư ký" },
-  { value: "Tham gia bảo vệ", label: "Tham gia bảo vệ" },
-];
+
 
 export type DefenseTermLecturerSelection = {
   lecturerProfileID: number;
@@ -31,7 +27,6 @@ export type DefenseTermLecturerSelection = {
   departmentCode: string;
   degree: string;
   profileImage?: string;
-  roles: string[];
   isPrimary: boolean;
   raw: Record<string, unknown>;
 };
@@ -46,7 +41,6 @@ type LecturerPickerFilters = {
   tags: string;
   lecturerCode: string;
   userCode: string;
-  role: string;
   isPrimary: string;
 };
 
@@ -74,7 +68,6 @@ const initialFilters: LecturerPickerFilters = {
   tags: "",
   lecturerCode: "",
   userCode: "",
-  role: "",
   isPrimary: "",
 };
 
@@ -113,14 +106,11 @@ function toLecturerSelection(
     lecturerCode: asString(record.lecturerCode ?? record.LecturerCode),
     userCode: asString(record.userCode ?? record.UserCode),
     fullName: asString(
-      record.fullName ?? record.FullName ?? record.name ?? record.Name,
+      record.fullName || record.FullName || record.lecturerName || record.LecturerName || record.name || record.Name || record.lecturerCode || record.LecturerCode
     ),
     departmentCode: asString(record.departmentCode ?? record.DepartmentCode),
     degree: asString(record.degree ?? record.Degree),
     profileImage: asString(record.profileImage ?? record.ProfileImage),
-    roles: toRoleList(
-      record.role ?? record.roles ?? record.Role ?? record.Roles,
-    ),
     isPrimary: asBoolean(record.isPrimary ?? record.IsPrimary),
     raw: record,
   };
@@ -130,7 +120,6 @@ function toAssignedSelection(record: DefenseTermLecturerRecord): LecturerRow {
   const base = toLecturerSelection(record);
   return {
     ...base,
-    roles: toRoleList(record.role ?? record.roles ?? base.roles),
     isPrimary: asBoolean(
       record.isPrimary ?? record.IsPrimary ?? base.isPrimary,
     ),
@@ -270,7 +259,6 @@ function buildFilterSummary(filters: LecturerPickerFilters): string[] {
   if (filters.degree) parts.push(`Học vị: ${filters.degree}`);
   if (filters.tagCodes) parts.push(`Tag codes: ${filters.tagCodes}`);
   if (filters.tags) parts.push(`Tags: ${filters.tags}`);
-  if (filters.role) parts.push(`Role: ${filters.role}`);
   if (filters.isPrimary) parts.push(`Primary: ${filters.isPrimary}`);
   return parts;
 }
@@ -281,7 +269,7 @@ const DefenseTermLecturersPickerModal: React.FC<
   isOpen,
   defenseTermId,
   title = "Chọn giảng viên",
-  subtitle = "Chọn nhiều giảng viên, cấu hình role cho từng giảng viên và lưu vào đợt bảo vệ.",
+  subtitle = "Chọn nhiều giảng viên, cấu hình role cho từng giảng viên và lưu vào đợt đồ án tốt nghiệp.",
   initialSelectedIds = [],
   initialSelections = [],
   onClose,
@@ -304,7 +292,6 @@ const DefenseTermLecturersPickerModal: React.FC<
   const [selectedCache, setSelectedCache] = useState<
     Record<number, DefenseTermLecturerSelection | LecturerRow>
   >({});
-  const [roleDrafts, setRoleDrafts] = useState<Record<number, string[]>>({});
   const [primaryDrafts, setPrimaryDrafts] = useState<Record<number, boolean>>(
     {},
   );
@@ -332,12 +319,6 @@ const DefenseTermLecturersPickerModal: React.FC<
         {},
       ),
     );
-    setRoleDrafts(
-      initialSelections.reduce<Record<number, string[]>>((acc, item) => {
-        acc[item.lecturerProfileID] = item.roles;
-        return acc;
-      }, {}),
-    );
     setPrimaryDrafts(
       initialSelections.reduce<Record<number, boolean>>((acc, item) => {
         acc[item.lecturerProfileID] = item.isPrimary;
@@ -364,7 +345,7 @@ const DefenseTermLecturersPickerModal: React.FC<
         setRows([]);
         setAssignedRows([]);
         setTotalCount(0);
-        setError("Vui lòng chọn một đợt bảo vệ trước khi thêm giảng viên.");
+        setError("Vui lòng chọn một đợt đồ án tốt nghiệp trước khi thêm giảng viên.");
         return;
       }
 
@@ -383,6 +364,7 @@ const DefenseTermLecturersPickerModal: React.FC<
             userCode: filters.userCode,
             page,
             pageSize,
+            excludeDefenseTermId: defenseTermId ?? undefined,
           });
 
           if (cancelled) return;
@@ -403,7 +385,6 @@ const DefenseTermLecturersPickerModal: React.FC<
             search: filters.search,
             lecturerCode: filters.lecturerCode,
             userCode: filters.userCode,
-            role: filters.role,
             isPrimary: filters.isPrimary
               ? filters.isPrimary.toLowerCase() === "true"
               : undefined,
@@ -465,15 +446,7 @@ const DefenseTermLecturersPickerModal: React.FC<
   );
   const selectedCount = selectedIds.length;
 
-  const getSelectedRoles = (lecturerProfileID: number): string[] => {
-    const cached = roleDrafts[lecturerProfileID];
-    if (cached && cached.length > 0) {
-      return cached;
-    }
-    const row = selectedCache[lecturerProfileID];
-    if (!row) return [];
-    return row.roles;
-  };
+
 
   const isPrimary = (lecturerProfileID: number): boolean => {
     if (primaryDrafts[lecturerProfileID] !== undefined) {
@@ -490,51 +463,13 @@ const DefenseTermLecturersPickerModal: React.FC<
       prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id],
     );
     setSelectedCache((prev) => ({ ...prev, [id]: row }));
-    setRoleDrafts((prev) => ({
-      ...prev,
-      [id]:
-        prev[id] && prev[id].length > 0
-          ? prev[id]
-          : row.roles.length > 0
-            ? row.roles
-            : [ROLE_OPTIONS[0].value],
-    }));
     setPrimaryDrafts((prev) => ({
       ...prev,
       [id]: prev[id] ?? row.isPrimary,
     }));
   };
 
-  const toggleRole = (
-    row: DefenseTermLecturerSelection | LecturerRow,
-    role: string,
-  ) => {
-    const lecturerProfileID = row.lecturerProfileID;
-    if (!lecturerProfileID) return;
 
-    setSelectedIds((prev) =>
-      prev.includes(lecturerProfileID) ? prev : [...prev, lecturerProfileID],
-    );
-    setSelectedCache((prev) => ({
-      ...prev,
-      [lecturerProfileID]: row,
-    }));
-    setRoleDrafts((prev) => {
-      const current = prev[lecturerProfileID] ?? row.roles;
-      const next = current.includes(role)
-        ? current.filter((item) => item !== role)
-        : [...current, role];
-      if (next.length === 0) {
-        setSelectedIds((prevIds) =>
-          prevIds.filter((id) => id !== lecturerProfileID),
-        );
-        const nextDrafts = { ...prev };
-        delete nextDrafts[lecturerProfileID];
-        return nextDrafts;
-      }
-      return { ...prev, [lecturerProfileID]: next };
-    });
-  };
 
   const togglePrimary = (row: DefenseTermLecturerSelection | LecturerRow) => {
     const lecturerProfileID = row.lecturerProfileID;
@@ -559,16 +494,6 @@ const DefenseTermLecturersPickerModal: React.FC<
       if (row.lecturerProfileID > 0) {
         nextIds.add(row.lecturerProfileID);
         setSelectedCache((prev) => ({ ...prev, [row.lecturerProfileID]: row }));
-        setRoleDrafts((prev) => ({
-          ...prev,
-          [row.lecturerProfileID]:
-            prev[row.lecturerProfileID] &&
-            prev[row.lecturerProfileID].length > 0
-              ? prev[row.lecturerProfileID]
-              : row.roles.length > 0
-                ? row.roles
-                : [ROLE_OPTIONS[0].value],
-        }));
         setPrimaryDrafts((prev) => ({
           ...prev,
           [row.lecturerProfileID]: prev[row.lecturerProfileID] ?? row.isPrimary,
@@ -596,7 +521,6 @@ const DefenseTermLecturersPickerModal: React.FC<
         departmentCode: row.departmentCode,
         degree: row.degree,
         profileImage: row.profileImage,
-        roles: getSelectedRoles(row.lecturerProfileID),
         isPrimary: isPrimary(row.lecturerProfileID),
         raw: row.raw,
       }));
@@ -775,25 +699,9 @@ const DefenseTermLecturersPickerModal: React.FC<
                     style={{
                       display: "grid",
                       gap: 10,
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns: "1fr",
                     }}
                   >
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>
-                        Role
-                      </span>
-                      <input
-                        value={filters.role}
-                        onChange={(event) =>
-                          setFilters((prev) => ({
-                            ...prev,
-                            role: event.target.value,
-                          }))
-                        }
-                        placeholder="Role"
-                        style={inputStyle}
-                      />
-                    </label>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>
                         Chính
@@ -975,7 +883,6 @@ const DefenseTermLecturersPickerModal: React.FC<
                       <th style={{ padding: 12 }}>User</th>
                       <th style={{ padding: 12 }}>Khoa/Bộ môn</th>
                       <th style={{ padding: 12 }}>Học vị</th>
-                      <th style={{ padding: 12 }}>Roles</th>
                       <th style={{ padding: 12 }}>Chính</th>
                     </tr>
                   </thead>
@@ -987,7 +894,6 @@ const DefenseTermLecturersPickerModal: React.FC<
                       const imageUrl = row.profileImage
                         ? normalizeUrl(row.profileImage)
                         : "";
-                      const roles = getSelectedRoles(row.lecturerProfileID);
                       const primary = isPrimary(row.lecturerProfileID);
                       return (
                         <tr
@@ -1071,33 +977,6 @@ const DefenseTermLecturersPickerModal: React.FC<
                             {row.degree || "--"}
                           </td>
                           <td style={{ padding: 12, verticalAlign: "top" }}>
-                            <div style={multiRoleWrap}>
-                              {ROLE_OPTIONS.map((role) => {
-                                const roleChecked = roles.includes(role.value);
-                                return (
-                                  <label
-                                    key={role.value}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 8,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={roleChecked}
-                                      onChange={() =>
-                                        toggleRole(row, role.value)
-                                      }
-                                    />
-                                    {role.label}
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </td>
-                          <td style={{ padding: 12, verticalAlign: "top" }}>
                             <label
                               style={{
                                 display: "inline-flex",
@@ -1120,7 +999,7 @@ const DefenseTermLecturersPickerModal: React.FC<
                     {!loading && visibleRows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={7}
                           style={{
                             padding: 24,
                             textAlign: "center",

@@ -8,6 +8,7 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Query
         {
             LecturerCode = string.Empty;
             LecturerName = string.Empty;
+            FullName = string.Empty;
             UserCode = string.Empty;
         }
 
@@ -17,8 +18,8 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Query
             int lecturerProfileID,
             string lecturerCode,
             string lecturerName,
+            string fullName,
             string userCode,
-            string? role,
             bool isPrimary,
             DateTime createdAt,
             DateTime lastUpdated)
@@ -28,8 +29,8 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Query
             LecturerProfileID = lecturerProfileID;
             LecturerCode = lecturerCode;
             LecturerName = lecturerName;
+            FullName = fullName;
             UserCode = userCode;
-            Role = role;
             IsPrimary = isPrimary;
             CreatedAt = createdAt;
             LastUpdated = lastUpdated;
@@ -40,8 +41,8 @@ namespace ThesisManagement.Api.DTOs.DefenseTermLecturers.Query
         public int LecturerProfileID { get; set; }
         public string LecturerCode { get; set; }
         public string LecturerName { get; set; }
+        public string FullName { get; set; }
         public string UserCode { get; set; }
-        public string? Role { get; set; }
         public bool IsPrimary { get; set; }
         public string? DepartmentCode { get; set; }
         public string? Degree { get; set; }

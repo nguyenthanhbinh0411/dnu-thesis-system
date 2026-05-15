@@ -15,5 +15,6 @@ namespace ThesisManagement.Api.DTOs.LecturerProfiles.Query
         public int? MaxDefenseQuota { get; set; }
         public IEnumerable<string>? TagCodes { get; set; }
         public string? Tags { get; set; }
+        public int? ExcludeDefenseTermId { get; set; }
     }
 }

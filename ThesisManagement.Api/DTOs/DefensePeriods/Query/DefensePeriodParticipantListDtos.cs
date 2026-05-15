@@ -83,7 +83,6 @@ namespace ThesisManagement.Api.DTOs.DefensePeriods
         public List<int> LecturerProfileIds { get; set; } = new();
         public List<string> LecturerCodes { get; set; } = new();
 
-        public string? Role { get; set; }
         public bool IsPrimary { get; set; }
     }
 

@@ -33,6 +33,7 @@ const LecturerLayout: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [canViewDefenseMenus, setCanViewDefenseMenus] = useState(false);
+  const [canViewRevisionMenu, setCanViewRevisionMenu] = useState(false);
   const [headerPeriod, setHeaderPeriod] = useState<{
     label: string;
     tone: "normal" | "warning" | "error";
@@ -50,13 +51,15 @@ const LecturerLayout: React.FC = () => {
     return {
       label: "Đang xác định đợt",
       tone: "normal",
-      tooltip: "Hệ thống đang tự động xác định đợt bảo vệ hiện tại.",
+      tooltip: "Hệ thống đang tự động xác định đợt đồ án tốt nghiệp hiện tại.",
     };
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const sidebarWidth = isSidebarCollapsed ? 84 : 260;
   const collapseSidebarOnActivity = () => {
-    setIsSidebarCollapsed(true);
+    if (window.innerWidth > 768) {
+      setIsSidebarCollapsed(true);
+    }
   };
 
   useEffect(() => {
@@ -82,9 +85,13 @@ const LecturerLayout: React.FC = () => {
 
   // Update current time every minute
   useEffect(() => {
-    const timer = setInterval(() => {
+    const updateTime = () => {
       setCurrentTime(new Date());
-    }, 60000); // Update every minute
+    };
+
+    updateTime();
+
+    const timer = setInterval(updateTime, 60000); // Update every minute
 
     return () => clearInterval(timer);
   }, []);
@@ -111,60 +118,73 @@ const LecturerLayout: React.FC = () => {
     let cancelled = false;
 
     const bootstrapCurrentPeriod = async () => {
-      const result = await fetchCurrentLecturerDefenseAccess();
-      if (cancelled) {
-        return;
-      }
+      try {
+        const result = await fetchCurrentLecturerDefenseAccess();
+        if (cancelled) {
+          return;
+        }
 
-      if (result.ok) {
-        setCanViewDefenseMenus(result.hasCommitteeAccess);
-        const periodName = result.period.name || `Đợt ${result.period.periodId}`;
-        setActiveDefensePeriodId(result.period.periodId);
+        if (result.ok) {
+          setCanViewDefenseMenus(result.hasCommitteeAccess);
+          setCanViewRevisionMenu(result.isSecretary && result.hasPendingRevisions);
+          const periodName = result.period.name || `Đợt ${result.period.periodId}`;
+          setActiveDefensePeriodId(result.period.periodId);
+          setHeaderPeriod({
+            label: `${periodName} (#${result.period.periodId})`,
+            tone: "normal",
+            tooltip: `Đợt hiện tại: ${periodName} (#${result.period.periodId})`,
+          });
+          return;
+        }
+
+        setCanViewDefenseMenus(false);
+        setCanViewRevisionMenu(false);
+
+        if (result.code === "NOT_MAPPED") {
+          setActiveDefensePeriodId(null);
+          setHeaderPeriod({
+            label: "Chưa có mapping đợt",
+            tone: "warning",
+            tooltip: result.message,
+          });
+          return;
+        }
+
+        if (result.code === "AMBIGUOUS" || result.code === "INVALID_CONTRACT") {
+          setActiveDefensePeriodId(null);
+          setHeaderPeriod({
+            label: result.code === "AMBIGUOUS" ? "Dữ liệu đợt mơ hồ" : "Snapshot đợt không hợp lệ",
+            tone: "error",
+            tooltip: result.message,
+          });
+          return;
+        }
+
+        const cachedPeriodId = getActiveDefensePeriodId();
+        if (cachedPeriodId) {
+          setHeaderPeriod({
+            label: `Đợt #${cachedPeriodId} (cache)`,
+            tone: "warning",
+            tooltip: result.message,
+          });
+          return;
+        }
+
         setHeaderPeriod({
-          label: `${periodName} (#${result.period.periodId})`,
-          tone: "normal",
-          tooltip: `Đợt hiện tại: ${periodName} (#${result.period.periodId})`,
-        });
-        return;
-      }
-
-      setCanViewDefenseMenus(false);
-
-      if (result.code === "NOT_MAPPED") {
-        setActiveDefensePeriodId(null);
-        setHeaderPeriod({
-          label: "Chưa có mapping đợt",
-          tone: "warning",
-          tooltip: result.message,
-        });
-        return;
-      }
-
-      if (result.code === "AMBIGUOUS" || result.code === "INVALID_CONTRACT") {
-        setActiveDefensePeriodId(null);
-        setHeaderPeriod({
-          label: result.code === "AMBIGUOUS" ? "Dữ liệu đợt mơ hồ" : "Snapshot đợt không hợp lệ",
+          label: "Không xác định đợt",
           tone: "error",
           tooltip: result.message,
         });
-        return;
-      }
+      } catch (error) {
+        if (cancelled) return;
 
-      const cachedPeriodId = getActiveDefensePeriodId();
-      if (cachedPeriodId) {
+        setCanViewDefenseMenus(false);
         setHeaderPeriod({
-          label: `Đợt #${cachedPeriodId} (cache)`,
-          tone: "warning",
-          tooltip: result.message,
+          label: "Không xác định đợt",
+          tone: "error",
+          tooltip: "Không thể kết nối hệ thống.",
         });
-        return;
       }
-
-      setHeaderPeriod({
-        label: "Không xác định đợt",
-        tone: "error",
-        tooltip: result.message,
-      });
     };
 
     void bootstrapCurrentPeriod();
@@ -397,9 +417,8 @@ const LecturerLayout: React.FC = () => {
                 color: "#FFFFFF",
                 boxShadow: "0 6px 16px rgba(0, 0, 0, 0.18)",
                 cursor: "pointer",
-                zIndex: 99999,
-                transform: isSidebarCollapsed ? "translateX(-50%) translateZ(0)" : "translateX(-50%)",
-                willChange: "transform",
+                zIndex: 40,
+                transform: "translateX(-50%)",
                 flexShrink: 0,
                 backdropFilter: "blur(8px)",
               }}
@@ -517,6 +536,7 @@ const LecturerLayout: React.FC = () => {
             collapsed={isSidebarCollapsed}
             onNavigate={() => setIsMobileMenuOpen(false)}
             showDefenseMenus={canViewDefenseMenus}
+            showRevisionMenu={canViewRevisionMenu}
           />
         </div>
 
@@ -879,13 +899,7 @@ const LecturerLayout: React.FC = () => {
                       >
                         {profile?.degree} - {profile?.departmentCode}
                       </div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#e2e8f0",
-                          fontWeight: 500,
-                        }}
-                      ></div>
+
                     </div>
                   </div>
 
@@ -995,7 +1009,10 @@ const LecturerLayout: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => auth.logout()}
+                      onClick={() => {
+                        setShowDropdown(false);
+                        auth.logout();
+                      }}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1042,7 +1059,7 @@ const LecturerLayout: React.FC = () => {
             height: "calc(100vh - 80px)",
             overflowY: "auto",
           }}
-          /* onPointerUpCapture={collapseSidebarOnActivity} */
+        /* onPointerUpCapture={collapseSidebarOnActivity} */
         >
           <Outlet />
         </div>

@@ -34,6 +34,9 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             public string MemberLecturerCode { get; set; } = string.Empty;
             public decimal Score { get; set; }
             public string? Role { get; set; }
+            public bool RevisionRequired { get; set; }
+            public string? RevisionReason { get; set; }
+            public int? RevisionDeadlineDays { get; set; }
             public DateTime? LastUpdated { get; set; }
         }
 
@@ -94,7 +97,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
 
             if (normalizedCommitteeStatus == CommitteeStatus.Ready && normalizedAssignmentStatus == AssignmentStatus.Pending)
             {
-                throw new BusinessRuleException("Cần mở ca bảo vệ trước khi chấm điểm.", "UC3.4.SESSION_NOT_OPEN");
+                throw new BusinessRuleException("Cần mở ca đồ án tốt nghiệp trước khi chấm điểm.", "UC3.4.SESSION_NOT_OPEN");
             }
 
             if (normalizedCommitteeStatus == CommitteeStatus.Finalized || normalizedCommitteeStatus == CommitteeStatus.Published)
@@ -139,16 +142,16 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             score.Score = request.Score;
             score.Comment = request.Comment;
             score.IsSubmitted = true;
+            score.RevisionRequired = request.RevisionRequired;
+            score.RevisionReason = request.RevisionReason;
+            score.RevisionDeadlineDays = request.RevisionDeadlineDays;
             score.LastUpdated = DateTime.UtcNow;
-            if (score.ScoreID > 0)
-            {
-                _uow.DefenseScores.Update(score);
-            }
 
             await _uow.SaveChangesAsync();
 
             // NOTE: Do NOT write to DEFENSE_RESULTS here.
             // DEFENSE_RESULTS is only populated when the Chair locks (chốt) the session.
+            // IsPassed is calculated at lock time based on FinalScoreNumeric >= 5.
 
             await _auditTrail.WriteAsync(
                 "SUBMIT_INDEPENDENT_SCORE",
@@ -159,6 +162,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     score.Score,
                     score.Comment,
                     score.IsSubmitted,
+                    score.RevisionRequired,
                     score.LastUpdated,
                     score.Role
                 },
@@ -179,7 +183,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 {
                     trackedAssignment.Status = DefenseWorkflowStateMachine.ToValue(AssignmentStatus.Defending);
                     trackedAssignment.LastUpdated = DateTime.UtcNow;
-                    _uow.DefenseAssignments.Update(trackedAssignment);
                     await _uow.SaveChangesAsync();
                 }
             }
@@ -212,7 +215,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 .FirstOrDefaultAsync(x => x.CommitteeID == committeeId && x.MemberLecturerCode == lecturerCode, cancellationToken);
             if (member == null || NormalizeRole(member.Role) != "CT")
             {
-                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được mở ca bảo vệ.");
+                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được mở ca đồ án tốt nghiệp.");
             }
 
             var committee = await _db.Committees.FirstOrDefaultAsync(x => x.CommitteeID == committeeId, cancellationToken);
@@ -231,7 +234,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 if (!IsCouncilListLocked(configJson))
                 {
                     throw new BusinessRuleException(
-                        "Danh sách hội đồng chưa được chốt. Cần chốt hội đồng trước khi mở ca bảo vệ.",
+                        "Danh sách hội đồng chưa được chốt. Cần chốt hội đồng trước khi mở ca đồ án tốt nghiệp.",
                         "UC3.4.COUNCIL_LIST_NOT_LOCKED");
                 }
             }
@@ -239,19 +242,19 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             var assignments = await _db.DefenseAssignments.Where(x => x.CommitteeID == committeeId).ToListAsync(cancellationToken);
             if (assignments.Count == 0)
             {
-                throw new BusinessRuleException("Hội đồng chưa có đề tài để mở ca bảo vệ.", "UC3.4.SESSION_EMPTY");
+                throw new BusinessRuleException("Hội đồng chưa có đề tài để mở ca đồ án tốt nghiệp.", "UC3.4.SESSION_EMPTY");
             }
 
             var beforeSnapshot = new { committee.Status, committee.LastUpdated };
             var committeeStatus = DefenseWorkflowStateMachine.ParseCommitteeStatus(committee.Status);
             if (committeeStatus == CommitteeStatus.Draft)
             {
-                throw new BusinessRuleException("Hội đồng đang ở trạng thái Draft. Không thể mở ca bảo vệ.", "UC3.4.INVALID_COMMITTEE_STATE");
+                throw new BusinessRuleException("Hội đồng đang ở trạng thái Draft. Không thể mở ca đồ án tốt nghiệp.", "UC3.4.INVALID_COMMITTEE_STATE");
             }
 
             if (committeeStatus == CommitteeStatus.Finalized || committeeStatus == CommitteeStatus.Published)
             {
-                throw new BusinessRuleException("Hội đồng đã chốt/công bố kết quả, không thể mở ca bảo vệ.", "UC3.4.INVALID_COMMITTEE_STATE");
+                throw new BusinessRuleException("Hội đồng đã chốt/công bố kết quả, không thể mở ca đồ án tốt nghiệp.", "UC3.4.INVALID_COMMITTEE_STATE");
             }
 
             var now = DateTime.UtcNow;
@@ -311,7 +314,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             var chair = await _db.CommitteeMembers.AsNoTracking().FirstOrDefaultAsync(x => x.CommitteeID == committeeId && x.MemberLecturerCode == lecturerCode && x.Role != null && x.Role.ToUpper().Contains("CT"), cancellationToken);
             if (chair == null)
             {
-                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được đóng phiên bảo vệ.");
+                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được đóng phiên đồ án tốt nghiệp.");
             }
 
             var committee = await _db.Committees.FirstOrDefaultAsync(x => x.CommitteeID == committeeId, cancellationToken);
@@ -357,7 +360,7 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             var chair = await _db.CommitteeMembers.AsNoTracking().FirstOrDefaultAsync(x => x.CommitteeID == committeeId && x.MemberLecturerCode == lecturerCode && x.Role != null && x.Role.ToUpper().Contains("CT"), cancellationToken);
             if (chair == null)
             {
-                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được khóa ca bảo vệ.");
+                throw new BusinessRuleException("Chỉ Chủ tịch hội đồng (CT) được khóa ca đồ án tốt nghiệp.");
             }
 
             var committee = await _db.Committees.FirstOrDefaultAsync(x => x.CommitteeID == committeeId, cancellationToken);
@@ -372,9 +375,17 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                 throw new BusinessRuleException("Chỉ có thể đóng ca khi hội đồng đang ở trạng thái Ongoing.", "UC3.5.INVALID_COMMITTEE_STATE");
             }
 
-            var assignmentIds = await _db.DefenseAssignments.AsNoTracking().Where(x => x.CommitteeID == committeeId).Select(x => x.AssignmentID).ToListAsync(cancellationToken);
+            var committeeAssignments = await _db.DefenseAssignments.Where(x => x.CommitteeID == committeeId).ToListAsync(cancellationToken);
+            var assignmentIds = committeeAssignments.Select(x => x.AssignmentID).ToList();
             var existingResults = await _db.DefenseResults.Where(x => assignmentIds.Contains(x.AssignmentId)).ToListAsync(cancellationToken);
             var existingResultIds = existingResults.Select(x => x.AssignmentId).ToHashSet();
+            var topicCodes = committeeAssignments.Where(a => !string.IsNullOrWhiteSpace(a.TopicCode)).Select(a => a.TopicCode!).ToList();
+            var topics = await _db.Topics.Where(t => topicCodes.Contains(t.TopicCode)).ToListAsync(cancellationToken);
+            var topicByAssignmentId = committeeAssignments
+                .Where(a => !string.IsNullOrWhiteSpace(a.TopicCode))
+                .Join(topics, a => a.TopicCode, t => t.TopicCode, (a, t) => new { a.AssignmentID, Topic = t })
+                .ToDictionary(x => x.AssignmentID, x => x.Topic);
+
             var topicSupervisorScoreMap = await _db.DefenseAssignments.AsNoTracking()
                 .Where(x => assignmentIds.Contains(x.AssignmentID) && !string.IsNullOrWhiteSpace(x.TopicCode))
                 .Join(_db.Topics.AsNoTracking(), a => a.TopicCode, t => t.TopicCode, (a, t) => new { a.AssignmentID, t.Score })
@@ -415,6 +426,9 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                     AssignmentID = x.AssignmentID,
                     MemberLecturerCode = x.MemberLecturerCode!,
                     Score = x.Score,
+                    RevisionRequired = x.RevisionRequired,
+                    RevisionReason = x.RevisionReason,
+                    RevisionDeadlineDays = x.RevisionDeadlineDays,
                     LastUpdated = x.LastUpdated
                 })
                 .ToListAsync(cancellationToken);
@@ -494,23 +508,108 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
                         ScoreUvpb = scorePb,
                         FinalScoreNumeric = finalScore,
                         FinalScoreText = ToGrade(finalScore),
+                        IsPassed = finalScore >= 5m,
                         IsLocked = true,
                         CreatedAt = now,
                         LastUpdated = now
                     });
-                    continue;
+                }
+                else
+                {
+                    var result = existingResults.First(x => x.AssignmentId == assignmentId);
+                    result.ScoreGvhd = scoreGvhd;
+                    result.ScoreCt = scoreCt;
+                    result.ScoreUvtk = scoreTk;
+                    result.ScoreUvpb = scorePb;
+                    result.FinalScoreNumeric = finalScore;
+                    result.FinalScoreText = ToGrade(finalScore);
+                    result.IsPassed = finalScore >= 5m;
+                    result.IsLocked = true;
+                    result.LastUpdated = now;
+                    _uow.DefenseResults.Update(result);
                 }
 
-                var result = existingResults.First(x => x.AssignmentId == assignmentId);
-                result.ScoreGvhd = scoreGvhd;
-                result.ScoreCt = scoreCt;
-                result.ScoreUvtk = scoreTk;
-                result.ScoreUvpb = scorePb;
-                result.FinalScoreNumeric = finalScore;
-                result.FinalScoreText = ToGrade(finalScore);
-                result.IsLocked = true;
-                result.LastUpdated = now;
-                _uow.DefenseResults.Update(result);
+                var revision = await _db.DefenseRevisions.FirstOrDefaultAsync(x => x.AssignmentId == assignmentId, cancellationToken);
+                
+                // Check if any lecturer requested revision (RevisionRequired = true)
+                var anyRevisionRequired = submittedRows.Any(x => x.RevisionRequired);
+                var chairSubmissionForRevision = submittedRows
+                    .Where(x => NormalizeRole(x.Role) == "CT" && x.RevisionRequired)
+                    .OrderByDescending(x => x.LastUpdated ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.ScoreID)
+                    .FirstOrDefault();
+
+                if (anyRevisionRequired)
+                {
+                    if (chairSubmissionForRevision == null)
+                    {
+                        throw new BusinessRuleException(
+                            $"Đề tài với mã {assignmentId} yêu cầu hậu đồ án tốt nghiệp nhưng Chủ tịch chưa cung cấp lý do chỉnh sửa.");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(chairSubmissionForRevision.RevisionReason))
+                    {
+                        throw new BusinessRuleException(
+                            $"Đề tài với mã {assignmentId} yêu cầu hậu đồ án tốt nghiệp nhưng thiếu lý do cần chỉnh sửa từ Chủ tịch.");
+                    }
+
+                    var deadlineDays = chairSubmissionForRevision.RevisionDeadlineDays.GetValueOrDefault(14);
+                    if (deadlineDays < 1)
+                    {
+                        deadlineDays = 14;
+                    }
+
+                    // Delete old revision if exists to ensure clean slate
+                    if (revision != null)
+                    {
+                        _uow.DefenseRevisions.Remove(revision);
+                        await _uow.SaveChangesAsync();
+                    }
+
+                    // Create fresh new revision record
+                    revision = new DefenseRevision
+                    {
+                        AssignmentId = assignmentId,
+                        RequiredRevisionContent = chairSubmissionForRevision.RevisionReason,
+                        RevisionReason = chairSubmissionForRevision.RevisionReason,
+                        Status = RevisionStatus.WaitingStudent,
+                        SubmissionDeadline = now.AddDays(deadlineDays),
+                        SubmissionCount = 0,
+                        SecretaryComment = null,
+                        SecretaryApprovedAt = null,
+                        SecretaryUserCode = null,
+                        FinalStatus = RevisionFinalStatus.Pending,
+                        CreatedAt = now,
+                        LastUpdated = now
+                    };
+                    await _uow.DefenseRevisions.AddAsync(revision);
+                }
+                else
+                {
+                    // No revision needed - delete any existing record
+                    if (revision != null)
+                    {
+                        _uow.DefenseRevisions.Remove(revision);
+                    }
+                }
+
+                if (topicByAssignmentId.TryGetValue(assignmentId, out var topic))
+                {
+                    if (chairSubmissionForRevision != null)
+                    {
+                        topic.Status = "Hậu bảo vệ";
+                    }
+                    else if (anyRevisionRequired)
+                    {
+                        topic.Status = "Chỉnh sửa sau bảo vệ";
+                    }
+                    else
+                    {
+                        topic.Status = "Hoàn thành bảo vệ";
+                    }
+                    topic.LastUpdated = now;
+                    _uow.Topics.Update(topic);
+                }
             }
 
             if (committeeStatus == CommitteeStatus.Ongoing)
@@ -522,7 +621,6 @@ namespace ThesisManagement.Api.Application.Command.DefensePeriods.Services
             committee.LastUpdated = now;
             _uow.Committees.Update(committee);
 
-            var committeeAssignments = await _db.DefenseAssignments.Where(x => x.CommitteeID == committeeId).ToListAsync(cancellationToken);
             foreach (var assignment in committeeAssignments)
             {
                 assignment.Status = DefenseWorkflowStateMachine.ToValue(AssignmentStatus.Graded);

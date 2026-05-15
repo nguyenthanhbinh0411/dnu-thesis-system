@@ -15,6 +15,22 @@ namespace ThesisManagement.Api.Application.Common
             { CommitteeStatus.Published, Array.Empty<CommitteeStatus>() }
         };
 
+        private static readonly IReadOnlyDictionary<DefenseTermStatus, IReadOnlyList<DefenseTermStatus>> DefenseTermTransitions =
+            new Dictionary<DefenseTermStatus, IReadOnlyList<DefenseTermStatus>>
+        {
+            { DefenseTermStatus.Draft, new[] { DefenseTermStatus.Registration } },
+            { DefenseTermStatus.Registration, new[] { DefenseTermStatus.Assignment } },
+            { DefenseTermStatus.Assignment, new[] { DefenseTermStatus.ProgressTracking } },
+            { DefenseTermStatus.ProgressTracking, new[] { DefenseTermStatus.CommitteePreparation } },
+            { DefenseTermStatus.CommitteePreparation, new[] { DefenseTermStatus.Running } },
+            { DefenseTermStatus.Running, new[] { DefenseTermStatus.ScoringLocked } },
+            { DefenseTermStatus.ScoringLocked, new[] { DefenseTermStatus.Finalization } },
+            { DefenseTermStatus.Finalization, new[] { DefenseTermStatus.Published, DefenseTermStatus.Closed } },
+            { DefenseTermStatus.Published, new[] { DefenseTermStatus.Closed, DefenseTermStatus.Archived } },
+            { DefenseTermStatus.Closed, new[] { DefenseTermStatus.Archived } },
+            { DefenseTermStatus.Archived, Array.Empty<DefenseTermStatus>() }
+        };
+
         public static IReadOnlyDictionary<CommitteeStatus, IReadOnlyList<CommitteeStatus>> AllowedCommitteeTransitions => CommitteeTransitions;
 
         public static Dictionary<string, List<string>> GetCommitteeTransitionMap()
@@ -36,6 +52,7 @@ namespace ThesisManagement.Api.Application.Common
         }
 
         public static string ToValue(CommitteeStatus status) => status.ToString();
+        public static string ToValue(DefenseTermStatus status) => status.ToString();
 
         public static void EnsureCommitteeTransition(CommitteeStatus from, CommitteeStatus to, string errorCode)
         {
@@ -51,6 +68,42 @@ namespace ThesisManagement.Api.Application.Common
             {
                 throw new BusinessRuleException($"Không thể chuyển trạng thái hội đồng từ {from} sang {to}.", errorCode);
             }
+        }
+
+        public static void EnsurePeriodTransition(DefenseTermStatus from, DefenseTermStatus to, string errorCode)
+        {
+            if (from == to)
+            {
+                return;
+            }
+
+            var isValid = DefenseTermTransitions.TryGetValue(from, out var nextStates)
+                && nextStates.Contains(to);
+
+            if (!isValid)
+            {
+                throw new BusinessRuleException($"Không thể chuyển trạng thái đợt đồ án từ {from} sang {to}.", errorCode);
+            }
+        }
+
+        public static DefenseTermStatus ParsePeriodStatus(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return DefenseTermStatus.Draft;
+            }
+
+            if (Enum.TryParse<DefenseTermStatus>(value, true, out var status))
+            {
+                return status;
+            }
+
+            // Legacy mappings or aliases
+            var normalized = value.Trim().ToUpperInvariant();
+            if (normalized == "FINALIZED") return DefenseTermStatus.Finalization;
+            if (normalized == "ARCHIVED") return DefenseTermStatus.Archived;
+
+            return DefenseTermStatus.Draft;
         }
 
         public static string ToValue(AssignmentStatus status) => status.ToString();
