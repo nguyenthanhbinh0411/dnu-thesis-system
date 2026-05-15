@@ -85,11 +85,6 @@ const AdminNav: React.FC<AdminNavProps> = ({
       label: "Kho đề tài có sẵn",
       icon: <ClipboardList size={18} />,
     },
-    {
-      path: `${basePath}/milestones`,
-      label: "Cấu hình lộ trình",
-      icon: <CalendarDays size={18} />,
-    },
   ];
 
   const roleCanSeeUsers = hasUserManagementPermission(role, "users:list");
